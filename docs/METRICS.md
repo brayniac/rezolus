@@ -58,6 +58,9 @@ Provides system-wide telemetry for block storage. The following are taken from
 
 * `disk/bandwidth/read` - the number of bytes read from disk
 * `disk/bandwidth/write` - the number of bytes written to disk
+* `disk/commands/complete` - the number of SCSI commands completed
+* `disk/commands/error` - the number of SCSI commands returning an error
+* `disk/commands/total` - the total number of SCSI commands issued
 * `disk/operations/read` - the number of IOs servicing reads
 * `disk/operations/write` - the number of IOs servicing writes
 

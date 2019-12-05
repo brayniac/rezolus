@@ -41,6 +41,11 @@ impl Disk {
             .record_counter(&Statistic::BandwidthRead, time, reading.read_bytes());
         self.common
             .record_counter(&Statistic::BandwidthWrite, time, reading.write_bytes());
+        self.common.record_counter(
+            &Statistic::CommandsComplete,
+            time,
+            reading.commands_complete(),
+        );
         self.common
             .record_counter(&Statistic::OperationsDiscard, time, reading.discard_ops());
         self.common
@@ -133,6 +138,9 @@ impl Sampler for Disk {
                     .register_counter(statistic, TRILLION, 3, PERCENTILES);
             }
             for statistic in &[
+                Statistic::CommandsComplete,
+                Statistic::CommandsError,
+                Statistic::CommandsTotal,
                 Statistic::OperationsDiscard,
                 Statistic::OperationsRead,
                 Statistic::OperationsWrite,
@@ -150,6 +158,9 @@ impl Sampler for Disk {
             Statistic::BandwidthDiscard,
             Statistic::BandwidthRead,
             Statistic::BandwidthWrite,
+            Statistic::CommandsComplete,
+            Statistic::CommandsError,
+            Statistic::CommandsTotal,
             Statistic::OperationsDiscard,
             Statistic::OperationsRead,
             Statistic::OperationsWrite,

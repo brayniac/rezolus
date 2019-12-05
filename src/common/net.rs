@@ -10,7 +10,7 @@ use walkdir::WalkDir;
 /// return a named statistic for a given interface
 pub fn read_network_stat(nic: &str, stat: &str) -> Result<u64, ()> {
     let path = format!("/sys/class/net/{}/statistics/{}", nic, stat);
-    file::file_as_u64(&path)
+    file::file_as_u64(&path, 10, None)
 }
 
 /// returns a `Vec` of interface names

@@ -24,7 +24,7 @@ pub struct CpuIdle {
 // Get CPU idle usage for a given state and CPU, in nanoseconds.
 fn get_cpuidle_usage(cpu: u64, state: &Statistic) -> Result<u64, ()> {
     let filename = format!("/sys/devices/system/cpu/cpu{}/{}/usage", cpu, state);
-    file_as_u64(filename).map(|x| x * 1000)
+    file_as_u64(filename, 10, None).map(|x| x * 1000)
 }
 
 impl Sampler for CpuIdle {

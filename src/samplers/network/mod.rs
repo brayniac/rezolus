@@ -44,7 +44,7 @@ impl Network {
                     trace!("Ignore NIC: bad prefix: {}", name);
                     continue;
                 }
-                if let Ok(speed) = file::file_as_u64(format!("/sys/class/net/{}/speed", name)) {
+                if let Ok(speed) = file::file_as_u64(format!("/sys/class/net/{}/speed", name), 10, None) {
                     trace!("Monitoring NIC: {} speed: {} mbps", name, speed);
                     let bytes_secondly = (speed * 1_000_000) / 8;
                     interfaces.insert(Interface::new(Some(name.to_owned()), Some(bytes_secondly)));

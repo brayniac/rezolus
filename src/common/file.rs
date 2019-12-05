@@ -11,9 +11,13 @@ use std::path::Path;
 /// Parse the contents of the file as `u64`. This method anticipates
 /// it will be used on files as found in /proc which contain a single
 /// literal value which can be represented by type `u64`
-pub fn file_as_u64<T: AsRef<Path>>(path: T) -> Result<u64, ()> {
-    let line = string_from_file(&path)?;
-    line.parse().map_err(|e| {
+pub fn file_as_u64<T: AsRef<Path>>(path: T, radix: u32, prefix: Option<&str>) -> Result<u64, ()> {
+    let mut line = string_from_file(&path)?;
+    if let Some(prefix) = prefix {
+        line = line.trim_start_matches(prefix).to_string();
+    }
+
+    u64::from_str_radix(&line, radix).map_err(|e| {
         debug!(
             "could not parse file ({:?}) as u64: {}",
             path.as_ref().as_os_str(),

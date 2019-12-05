@@ -9,6 +9,9 @@ use std::ops::{Add, Sub};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Entry {
+    commands_error: u64,
+    commands_complete: u64,
+    commands_total: u64,
     read_bytes: u64,
     read_ops: u64,
     write_bytes: u64,
@@ -18,6 +21,18 @@ pub struct Entry {
 }
 
 impl Entry {
+    pub fn commands_complete(&self) -> u64 {
+        self.commands_complete
+    }
+
+    pub fn commands_error(&self) -> u64 {
+        self.commands_error
+    }
+
+    pub fn commands_total(&self) -> u64 {
+        self.commands_total
+    }
+
     pub fn discard_bytes(&self) -> u64 {
         self.discard_bytes
     }
@@ -53,7 +68,23 @@ impl Entry {
                     device.name().unwrap_or_else(|| "Total".to_owned())
                 );
             }
+            let commands_error = file::file_as_u64(format!(
+                    "/sys/class/block/{}/device/ioerror_cnt",
+                    device.name().unwrap()
+                ), 16, Some("0x")).unwrap_or(0);
+            let commands_complete = file::file_as_u64(format!(
+                    "/sys/class/block/{}/device/iodone_cnt",
+                    device.name().unwrap()
+                ), 16, Some("0x")).unwrap_or(0);
+            let commands_total = file::file_as_u64(format!(
+                    "/sys/class/block/{}/device/iorequest_cnt",
+                    device.name().unwrap()
+                ), 16, Some("0x")).unwrap_or(0);
+
             Entry {
+                commands_error,
+                commands_complete,
+                commands_total,
                 read_ops: parts[0].parse().unwrap_or(0),
                 read_bytes: parts[2].parse().unwrap_or(0) * SECTOR_SIZE,
                 write_ops: parts[4].parse().unwrap_or(0),
@@ -70,6 +101,9 @@ impl Entry {
 impl Default for Entry {
     fn default() -> Self {
         Self {
+            commands_complete: 0,
+            commands_error: 0,
+            commands_total: 0,
             read_bytes: 0,
             read_ops: 0,
             write_bytes: 0,
@@ -85,6 +119,9 @@ impl Add for Entry {
 
     fn add(self, rhs: Entry) -> Entry {
         Entry {
+            commands_complete: self.commands_complete.wrapping_add(rhs.commands_complete),
+            commands_error: self.commands_error.wrapping_add(rhs.commands_error),
+            commands_total: self.commands_total.wrapping_add(rhs.commands_total),
             read_bytes: self.read_bytes.wrapping_add(rhs.read_bytes),
             read_ops: self.read_ops.wrapping_add(rhs.read_ops),
             write_bytes: self.write_bytes.wrapping_add(rhs.write_bytes),
@@ -106,6 +143,9 @@ impl<'a> Add<&'a Entry> for Entry {
 
     fn add(self, rhs: &'a Entry) -> Entry {
         Entry {
+            commands_complete: self.commands_complete.wrapping_add(rhs.commands_complete),
+            commands_error: self.commands_error.wrapping_add(rhs.commands_error),
+            commands_total: self.commands_total.wrapping_add(rhs.commands_total),
             read_bytes: self.read_bytes.wrapping_add(rhs.read_bytes),
             read_ops: self.read_ops.wrapping_add(rhs.read_ops),
             write_bytes: self.write_bytes.wrapping_add(rhs.write_bytes),
@@ -121,6 +161,9 @@ impl<'a, 'b> Add<&'b Entry> for &'a Entry {
 
     fn add(self, rhs: &'b Entry) -> Entry {
         Entry {
+            commands_complete: self.commands_complete.wrapping_add(rhs.commands_complete),
+            commands_error: self.commands_error.wrapping_add(rhs.commands_error),
+            commands_total: self.commands_total.wrapping_add(rhs.commands_total),
             read_bytes: self.read_bytes.wrapping_add(rhs.read_bytes),
             read_ops: self.read_ops.wrapping_add(rhs.read_ops),
             write_bytes: self.write_bytes.wrapping_add(rhs.write_bytes),
@@ -136,6 +179,9 @@ impl Sub for Entry {
 
     fn sub(self, rhs: Entry) -> Entry {
         Entry {
+            commands_complete: self.commands_complete.wrapping_sub(rhs.commands_complete),
+            commands_error: self.commands_error.wrapping_sub(rhs.commands_error),
+            commands_total: self.commands_total.wrapping_sub(rhs.commands_total),
             read_bytes: self.read_bytes.wrapping_sub(rhs.read_bytes),
             read_ops: self.read_ops.wrapping_sub(rhs.read_ops),
             write_bytes: self.write_bytes.wrapping_sub(rhs.write_bytes),
