@@ -35,8 +35,8 @@ mod bpf {
             let skel_builder = skel_builder.clang_args("-I src/common/bpf/aarch64");
 
             skel_builder
-                .build_and_generate(&tgt)
                 .source(&src)
+                .build_and_generate(&tgt)
                 .unwrap();
             println!("cargo:rerun-if-changed={src}");
         }
