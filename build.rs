@@ -26,13 +26,13 @@ mod bpf {
         for (sampler, prog) in SOURCES {
             let src = format!("src/samplers/{sampler}/{prog}/mod.bpf.c");
             let tgt = format!("{out_dir}/{sampler}_{prog}.bpf.rs");
-            let skel_builder = SkeletonBuilder::new();
+            let mut skel_builder = SkeletonBuilder::new();
 
             #[cfg(target_arch = "x86_64")]
-            let skel_builder = skel_builder.clang_args("-I src/common/bpf/x86_64");
+            skel_builder = skel_builder.clang_args("-I src/common/bpf/x86_64");
 
             #[cfg(target_arch = "aarch64")]
-            let skel_builder = skel_builder.clang_args("-I src/common/bpf/aarch64");
+            skel_builder = skel_builder.clang_args("-I src/common/bpf/aarch64");
 
             skel_builder
                 .source(&src)
