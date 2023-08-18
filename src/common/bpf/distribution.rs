@@ -23,11 +23,11 @@ pub struct Distribution<'a> {
     _map: &'a libbpf_rs::Map,
     mmap: memmap2::MmapMut,
     prev: [u64; HISTOGRAM_BUCKETS],
-    heatmap: &'static Heatmap,
+    heatmap: &'static Histogram,
 }
 
 impl<'a> Distribution<'a> {
-    pub fn new(map: &'a libbpf_rs::Map, heatmap: &'static Heatmap) -> Self {
+    pub fn new(map: &'a libbpf_rs::Map, heatmap: &'static Histogram) -> Self {
         let fd = map.as_fd().as_raw_fd();
         let file = unsafe { std::fs::File::from_raw_fd(fd as _) };
         let mmap = unsafe {
