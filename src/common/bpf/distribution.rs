@@ -52,6 +52,11 @@ impl<'a> Distribution<'a> {
 
         for (idx, bucket) in buckets.iter().enumerate() {
             let start = idx * std::mem::size_of::<u64>();
+
+            if start + 7 >= self.mmap.len() {
+                break;
+            }
+
             let val = u64::from_ne_bytes([
                 self.mmap[start + 0],
                 self.mmap[start + 1],
