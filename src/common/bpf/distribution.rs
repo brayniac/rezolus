@@ -24,7 +24,6 @@ use core::sync::atomic::Ordering;
 pub struct Distribution<'a> {
     _map: &'a libbpf_rs::Map,
     mmap: memmap2::MmapMut,
-    // prev: [u64; HISTOGRAM_BUCKETS],
     heatmap: &'static Histogram,
 }
 
@@ -42,7 +41,6 @@ impl<'a> Distribution<'a> {
         Self {
             _map: map,
             mmap,
-            // prev: [0; HISTOGRAM_BUCKETS],
             heatmap,
         }
     }
