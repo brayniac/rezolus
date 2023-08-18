@@ -1,5 +1,7 @@
 use super::*;
 
+use core::sync::atomic::Ordering;
+
 /// Represents a distribution in a BPF map. The distribution must be created
 /// with:
 ///
