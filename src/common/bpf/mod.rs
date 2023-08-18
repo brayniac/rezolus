@@ -82,7 +82,7 @@ impl<T: 'static + GetMap> Bpf<T> {
         })
     }
 
-    pub fn add_distribution(&mut self, name: &str, heatmap: &'static Heatmap) {
+    pub fn add_distribution(&mut self, name: &str, heatmap: &'static Histogram) {
         self.with_mut(|this| {
             this.distributions
                 .push(Distribution::new(this.skel.map(name), heatmap));
