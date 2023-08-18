@@ -46,6 +46,8 @@ impl<'a> Distribution<'a> {
     }
 
     pub fn refresh(&mut self, now: Instant) {
+        let buckets = self.heatmap.as_slice();
+
         for (idx, prev) in self.prev.iter_mut().enumerate() {
             let start = idx * std::mem::size_of::<u64>();
             let val = u64::from_ne_bytes([
@@ -59,14 +61,17 @@ impl<'a> Distribution<'a> {
                 self.mmap[start + 7],
             ]);
 
-            let delta = val - *prev;
+            buckets[idx].store(val, Ordering::Relaxed);
+            self.heatmap.snapshot(now);
 
-            *prev = val;
+            // let delta = val - *prev;
 
-            if delta > 0 {
-                let value = key_to_value(idx as u64);
-                let _ = self.heatmap.add(now, value as _, delta as _);
-            }
+            // *prev = val;
+
+            // if delta > 0 {
+            //     let value = key_to_value(idx as u64);
+            //     let _ = self.heatmap.add(now, value as _, delta as _);
+            // }
         }
     }
 }
