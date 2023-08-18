@@ -24,7 +24,7 @@ use core::sync::atomic::Ordering;
 pub struct Distribution<'a> {
     _map: &'a libbpf_rs::Map,
     mmap: memmap2::MmapMut,
-    prev: [u64; HISTOGRAM_BUCKETS],
+    // prev: [u64; HISTOGRAM_BUCKETS],
     heatmap: &'static Histogram,
 }
 
@@ -42,7 +42,7 @@ impl<'a> Distribution<'a> {
         Self {
             _map: map,
             mmap,
-            prev: [0; HISTOGRAM_BUCKETS],
+            // prev: [0; HISTOGRAM_BUCKETS],
             heatmap,
         }
     }
@@ -50,7 +50,7 @@ impl<'a> Distribution<'a> {
     pub fn refresh(&mut self, now: Instant) {
         let buckets = self.heatmap.as_slice();
 
-        for (idx, prev) in self.prev.iter_mut().enumerate() {
+        for (idx, bucket) in buckets.iter().enumerate() {
             let start = idx * std::mem::size_of::<u64>();
             let val = u64::from_ne_bytes([
                 self.mmap[start + 0],
@@ -63,17 +63,9 @@ impl<'a> Distribution<'a> {
                 self.mmap[start + 7],
             ]);
 
-            buckets[idx].store(val, Ordering::Relaxed);
-            self.heatmap.snapshot(now);
-
-            // let delta = val - *prev;
-
-            // *prev = val;
-
-            // if delta > 0 {
-            //     let value = key_to_value(idx as u64);
-            //     let _ = self.heatmap.add(now, value as _, delta as _);
-            // }
+            bucket.store(val, Ordering::Relaxed);
         }
+
+        self.heatmap.snapshot(now);
     }
 }
