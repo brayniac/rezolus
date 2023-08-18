@@ -249,15 +249,11 @@ checksum = "2da6da31387c7e4ef160ffab6d5e7f00c42626fe39aea70a7b0f1773f7dd6c1b"
 
 [[package]]
 name = "clocksource"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b90cc4cec392a6d97223f008b5da7a3c2c71aa6d5ffdf0e3e14d8b2432738387"
+version = "0.7.0"
+source = "git+https://github.com/brayniac/rustcommon?branch=free-running#74b68631bfae56b4528694bd9cbbdbebc822bdd1"
 dependencies = [
- "lazy_static",
  "libc",
- "mach",
  "time",
- "winapi 0.3.9",
 ]
 
 [[package]]
@@ -516,18 +512,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "heatmap"
-version = "0.7.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8cbf90780d798f8068becac8b922ab9901af29e2406e6327c4fda70353c58fa"
-dependencies = [
- "clocksource",
- "histogram",
- "parking_lot",
- "thiserror",
-]
-
-[[package]]
 name = "heck"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -541,10 +525,10 @@ checksum = "fed44880c466736ef9a5c5b5facefb5ed0785676d0c02d612db14e54f0d84286"
 
 [[package]]
 name = "histogram"
-version = "0.7.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0978bb4ae7b21dded5037bc688271ec01443b6eb2c7713aad75fce2cf670923"
+version = "0.8.0"
+source = "git+https://github.com/brayniac/rustcommon?branch=free-running#74b68631bfae56b4528694bd9cbbdbebc822bdd1"
 dependencies = [
+ "clocksource",
  "thiserror",
 ]
 
@@ -809,15 +793,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mach"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b823e83b2affd8f40a9ee8c29dbc56404c1e34cd2710921f2801e2cf29527afa"
-dependencies = [
- "libc",
-]
-
-[[package]]
 name = "memchr"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -852,11 +827,9 @@ dependencies = [
 
 [[package]]
 name = "metriken"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "283da0f4c6ea37b3d8f932e02d368f1c1f77b3072653a91a5cdef6931b6db889"
+version = "0.2.3"
+source = "git+https://github.com/brayniac/rustcommon?branch=free-running#74b68631bfae56b4528694bd9cbbdbebc822bdd1"
 dependencies = [
- "heatmap",
  "histogram",
  "linkme",
  "metriken-derive",
@@ -868,8 +841,7 @@ dependencies = [
 [[package]]
 name = "metriken-derive"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0213a7a12e01c66357d1f3491e2d7d74b2373540ea0a4bfd928a4c0e5e02f432"
+source = "git+https://github.com/brayniac/rustcommon?branch=free-running#74b68631bfae56b4528694bd9cbbdbebc822bdd1"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -1332,8 +1304,7 @@ dependencies = [
 [[package]]
 name = "ringlog"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c90d3d1e4db43daedfdae26373e7b4cb4f56b26f217fc8f661e4f439827b4a46"
+source = "git+https://github.com/brayniac/rustcommon?branch=free-running#74b68631bfae56b4528694bd9cbbdbebc822bdd1"
 dependencies = [
  "ahash",
  "clocksource",

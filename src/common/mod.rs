@@ -5,11 +5,11 @@ pub mod classic;
 
 mod nop;
 
-use metriken::Heatmap;
+use metriken::Histogram;
 use metriken::LazyCounter;
 pub use nop::Nop;
 
-type Instant = clocksource::Instant<clocksource::Nanoseconds<u64>>;
+type Instant = clocksource::precise::Instant;
 
 /// A `Counter` is a wrapper type that enables us to automatically calculate
 /// percentiles for secondly rates between subsequent counter observations.
@@ -19,13 +19,13 @@ type Instant = clocksource::Instant<clocksource::Nanoseconds<u64>>;
 pub struct Counter {
     previous: Option<u64>,
     counter: &'static LazyCounter,
-    heatmap: Option<&'static Heatmap>,
+    heatmap: Option<&'static Histogram>,
 }
 
 impl Counter {
     /// Construct a new counter that wraps a `metriken` counter and optionally a
     /// `metriken` heatmap.
-    pub fn new(counter: &'static LazyCounter, heatmap: Option<&'static Heatmap>) -> Self {
+    pub fn new(counter: &'static LazyCounter, heatmap: Option<&'static Histogram>) -> Self {
         Self {
             previous: None,
             counter,
@@ -112,7 +112,7 @@ macro_rules! heatmap {
             name = $name,
             crate = metriken
         )]
-        pub static $ident: metriken::Heatmap = metriken::Heatmap::new(0, 8, 64, core::time::Duration::from_secs(1), core::time::Duration::from_millis(100));
+        pub static $ident: metriken::Histogram = metriken::Histogram::new(0, 8, 64, core::time::Duration::from_secs(1), 10);
     };
     ($ident:ident, $name:tt, $description:tt) => {
         #[metriken::metric(
@@ -120,7 +120,7 @@ macro_rules! heatmap {
             description = $description,
             crate = metriken
         )]
-        pub static $ident: metriken::Heatmap = metriken::Heatmap::new(0, 8, 64, core::time::Duration::from_secs(1), core::time::Duration::from_millis(100));
+        pub static $ident: metriken::Histogram = metriken::Histogram::new(0, 8, 64, core::time::Duration::from_secs(1), 10);
     };
 }
 

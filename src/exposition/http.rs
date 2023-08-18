@@ -1,5 +1,5 @@
 use crate::PERCENTILES;
-use metriken::{Counter, Gauge, Heatmap};
+use metriken::{Counter, Gauge, Histogram};
 
 use warp::Filter;
 
@@ -85,7 +85,7 @@ mod handlers {
                     metric.formatted(metriken::Format::Prometheus),
                     gauge.value()
                 ));
-            } else if let Some(heatmap) = any.downcast_ref::<Heatmap>() {
+            } else if let Some(heatmap) = any.downcast_ref::<Histogram>() {
                 for (_label, percentile) in PERCENTILES {
                     if let Some(Ok(bucket)) = heatmap.percentile(*percentile) {
                         data.push(format!(
@@ -93,7 +93,7 @@ mod handlers {
                             metric.name(),
                             metric.name(),
                             percentile,
-                            bucket.high()
+                            bucket.upper()
                         ));
                     }
                 }
@@ -135,14 +135,14 @@ mod handlers {
                     metric.formatted(metriken::Format::Simple),
                     gauge.value()
                 ));
-            } else if let Some(heatmap) = any.downcast_ref::<Heatmap>() {
+            } else if let Some(heatmap) = any.downcast_ref::<Histogram>() {
                 for (label, p) in PERCENTILES {
                     if let Some(Ok(bucket)) = heatmap.percentile(*p) {
                         data.push(format!(
                             "{}/{}: {}",
                             metric.formatted(metriken::Format::Simple),
                             label,
-                            bucket.high()
+                            bucket.upper()
                         ));
                     }
                 }

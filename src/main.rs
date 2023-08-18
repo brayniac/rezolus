@@ -4,8 +4,8 @@ use linkme::distributed_slice;
 use metriken::Lazy;
 use ringlog::*;
 
-type Duration = clocksource::Duration<clocksource::Nanoseconds<u64>>;
-type Instant = clocksource::Instant<clocksource::Nanoseconds<u64>>;
+type Duration = clocksource::precise::Duration;
+type Instant = clocksource::precise::Instant;
 
 mod common;
 mod config;
