@@ -55,7 +55,7 @@ impl<'a> Distribution<'a> {
 
         if values.len() == buckets.len() {
             for (value, bucket) in values.iter().zip(buckets.iter()) {
-                bucket.store(value, Ordering::Relaxed)
+                bucket.store(*value, Ordering::Relaxed)
             }
         } else {
             for (idx, bucket) in buckets.iter().enumerate() {
