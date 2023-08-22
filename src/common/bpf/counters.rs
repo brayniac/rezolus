@@ -55,22 +55,32 @@ impl<'a> Counters<'a> {
             *value = 0;
         }
 
-        for cpu in 0..MAX_CPUS {
-            for idx in 0..self.counters.len() {
-                let start =
-                    (cpu * self.cachelines * CACHELINE_SIZE) + (idx * std::mem::size_of::<u64>());
-                let value = u64::from_ne_bytes([
-                    self.mmap[start + 0],
-                    self.mmap[start + 1],
-                    self.mmap[start + 2],
-                    self.mmap[start + 3],
-                    self.mmap[start + 4],
-                    self.mmap[start + 5],
-                    self.mmap[start + 6],
-                    self.mmap[start + 7],
-                ]);
+        let (_prefix, values, _suffix) = unsafe { self.mmap.align_to::<u64>() };
 
-                self.values[idx] = self.values[idx].wrapping_add(value);
+        if values.len() == (MAX_CPUS * self.cachelines * CACHELINE_SIZE) / std::mem::size_of::<u64>() {
+            for cpu in 0..MAX_CPUS {
+                for idx in 0..self.counters.len() {
+                    self.values[idx] = self.values[idx].wrapping_add(values[idx + cpu * self.cachelines * CACHELINE_SIZE / std::mem::size_of::<u64>()]);
+                }
+            }
+        } else {
+            for cpu in 0..MAX_CPUS {
+                for idx in 0..self.counters.len() {
+                    let start =
+                        (cpu * self.cachelines * CACHELINE_SIZE) + (idx * std::mem::size_of::<u64>());
+                    let value = u64::from_ne_bytes([
+                        self.mmap[start + 0],
+                        self.mmap[start + 1],
+                        self.mmap[start + 2],
+                        self.mmap[start + 3],
+                        self.mmap[start + 4],
+                        self.mmap[start + 5],
+                        self.mmap[start + 6],
+                        self.mmap[start + 7],
+                    ]);
+
+                    self.values[idx] = self.values[idx].wrapping_add(value);
+                }
             }
         }
 
