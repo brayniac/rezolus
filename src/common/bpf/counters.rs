@@ -32,10 +32,11 @@ impl<'a> Counters<'a> {
         let ncounters = counters.len();
 
         // determine how many cachelines in each per cpu counter region
-        let mut cachelines = counters.len() / std::mem::size_of::<u64>();
-        if (cachelines * std::mem::size_of::<u64>()) < counters.len() {
-            cachlines += 1;
-        }
+        let cachelines = if counters.len() % std::mem::size_of::<u64>() == 0 {
+            counters.len() / std::mem::size_of::<u64>()
+        } else {
+            counters.len() / std::mem::size_of::<u64>() + 1
+        };
 
         let fd = map.as_fd().as_raw_fd();
         let file = unsafe { std::fs::File::from_raw_fd(fd as _) };
