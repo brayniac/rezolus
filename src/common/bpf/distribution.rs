@@ -51,7 +51,7 @@ impl<'a> Distribution<'a> {
         // If the mmap'd region is properly aligned we can more efficiently
         // update the histogram. Otherwise, fall-back to the old strategy.
 
-        let (prefix, values, suffix) = self.mmap.align_to::<u64>();
+        let (_prefix, values, _suffix) = unsafe { self.mmap.align_to::<u64>() };
 
         if values.len() == buckets.len() {
             for (value, bucket) in values.iter().zip(buckets.iter()) {
