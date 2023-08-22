@@ -1,7 +1,7 @@
 use backtrace::Backtrace;
 use clap::{Arg, Command};
 use linkme::distributed_slice;
-use metriken::{Lazy};
+use metriken::Lazy;
 use ringlog::*;
 
 type Duration = clocksource::precise::Duration;
