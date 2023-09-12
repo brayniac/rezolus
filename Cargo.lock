@@ -249,8 +249,8 @@ checksum = "2da6da31387c7e4ef160ffab6d5e7f00c42626fe39aea70a7b0f1773f7dd6c1b"
 
 [[package]]
 name = "clocksource"
-version = "0.7.0"
-source = "git+https://github.com/brayniac/rustcommon?branch=free-running#d4c7eb285fb49ece7305fb4e569af091ee9134fc"
+version = "0.7.1"
+source = "git+https://github.com/brayniac/rustcommon?branch=free-running#028e1ccbba9bcf0ca61367509ba40e59267a91b2"
 dependencies = [
  "libc",
  "time",
@@ -315,6 +315,12 @@ dependencies = [
  "quote",
  "syn 1.0.109",
 ]
+
+[[package]]
+name = "deranged"
+version = "0.3.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f2696e8a945f658fd14dc3b87242e6b80cd0f36ff04ea560fa39082368847946"
 
 [[package]]
 name = "digest"
@@ -526,7 +532,7 @@ checksum = "fed44880c466736ef9a5c5b5facefb5ed0785676d0c02d612db14e54f0d84286"
 [[package]]
 name = "histogram"
 version = "0.8.0"
-source = "git+https://github.com/brayniac/rustcommon?branch=free-running#d4c7eb285fb49ece7305fb4e569af091ee9134fc"
+source = "git+https://github.com/brayniac/rustcommon?branch=free-running#028e1ccbba9bcf0ca61367509ba40e59267a91b2"
 dependencies = [
  "clocksource",
  "thiserror",
@@ -828,7 +834,7 @@ dependencies = [
 [[package]]
 name = "metriken"
 version = "0.2.3"
-source = "git+https://github.com/brayniac/rustcommon?branch=free-running#d4c7eb285fb49ece7305fb4e569af091ee9134fc"
+source = "git+https://github.com/brayniac/rustcommon?branch=free-running#028e1ccbba9bcf0ca61367509ba40e59267a91b2"
 dependencies = [
  "histogram",
  "linkme",
@@ -841,7 +847,7 @@ dependencies = [
 [[package]]
 name = "metriken-derive"
 version = "0.2.0"
-source = "git+https://github.com/brayniac/rustcommon?branch=free-running#d4c7eb285fb49ece7305fb4e569af091ee9134fc"
+source = "git+https://github.com/brayniac/rustcommon?branch=free-running#028e1ccbba9bcf0ca61367509ba40e59267a91b2"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -1304,7 +1310,7 @@ dependencies = [
 [[package]]
 name = "ringlog"
 version = "0.2.0"
-source = "git+https://github.com/brayniac/rustcommon?branch=free-running#d4c7eb285fb49ece7305fb4e569af091ee9134fc"
+source = "git+https://github.com/brayniac/rustcommon?branch=free-running#028e1ccbba9bcf0ca61367509ba40e59267a91b2"
 dependencies = [
  "ahash",
  "clocksource",
@@ -1403,18 +1409,18 @@ dependencies = [
 
 [[package]]
 name = "serde"
-version = "1.0.180"
+version = "1.0.188"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ea67f183f058fe88a4e3ec6e2788e003840893b91bac4559cabedd00863b3ed"
+checksum = "cf9e0fcba69a370eed61bcf2b728575f726b50b55cba78064753d708ddc7549e"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.180"
+version = "1.0.188"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24e744d7782b686ab3b73267ef05697159cc0e5abbed3f47f9933165e5219036"
+checksum = "4eca7ac642d82aa35b60049a6eccb4be6be75e599bd2e9adb5f875a737654af2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1596,30 +1602,31 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.39"
+version = "1.0.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5ab016db510546d856297882807df8da66a16fb8c4101cb8b30054b0d5b2d9c"
+checksum = "9d6d7a740b8a666a7e828dd00da9c0dc290dff53154ea77ac109281de90589b7"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.39"
+version = "1.0.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5420d42e90af0c38c3290abcca25b9b3bdf379fc9f55c528f53a269d9c9a267e"
+checksum = "49922ecae66cc8a249b77e68d1d0623c1b2c514f0060c27cdc68bd62a1219d35"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.28",
 ]
 
 [[package]]
 name = "time"
-version = "0.3.20"
+version = "0.3.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd0cbfecb4d19b5ea75bb31ad904eb5b9fa13f21079c3b92017ebdf4999a5890"
+checksum = "17f6bb557fd245c28e6411aa56b6403c689ad95061f50e4be16c274e70a17e48"
 dependencies = [
+ "deranged",
  "itoa",
  "serde",
  "time-core",
@@ -1628,15 +1635,15 @@ dependencies = [
 
 [[package]]
 name = "time-core"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e153e1f1acaef8acc537e68b44906d2db6436e2b35ac2c6b42640fff91f00fd"
+checksum = "7300fbefb4dadc1af235a9cef3737cea692a9d97e1b9cbcd4ebdae6f8868e6fb"
 
 [[package]]
 name = "time-macros"
-version = "0.2.8"
+version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd80a657e71da814b8e5d60d3374fc6d35045062245d80224748ae522dd76f36"
+checksum = "1a942f44339478ef67935ab2bbaec2fb0322496cf3cbe84b261e06ac3814c572"
 dependencies = [
  "time-core",
 ]

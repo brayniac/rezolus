@@ -44,11 +44,15 @@ mod filters {
 }
 
 mod handlers {
+    use metriken::{Duration, UnixInstant};
     use super::*;
     use core::convert::Infallible;
 
     pub async fn prometheus_stats() -> Result<impl warp::Reply, Infallible> {
         let mut data = Vec::new();
+
+        let end = UnixInstant::now();
+        let start = end - Duration::from_millis(1);
 
         for metric in &metriken::metrics() {
             let any = match metric.as_any() {
@@ -85,16 +89,20 @@ mod handlers {
                     metric.formatted(metriken::Format::Prometheus),
                     gauge.value()
                 ));
-            } else if let Some(heatmap) = any.downcast_ref::<Histogram>() {
-                for (_label, percentile) in PERCENTILES {
-                    if let Some(Ok(bucket)) = heatmap.percentile(*percentile) {
-                        data.push(format!(
-                            "# TYPE {} gauge\n{}{{percentile=\"{:02}\"}} {}",
-                            metric.name(),
-                            metric.name(),
-                            percentile,
-                            bucket.upper()
-                        ));
+            } else if let Some(histogram) = any.downcast_ref::<Histogram>() {
+                let percentiles: Vec<f64> = PERCENTILES.iter().map(|v| v.1).collect();
+
+                if let Some(Ok(snapshot)) = histogram.snapshot_between(start..end) {
+                    if let Ok(result) = snapshot.percentiles(&percentiles) {
+                        for (percentile, value) in result.iter().map(|(p, b)| (p, b.end())) {
+                            data.push(format!(
+                                "# TYPE {} gauge\n{}{{percentile=\"{:02}\"}} {}",
+                                metric.name(),
+                                metric.name(),
+                                percentile,
+                                value,
+                            ));
+                        }
                     }
                 }
             }
@@ -110,6 +118,9 @@ mod handlers {
 
     pub async fn human_stats() -> Result<impl warp::Reply, Infallible> {
         let mut data = Vec::new();
+
+        let end = UnixInstant::now();
+        let start = end - Duration::from_millis(1);
 
         for metric in &metriken::metrics() {
             let any = match metric.as_any() {
@@ -135,15 +146,19 @@ mod handlers {
                     metric.formatted(metriken::Format::Simple),
                     gauge.value()
                 ));
-            } else if let Some(heatmap) = any.downcast_ref::<Histogram>() {
-                for (label, p) in PERCENTILES {
-                    if let Some(Ok(bucket)) = heatmap.percentile(*p) {
-                        data.push(format!(
-                            "{}/{}: {}",
-                            metric.formatted(metriken::Format::Simple),
-                            label,
-                            bucket.upper()
-                        ));
+            } else if let Some(histogram) = any.downcast_ref::<Histogram>() {
+                let percentiles: Vec<f64> = PERCENTILES.iter().map(|v| v.1).collect();
+
+                if let Some(Ok(snapshot)) = histogram.snapshot_between(start..end) {
+                    if let Ok(result) = snapshot.percentiles(&percentiles) {
+                        for (label, value) in PERCENTILES.iter().map(|v| v.0).zip(result.iter().map(|(_, b)| b.end())) {
+                            data.push(format!(
+                                "{}/{}: {}",
+                                metric.formatted(metriken::Format::Simple),
+                                label,
+                                value,
+                            ));
+                        }
                     }
                 }
             }
