@@ -79,7 +79,5 @@ impl<'a> Distribution<'a> {
                 bucket.store(val, Ordering::Relaxed);
             }
         }
-
-        self.heatmap.snapshot(now);
     }
 }
