@@ -49,10 +49,10 @@ mod handlers {
     use core::convert::Infallible;
 
     pub async fn prometheus_stats() -> Result<impl warp::Reply, Infallible> {
-        let mut data = Vec::new();
-
         let end = UnixInstant::now();
-        let start = end - Duration::from_millis(1);
+        let start = end - Duration::from_secs(1);
+
+        let mut data = Vec::new();
 
         for metric in &metriken::metrics() {
             let any = match metric.as_any() {
@@ -117,10 +117,10 @@ mod handlers {
     }
 
     pub async fn human_stats() -> Result<impl warp::Reply, Infallible> {
-        let mut data = Vec::new();
-
         let end = UnixInstant::now();
-        let start = end - Duration::from_millis(1);
+        let start = end - Duration::from_secs(1);
+
+        let mut data = Vec::new();
 
         for metric in &metriken::metrics() {
             let any = match metric.as_any() {
