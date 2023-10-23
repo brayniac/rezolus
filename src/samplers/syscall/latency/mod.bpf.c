@@ -190,7 +190,6 @@ int sys_exit(struct trace_event_raw_sys_exit *args)
 	}
 
 	// increment latency histogram for the syscall family
-	idx = 0;
 	if (syscall_id < MAX_SYSCALL_ID) {
 		u32 *counter_offset = bpf_map_lookup_elem(&syscall_lut, &syscall_id);
 
