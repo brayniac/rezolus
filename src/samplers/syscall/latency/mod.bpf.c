@@ -202,7 +202,7 @@ int sys_exit(struct trace_event_raw_sys_exit *args)
 			cnt = bpf_map_lookup_elem(&read_latency, &idx);
 		} else if (*counter_offset == 2) {
 			cnt = bpf_map_lookup_elem(&write_latency, &idx);
-		} else if (*counter_offsert == 3) {
+		} else if (*counter_offset == 3) {
 			cnt = bpf_map_lookup_elem(&poll_latency, &idx);
 		} else if (*counter_offset == 4) {
 			cnt = bpf_map_lookup_elem(&lock_latency, &idx);
