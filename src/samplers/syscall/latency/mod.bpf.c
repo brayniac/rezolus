@@ -194,7 +194,7 @@ int sys_exit(struct trace_event_raw_sys_exit *args)
 	if (syscall_id < MAX_SYSCALL_ID) {
 		u32 *counter_offset = bpf_map_lookup_elem(&syscall_lut, &syscall_id);
 
-		if !(counter_offset && *counter_offset && *counter_offset < COUNTER_GROUP_WIDTH) {
+		if (!counter_offset || !*counter_offset || *counter_offset >= COUNTER_GROUP_WIDTH) {
 			return 0;
 		}
 
