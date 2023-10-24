@@ -35,7 +35,7 @@ pub struct Perf {
     prev: Instant,
     next: Instant,
     interval: Duration,
-    groups: Vec<(Arc<Reading>, std::thread::JoinHandle)>,
+    groups: Vec<(Arc<Reading>, std::thread::JoinHandle<usize>)>,
     counters: Vec<Vec<DynBoxedMetric<metriken::Counter>>>,
 }
 
