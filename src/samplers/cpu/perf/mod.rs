@@ -89,7 +89,7 @@ impl Perf {
                         core_affinity::set_for_current(core_affinity::CoreId { id: cpu.id() });
 
                         loop {
-                            std::thread::sleep(core::time::Duration::from_millis(interval));
+                            std::thread::sleep(interval);
                             let _ = group.refresh();
                         }
                     });
