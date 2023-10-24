@@ -65,8 +65,6 @@ impl Reading {
 
 /// Per-cpu perf event group that measure all tasks on one CPU
 pub struct PerfGroup {
-    /// The CPU this group measures
-    id: usize,
     /// Executed cycles and also the group leader
     cycles: perf_event::Counter,
     /// Retired instructions

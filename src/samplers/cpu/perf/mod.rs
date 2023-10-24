@@ -81,26 +81,16 @@ impl Perf {
             );
 
             match PerfGroup::new(cpu.id()) {
-                Ok(mut g) => {
-                    let reading = g.reading();
+                Ok(mut group) => {
+                    let reading = group.reading();
                     let interval = config.interval(NAME);
 
                     let join_handle = std::thread::spawn(move || {
                         core_affinity::set_for_current(core_affinity::CoreId { id: cpu.id() });
 
-                        let mut next = Instant::now();
-
                         loop {
-                            let now = Instant::now();
-
-                            if now < next {
-                                std::thread::sleep(core::time::Duration::from_millis(10));
-                                continue;
-                            }
-
-                            g.refresh();
-
-                            next = next + interval;
+                            std::thread::sleep(core::time::Duration::from_millis(interval));
+                            let _ = group.refresh();
                         }
                     });
 
