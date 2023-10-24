@@ -35,7 +35,7 @@ pub struct Perf {
     prev: Instant,
     next: Instant,
     interval: Duration,
-    groups: Vec<(Arc<Reading>, std::thread::JoinHandle<usize>)>,
+    groups: Vec<(Arc<Reading>, std::thread::JoinHandle<_>)>,
     counters: Vec<Vec<DynBoxedMetric<metriken::Counter>>>,
 }
 
@@ -81,14 +81,14 @@ impl Perf {
             );
 
             match PerfGroup::new(cpu.id()) {
-                Ok(g) => {
+                Ok(mut g) => {
                     let reading = g.reading();
                     let interval = config.interval(NAME);
 
                     let join_handle = std::thread::spawn(move || {
                         core_affinity::set_for_current(core_affinity::CoreId { id: cpu.id() });
 
-                        let next = Instant::now();
+                        let mut next = Instant::now();
 
                         loop {
                             let now = Instant::now();
