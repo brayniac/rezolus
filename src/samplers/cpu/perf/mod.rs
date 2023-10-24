@@ -7,6 +7,7 @@ use perf_event::events::Hardware;
 use perf_event::{Builder, ReadFormat};
 use samplers::hwinfo::hardware_info;
 use std::sync::atomic::{AtomicUsize, AtomicU64, Ordering};
+use std::sync::mpsc::SyncSender;
 
 mod perf_group;
 mod proc_cpuinfo;
@@ -91,7 +92,7 @@ impl Perf {
                         core_affinity::set_for_current(core_affinity::CoreId { id: cpu.id() });
 
                         loop {
-                            let _ = receiver.recv().unwrap();
+                            receiver.recv().unwrap();
                             let _ = group.refresh();
                         }
                     });
