@@ -64,8 +64,6 @@ impl Perf {
             "cpu/frequency",
         ];
 
-        let trigger = Arc::new((Mutex::new(false), Condvar::new()));
-
         for cpu in cpus {
             counters.push(
                 metrics
