@@ -6,6 +6,7 @@ use perf_event::events::x86::{Msr, MsrId};
 use perf_event::events::Hardware;
 use perf_event::{Builder, ReadFormat};
 use samplers::hwinfo::hardware_info;
+use std::sync::atomic::{AtomicUsize, AtomicU64, Ordering};
 
 mod perf_group;
 mod proc_cpuinfo;
@@ -85,7 +86,7 @@ impl Perf {
                     let interval = config.interval(NAME);
 
                     std::thread::spawn(move || {
-                        core_affinity::set_for_current(core_affinity::CoreID { id: cpu.id() });
+                        core_affinity::set_for_current(core_affinity::CoreId { id: cpu.id() });
 
                         let next = Instant::now();
 
@@ -145,22 +146,30 @@ impl Sampler for Perf {
         let mut avg_running_frequency = 0;
 
         for (reading, _) in &mut self.groups {
-            nr_active_groups += 1;
-            total_cycles += reading.cycles;
-            total_instructions += reading.instructions;
-            avg_ipkc += reading.ipkc;
-            avg_ipus += reading.ipus;
-            avg_base_frequency += reading.base_frequency_mhz;
-            avg_running_frequency += reading.running_frequency_mhz;
-            let _ = CPU_IPKC_HISTOGRAM.increment(reading.ipkc);
-            let _ = CPU_IPUS_HISTOGRAM.increment(reading.ipus);
-            let _ = CPU_FREQUENCY_HISTOGRAM.increment(reading.running_frequency_mhz);
+            let cycles = reading.cycles.load(Ordering::Relaxed);
+            let instructions = reading.instructions.load(Ordering::Relaxed);
+            let ipkc = reading.ipkc.load(Ordering::Relaxed);
+            let ipus = reading.ipus.load(Ordering::Relaxed);
+            let base_frequency_mhz = reading.base_frequency_mhz.load(Ordering::Relaxed);
+            let running_frequency_mhz = reading.running_frequency_mhz.load(Ordering::Relaxed);
 
-            self.counters[reading.id][0].set(reading.cycles);
-            self.counters[reading.id][1].set(reading.instructions);
-            self.counters[reading.id][2].set(reading.ipkc);
-            self.counters[reading.id][3].set(reading.ipus);
-            self.counters[reading.id][4].set(reading.running_frequency_mhz);
+            nr_active_groups += 1;
+            total_cycles += cycles;
+            total_instructions += instructions;
+            avg_ipkc += ipkc;
+            avg_ipus += ipus;
+            avg_base_frequency += base_frequency_mhz;
+            avg_running_frequency += running_frequency_mhz;
+
+            let _ = CPU_IPKC_HISTOGRAM.increment(ipkc);
+            let _ = CPU_IPUS_HISTOGRAM.increment(ipus);
+            let _ = CPU_FREQUENCY_HISTOGRAM.increment(running_frequency_mhz);
+
+            self.counters[reading.id][0].set(cycles);
+            self.counters[reading.id][1].set(instructions);
+            self.counters[reading.id][2].set(ipkc);
+            self.counters[reading.id][3].set(ipus);
+            self.counters[reading.id][4].set(running_frequency_mhz);
         }
 
         // we increase the total cycles executed in the last sampling period instead of using the cycle perf event value to handle offlined CPUs.
