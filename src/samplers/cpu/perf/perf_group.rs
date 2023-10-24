@@ -156,7 +156,6 @@ impl PerfGroup {
             .ok();
 
         return Ok(Self {
-            id,
             cycles,
             instructions,
             tsc,
