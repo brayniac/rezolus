@@ -34,7 +34,7 @@ pub struct Perf {
     prev: Instant,
     next: Instant,
     interval: Duration,
-    groups: Vec<PerfGroup>,
+    groups: Vec<(Arc<Reading>, JoinHandle)>,
     counters: Vec<Vec<DynBoxedMetric<metriken::Counter>>>,
 }
 
@@ -80,7 +80,29 @@ impl Perf {
             );
 
             match PerfGroup::new(cpu.id()) {
-                Ok(g) => groups.push(g),
+                Ok(g) => {
+                    let reading = g.reading();
+                    let interval = config.interval(NAME);
+
+                    std::thread::spawn(move || {
+                        let next = Instant::now();
+
+                        loop {
+                            let now = Instant::now();
+
+                            if now < self.next {
+                                std::thread::sleep(core::time::Duration::from_millis(1));
+                                continue;
+                            }
+
+                            g.refresh();
+
+                            next = next + interval;
+                        }
+                    });
+
+                    groups.push((reading, join_handle));
+                }
                 Err(_) => {
                     warn!("Failed to create the perf group on CPU {}", cpu.id());
                     // we want to continue because it's possible that this CPU is offline
@@ -120,25 +142,23 @@ impl Sampler for Perf {
         let mut avg_base_frequency = 0;
         let mut avg_running_frequency = 0;
 
-        for group in &mut self.groups {
-            if let Ok(reading) = group.get_metrics() {
-                nr_active_groups += 1;
-                total_cycles += reading.cycles;
-                total_instructions += reading.instructions;
-                avg_ipkc += reading.ipkc;
-                avg_ipus += reading.ipus;
-                avg_base_frequency += reading.base_frequency_mhz;
-                avg_running_frequency += reading.running_frequency_mhz;
-                let _ = CPU_IPKC_HISTOGRAM.increment(reading.ipkc);
-                let _ = CPU_IPUS_HISTOGRAM.increment(reading.ipus);
-                let _ = CPU_FREQUENCY_HISTOGRAM.increment(reading.running_frequency_mhz);
+        for (reading, _) in &mut self.groups {
+            nr_active_groups += 1;
+            total_cycles += reading.cycles;
+            total_instructions += reading.instructions;
+            avg_ipkc += reading.ipkc;
+            avg_ipus += reading.ipus;
+            avg_base_frequency += reading.base_frequency_mhz;
+            avg_running_frequency += reading.running_frequency_mhz;
+            let _ = CPU_IPKC_HISTOGRAM.increment(reading.ipkc);
+            let _ = CPU_IPUS_HISTOGRAM.increment(reading.ipus);
+            let _ = CPU_FREQUENCY_HISTOGRAM.increment(reading.running_frequency_mhz);
 
-                self.counters[reading.id][0].set(reading.cycles);
-                self.counters[reading.id][1].set(reading.instructions);
-                self.counters[reading.id][2].set(reading.ipkc);
-                self.counters[reading.id][3].set(reading.ipus);
-                self.counters[reading.id][4].set(reading.running_frequency_mhz);
-            }
+            self.counters[reading.id][0].set(reading.cycles);
+            self.counters[reading.id][1].set(reading.instructions);
+            self.counters[reading.id][2].set(reading.ipkc);
+            self.counters[reading.id][3].set(reading.ipus);
+            self.counters[reading.id][4].set(reading.running_frequency_mhz);
         }
 
         // we increase the total cycles executed in the last sampling period instead of using the cycle perf event value to handle offlined CPUs.

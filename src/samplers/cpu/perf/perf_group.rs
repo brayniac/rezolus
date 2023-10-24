@@ -40,13 +40,27 @@ impl GroupData {
 
 pub struct Reading {
     /// The CPU this reading is from
-    pub id: usize,
-    pub cycles: u64,
-    pub instructions: u64,
-    pub ipkc: u64,
-    pub ipus: u64,
-    pub base_frequency_mhz: u64,
-    pub running_frequency_mhz: u64,
+    pub id: AtomicUsize,
+    pub cycles: AtomicU64,
+    pub instructions: AtomicU64,
+    pub ipkc: AtomicU64,
+    pub ipus: AtomicU64,
+    pub base_frequency_mhz: AtomicU64,
+    pub running_frequency_mhz: AtomicU64,
+}
+
+impl Reading {
+    pub fn new(id: usize) -> Self {
+        Self {
+            id: AtomicUsize::new(id),
+            cycles: AtomicU64::new(0),
+            instructions: AtomicU64::new(0),
+            ipkc: AtomicU64::new(0),
+            ipus: AtomicU64::new(0),
+            base_frequency_mhz: AtomicU64::new(0),
+            running_frequency_mhz: AtomicU64::new(0),
+        }
+    }
 }
 
 /// Per-cpu perf event group that measure all tasks on one CPU
@@ -65,6 +79,7 @@ pub struct PerfGroup {
     mperf: perf_event::Counter,
     /// prev holds the previous readings
     prev: Option<GroupData>,
+    reading: Arc<Reading>,
 }
 
 impl PerfGroup {
@@ -150,10 +165,15 @@ impl PerfGroup {
             aperf,
             mperf,
             prev,
+            reading: Arc::new(Reading::new(id)),
         });
     }
 
-    pub fn get_metrics(&mut self) -> Result<Reading, ()> {
+    pub fn reading(&self) -> Arc<Reading> {
+        self.reading.clone()
+    }
+
+    pub fn refresh_metrics(&mut self) -> Result<(), ()> {
         let current = self
             .cycles
             .read_group()
@@ -210,14 +230,15 @@ impl PerfGroup {
 
         self.prev = Some(current);
 
-        Ok(Reading {
-            id: self.id,
-            cycles,
-            instructions,
-            ipkc,
-            ipus,
-            base_frequency_mhz,
-            running_frequency_mhz,
-        })
+        self.cycles.store(cycles, Ordering::Relaxed);
+        self.instructions.store(instructions, Ordering::Relaxed);
+        self.ipkc.store(ipkc, Ordering::Relaxed);
+        self.ipus.store(ipus, Ordering::Relaxed);
+        self.base_frequency_mhz
+            .store(base_frequency_mhz, Ordering::Relaxed);
+        self.running_frequency_mhz
+            .store(running_frequency_mhz, Ordering::Relaxed);
+
+        Ok(())
     }
 }
