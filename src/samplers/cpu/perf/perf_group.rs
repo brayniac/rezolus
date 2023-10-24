@@ -173,7 +173,7 @@ impl PerfGroup {
         self.reading.clone()
     }
 
-    pub fn refresh_metrics(&mut self) -> Result<(), ()> {
+    pub fn refresh(&mut self) -> Result<(), ()> {
         let current = self
             .cycles
             .read_group()

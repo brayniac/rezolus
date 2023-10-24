@@ -85,12 +85,14 @@ impl Perf {
                     let interval = config.interval(NAME);
 
                     std::thread::spawn(move || {
+                        core_affinity::set_for_current(core_affinity::CoreID { id: cpu.id() });
+
                         let next = Instant::now();
 
                         loop {
                             let now = Instant::now();
 
-                            if now < self.next {
+                            if now < next {
                                 std::thread::sleep(core::time::Duration::from_millis(1));
                                 continue;
                             }

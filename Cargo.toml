@@ -15,6 +15,7 @@ systeminfo = { workspace = true }
 
 backtrace = "0.3.69"
 clap = "4.3.24"
+core_affinity = "0.8.1"
 humantime = "2.1.0"
 lazy_static = "1.4.0"
 libc = "0.2.147"
