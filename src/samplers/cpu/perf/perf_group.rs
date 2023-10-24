@@ -230,13 +230,13 @@ impl PerfGroup {
 
         self.prev = Some(current);
 
-        self.cycles.store(cycles, Ordering::Relaxed);
-        self.instructions.store(instructions, Ordering::Relaxed);
-        self.ipkc.store(ipkc, Ordering::Relaxed);
-        self.ipus.store(ipus, Ordering::Relaxed);
-        self.base_frequency_mhz
+        self.reading.cycles.store(cycles, Ordering::Relaxed);
+        self.reading.instructions.store(instructions, Ordering::Relaxed);
+        self.reading.ipkc.store(ipkc, Ordering::Relaxed);
+        self.reading.ipus.store(ipus, Ordering::Relaxed);
+        self.reading.base_frequency_mhz
             .store(base_frequency_mhz, Ordering::Relaxed);
-        self.running_frequency_mhz
+        self.reading.running_frequency_mhz
             .store(running_frequency_mhz, Ordering::Relaxed);
 
         Ok(())
