@@ -146,6 +146,7 @@ impl Sampler for Perf {
         let mut avg_running_frequency = 0;
 
         for (reading, _) in &mut self.groups {
+            let id = reading.id.load(Ordering::Relaxed);
             let cycles = reading.cycles.load(Ordering::Relaxed);
             let instructions = reading.instructions.load(Ordering::Relaxed);
             let ipkc = reading.ipkc.load(Ordering::Relaxed);
@@ -165,11 +166,11 @@ impl Sampler for Perf {
             let _ = CPU_IPUS_HISTOGRAM.increment(ipus);
             let _ = CPU_FREQUENCY_HISTOGRAM.increment(running_frequency_mhz);
 
-            self.counters[reading.id][0].set(cycles);
-            self.counters[reading.id][1].set(instructions);
-            self.counters[reading.id][2].set(ipkc);
-            self.counters[reading.id][3].set(ipus);
-            self.counters[reading.id][4].set(running_frequency_mhz);
+            self.counters[id][0].set(cycles);
+            self.counters[id][1].set(instructions);
+            self.counters[id][2].set(ipkc);
+            self.counters[id][3].set(ipus);
+            self.counters[id][4].set(running_frequency_mhz);
         }
 
         // we increase the total cycles executed in the last sampling period instead of using the cycle perf event value to handle offlined CPUs.
