@@ -82,7 +82,7 @@ impl Perf {
 
             match PerfGroup::new(cpu.id()) {
                 Ok(mut group) => {
-                    let (sender, receiver) = std::sync::mpsc::channel(1);
+                    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
 
                     let reading = group.reading();
                     let interval = config.interval(NAME);
