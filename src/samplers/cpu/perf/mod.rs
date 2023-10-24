@@ -83,10 +83,11 @@ impl Perf {
 
             match PerfGroup::new(cpu.id()) {
                 Ok(mut group) => {
+                    // we use a sync channel to block the thread until we want
+                    // to refresh the counters
                     let (sender, receiver) = std::sync::mpsc::sync_channel(1);
 
                     let reading = group.reading();
-                    let interval = config.interval(NAME);
 
                     let join_handle = std::thread::spawn(move || {
                         core_affinity::set_for_current(core_affinity::CoreId { id: cpu.id() });
@@ -138,9 +139,14 @@ impl Sampler for Perf {
         let mut avg_base_frequency = 0;
         let mut avg_running_frequency = 0;
 
-        for (sender, reading, _) in &mut self.groups {
+        // refresh all counter groups
+        for (sender, _, _) in &mut self.groups {
+            // trigger a refresh of the counters
             sender.send(()).unwrap();
+        }
 
+        // read data for all counter groups
+        for (_, reading, _) in &mut self.groups {
             let id = reading.id.load(Ordering::Relaxed);
             let cycles = reading.cycles.load(Ordering::Relaxed);
             let instructions = reading.instructions.load(Ordering::Relaxed);
