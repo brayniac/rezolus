@@ -35,7 +35,7 @@ pub struct Perf {
     prev: Instant,
     next: Instant,
     interval: Duration,
-    groups: Vec<(Arc<Reading>, std::thread::JoinHandle<()>)>,
+    groups: Vec<(SyncSender<()>, Arc<Reading>, std::thread::JoinHandle<()>)>,
     counters: Vec<Vec<DynBoxedMetric<metriken::Counter>>>,
 }
 
@@ -64,6 +64,8 @@ impl Perf {
             "cpu/frequency",
         ];
 
+        let trigger = Arc::new((Mutex::new(false), Condvar::new()));
+
         for cpu in cpus {
             counters.push(
                 metrics
@@ -82,6 +84,8 @@ impl Perf {
 
             match PerfGroup::new(cpu.id()) {
                 Ok(mut group) => {
+                    let (sender, receiver) = std::sync::mpsc::channel(1);
+
                     let reading = group.reading();
                     let interval = config.interval(NAME);
 
@@ -89,12 +93,12 @@ impl Perf {
                         core_affinity::set_for_current(core_affinity::CoreId { id: cpu.id() });
 
                         loop {
-                            std::thread::sleep(interval);
+                            let _ = receiver.recv().unwrap();
                             let _ = group.refresh();
                         }
                     });
 
-                    groups.push((reading, join_handle));
+                    groups.push((sender, reading, join_handle));
                 }
                 Err(_) => {
                     warn!("Failed to create the perf group on CPU {}", cpu.id());
@@ -135,7 +139,9 @@ impl Sampler for Perf {
         let mut avg_base_frequency = 0;
         let mut avg_running_frequency = 0;
 
-        for (reading, _) in &mut self.groups {
+        for (sender, reading, _) in &mut self.groups {
+            sender.send(()).unwrap();
+
             let id = reading.id.load(Ordering::Relaxed);
             let cycles = reading.cycles.load(Ordering::Relaxed);
             let instructions = reading.instructions.load(Ordering::Relaxed);
