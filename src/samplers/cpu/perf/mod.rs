@@ -94,7 +94,7 @@ impl Perf {
                             let now = Instant::now();
 
                             if now < next {
-                                std::thread::sleep(core::time::Duration::from_millis(1));
+                                std::thread::sleep(core::time::Duration::from_millis(10));
                                 continue;
                             }
 
