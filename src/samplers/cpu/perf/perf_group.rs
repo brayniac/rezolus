@@ -208,6 +208,8 @@ impl PerfGroup {
         let cycles = current.delta(prev, &self.cycles).ok_or(())?;
         let instructions = current.delta(prev, &self.instructions).ok_or(())?;
 
+        info!("got deltas for cycles and instructions");
+
         if cycles == 0 || instructions == 0 {
             self.prev = Some(current);
             return Err(());
