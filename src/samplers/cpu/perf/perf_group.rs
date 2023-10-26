@@ -210,6 +210,9 @@ impl PerfGroup {
 
         info!("got deltas for cycles and instructions");
 
+        info!("cycles: {cycles}");
+        info!("instructions: {instructions}");
+
         if cycles == 0 || instructions == 0 {
             self.prev = Some(current);
             return Err(());
