@@ -187,6 +187,8 @@ impl PerfGroup {
             return Err(());
         }
 
+        info!("group is online");
+
         let enabled_us = current
             .enabled_since(prev)
             .ok_or(())
@@ -201,6 +203,8 @@ impl PerfGroup {
             return Err(());
         }
 
+        info!("group was enabled the whole time");
+
         let cycles = current.delta(prev, &self.cycles).ok_or(())?;
         let instructions = current.delta(prev, &self.instructions).ok_or(())?;
 
@@ -208,6 +212,8 @@ impl PerfGroup {
             self.prev = Some(current);
             return Err(());
         }
+
+        info!("cycles and instructions are good");
 
         // compute IPKC
         let ipkc = (instructions * 1000) / cycles;
@@ -236,6 +242,8 @@ impl PerfGroup {
             } else {
                 (None, None, None)
             };
+
+        info!("finished computing metrics");
 
         self.prev = Some(current);
 
