@@ -44,9 +44,9 @@ pub struct Reading {
     pub cycles: u64,
     pub instructions: u64,
     pub ipkc: u64,
-    pub ipus: u64,
-    pub base_frequency_mhz: u64,
-    pub running_frequency_mhz: u64,
+    pub ipus: Option<u64>,
+    pub base_frequency_mhz: Option<u64>,
+    pub running_frequency_mhz: Option<u64>,
 }
 
 /// Per-cpu perf event group that measure all tasks on one CPU
@@ -58,11 +58,11 @@ pub struct PerfGroup {
     /// Retired instructions
     instructions: perf_event::Counter,
     /// Timestamp counter
-    tsc: perf_event::Counter,
+    tsc: Option<perf_event::Counter>,
     /// Actual performance frequency clock
-    aperf: perf_event::Counter,
+    aperf: Option<perf_event::Counter>,
     /// Maximum performance frequency clock
-    mperf: perf_event::Counter,
+    mperf: Option<perf_event::Counter>,
     /// prev holds the previous readings
     prev: Option<GroupData>,
 }
@@ -102,9 +102,11 @@ impl PerfGroup {
             .exclude_hv(false)
             .exclude_kernel(false)
             .build_with_group(&mut cycles)
+            .map(|c| Some(c))
             .map_err(|e| {
                 error!("failed to create the tsc counter on CPU{id}: {e}");
-            })?;
+            })
+            .unwrap_or(None);
 
         let aperf_event = Msr::new(MsrId::APERF)
             .map_err(|e| error!("failed to create perf event for aperf msr: {e}"))?;
@@ -114,9 +116,11 @@ impl PerfGroup {
             .exclude_hv(false)
             .exclude_kernel(false)
             .build_with_group(&mut cycles)
+            .map(|c| Some(c))
             .map_err(|e| {
                 error!("failed to create the aperf counter on CPU{id}: {e}");
-            })?;
+            })
+            .unwrap_or(None);
 
         let mperf_event = Msr::new(MsrId::MPERF)
             .map_err(|e| error!("failed to create perf event for mperf msr: {e}"))?;
@@ -126,9 +130,11 @@ impl PerfGroup {
             .exclude_hv(false)
             .exclude_kernel(false)
             .build_with_group(&mut cycles)
+            .map(|c| Some(c))
             .map_err(|e| {
                 error!("failed to create the mperf counter on CPU{id}: {e}");
-            })?;
+            })
+            .unwrap_or(None);
 
         cycles.enable_group().map_err(|e| {
             error!("failed to enable the perf group on CPU{id}: {e}");
@@ -198,15 +204,26 @@ impl PerfGroup {
             return Err(());
         }
 
-        let tsc = current.delta(prev, &self.tsc).ok_or(())?;
-        let mperf = current.delta(prev, &self.mperf).ok_or(())?;
-        let aperf = current.delta(prev, &self.aperf).ok_or(())?;
+        let base_frequency_mhz = if let Some(tsc) = self.tsc {
+            let tsc = current.delta(prev, tsc).ok_or(())?;
+            let base_frequency_mhz = tsc / running_us;
+            Some(base_frequency_mhz)
+        } else {
+            None
+        };
+
+        let (Some(running_frequency_mhz), Some(ipus)) =
+            if let Some((aperf, mperf)) = (self.aperf, self.mperf) {
+                let running_frequency_mhz = (base_frequency_mhz * aperf) / mperf;
+                let ipus = (ipkc * aperf) / mperf;
+
+                (Some(running_frequency_mhz), Some(ipus))
+            } else {
+                (None, None)
+            };
 
         // computer IPKC IPUS BASE_FREQUENCY RUNNING_FREQUENCY
         let ipkc = (instructions * 1000) / cycles;
-        let base_frequency_mhz = tsc / running_us;
-        let running_frequency_mhz = (base_frequency_mhz * aperf) / mperf;
-        let ipus = (ipkc * aperf) / mperf;
 
         self.prev = Some(current);
 

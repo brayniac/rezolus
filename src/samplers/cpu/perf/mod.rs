@@ -116,9 +116,9 @@ impl Sampler for Perf {
         let mut total_cycles = 0;
         let mut total_instructions = 0;
         let mut avg_ipkc = 0;
-        let mut avg_ipus = 0;
-        let mut avg_base_frequency = 0;
-        let mut avg_running_frequency = 0;
+        let mut avg_ipus = None;
+        let mut avg_base_frequency = None;
+        let mut avg_running_frequency = None;
 
         for group in &mut self.groups {
             if let Ok(reading) = group.get_metrics() {
@@ -126,18 +126,29 @@ impl Sampler for Perf {
                 total_cycles += reading.cycles;
                 total_instructions += reading.instructions;
                 avg_ipkc += reading.ipkc;
-                avg_ipus += reading.ipus;
-                avg_base_frequency += reading.base_frequency_mhz;
-                avg_running_frequency += reading.running_frequency_mhz;
+
                 let _ = CPU_IPKC_HISTOGRAM.increment(reading.ipkc);
-                let _ = CPU_IPUS_HISTOGRAM.increment(reading.ipus);
-                let _ = CPU_FREQUENCY_HISTOGRAM.increment(reading.running_frequency_mhz);
+
+                if let Some(ipus) = reading.ipus {
+                    avg_ipus = Some(avg_ipus.unwrap_or(0) + ipus);
+                    let _ = CPU_IPUS_HISTOGRAM.increment(ipus);
+                    self.counters[reading.id][3].set(ipus);
+                }
+
+                if let Some(base_frequency_mhz) = reading.base_frequency_mhz {
+                    avg_base_frequency = Some(avg_base_frequency.unwrap_or(0) + base_frequency_mhz);
+                }
+
+                if let Some(running_frequency_mhz) = reading.running_frequency_mhz {
+                    avg_running_frequency =
+                        Some(avg_running_frequency.unwrap_or(0) + running_frequency_mhz);
+                    let _ = CPU_FREQUENCY_HISTOGRAM.increment(running_frequency_mhz);
+                    self.counters[reading.id][4].set(running_frequency_mhz);
+                }
 
                 self.counters[reading.id][0].set(reading.cycles);
                 self.counters[reading.id][1].set(reading.instructions);
                 self.counters[reading.id][2].set(reading.ipkc);
-                self.counters[reading.id][3].set(reading.ipus);
-                self.counters[reading.id][4].set(reading.running_frequency_mhz);
             }
         }
 
@@ -146,9 +157,19 @@ impl Sampler for Perf {
         CPU_INSTRUCTIONS.add(total_instructions);
         CPU_PERF_GROUPS_ACTIVE.set(nr_active_groups as i64);
         CPU_IPKC_AVERAGE.set((avg_ipkc / nr_active_groups) as i64);
-        CPU_IPUS_AVERAGE.set((avg_ipus / nr_active_groups) as i64);
-        CPU_BASE_FREQUENCY_AVERAGE.set((avg_base_frequency / nr_active_groups) as i64);
-        CPU_FREQUENCY_AVERAGE.set((avg_running_frequency / nr_active_groups) as i64);
+
+        if let Some(avg_ipus) = avg_ipus {
+            CPU_IPUS_AVERAGE.set((avg_ipus / nr_active_groups) as i64);
+        }
+
+        if let Some(avg_base_frequency) = avg_base_frequency {
+            CPU_BASE_FREQUENCY_AVERAGE.set((avg_base_frequency / nr_active_groups) as i64);
+        }
+
+        if let Some(avg_running_frequency) = avg_running_frequency {
+            CPU_FREQUENCY_AVERAGE.set((avg_running_frequency / nr_active_groups) as i64);
+        }
+
         CPU_CORES.set(nr_active_groups as _);
 
         // determine when to sample next
