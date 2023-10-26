@@ -204,20 +204,31 @@ impl PerfGroup {
             return Err(());
         }
 
-        // compute IPKC 
+        // compute IPKC
         let ipkc = (instructions * 1000) / cycles;
 
-        // compute base frequency
-        let (base_frequency_mhz, running_frequency_mhz, ipus) = if let (Some(aperf), Some(mperf), Some(tsc)) = (self.aperf, self.mperf, self.tsc) {
-            let tsc = current.delta(prev, &tsc).ok_or(())?;
-            let base_frequency_mhz = tsc / running_us;
-            let running_frequency_mhz = (base_frequency_mhz * aperf) / mperf;
-            let ipus = (ipkc * aperf) / mperf;
+        // compute base frequency, running frequency, and IPUS
+        let (base_frequency_mhz, running_frequency_mhz, ipus) =
+            if let (Some(aperf), Some(mperf), Some(tsc)) = (self.aperf, self.mperf, self.tsc) {
+                // calculate the counter deltas
+                let aperf = current.delta(prev, &aperf).ok_or(())?;
+                let mperf = current.delta(prev, &mperf).ok_or(())?;
+                let tsc = current.delta(prev, &tsc).ok_or(())?;
 
-            (Some(base_frequency_mhz), Some(running_frequency_mhz), Some(ipus))
-        } else {
-            (None, None, None)
-        };
+                // calculate our metrics
+                let base_frequency_mhz = tsc / running_us;
+                let running_frequency_mhz = (base_frequency_mhz * aperf) / mperf;
+                let ipus = (ipkc * aperf) / mperf;
+
+                // return our metrics
+                (
+                    Some(base_frequency_mhz),
+                    Some(running_frequency_mhz),
+                    Some(ipus),
+                )
+            } else {
+                (None, None, None)
+            };
 
         self.prev = Some(current);
 
