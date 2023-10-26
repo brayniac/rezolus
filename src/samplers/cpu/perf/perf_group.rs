@@ -209,11 +209,11 @@ impl PerfGroup {
 
         // compute base frequency, running frequency, and IPUS
         let (base_frequency_mhz, running_frequency_mhz, ipus) =
-            if let (Some(aperf), Some(mperf), Some(tsc)) = (self.aperf, self.mperf, self.tsc) {
+            if let (Some(aperf), Some(mperf), Some(tsc)) = (self.aperf.as_ref(), self.mperf.as_ref(), self.tsc.as_ref()) {
                 // calculate the counter deltas
-                let aperf = current.delta(prev, &aperf).ok_or(())?;
-                let mperf = current.delta(prev, &mperf).ok_or(())?;
-                let tsc = current.delta(prev, &tsc).ok_or(())?;
+                let aperf = current.delta(prev, aperf).ok_or(())?;
+                let mperf = current.delta(prev, mperf).ok_or(())?;
+                let tsc = current.delta(prev, tsc).ok_or(())?;
 
                 // calculate our metrics
                 let base_frequency_mhz = tsc / running_us;
