@@ -94,51 +94,56 @@ impl PerfGroup {
                 error!("failed to create the instructions event on CPU{id}: {e}");
             })?;
 
-        let tsc_event = Msr::new(MsrId::TSC)
-            .map_err(|e| error!("failed to create perf event for tsc msr: {e}"))?;
-        let tsc = Builder::new(tsc_event)
-            .one_cpu(id)
-            .any_pid()
-            .exclude_hv(false)
-            .exclude_kernel(false)
-            .build_with_group(&mut cycles)
-            .map(|c| Some(c))
-            .map_err(|e| {
-                error!("failed to create the tsc counter on CPU{id}: {e}");
-            })
-            .unwrap_or(None);
+        let tsc = if let Ok(tsc_event) =
+            Msr::new(MsrId::TSC).map_err(|e| error!("failed to create perf event for tsc msr: {e}"))
+        {
+            Builder::new(tsc_event)
+                .one_cpu(id)
+                .any_pid()
+                .exclude_hv(false)
+                .exclude_kernel(false)
+                .build_with_group(&mut cycles)
+                .map(|c| Some(c))
+                .map_err(|e| {
+                    error!("failed to create the tsc counter on CPU{id}: {e}");
+                })?
+        } else {
+            None
+        };
 
-        let aperf_event = Msr::new(MsrId::APERF)
-            .map_err(|e| error!("failed to create perf event for aperf msr: {e}"))?;
-        let aperf = Builder::new(aperf_event)
-            .one_cpu(id)
-            .any_pid()
-            .exclude_hv(false)
-            .exclude_kernel(false)
-            .build_with_group(&mut cycles)
-            .map(|c| Some(c))
-            .map_err(|e| {
-                error!("failed to create the aperf counter on CPU{id}: {e}");
-            })
-            .unwrap_or(None);
+        let aperf = if let Ok(aperf_event) = Msr::new(MsrId::APERF)
+            .map_err(|e| error!("failed to create perf event for aperf msr: {e}"))
+        {
+            Builder::new(aperf_event)
+                .one_cpu(id)
+                .any_pid()
+                .exclude_hv(false)
+                .exclude_kernel(false)
+                .build_with_group(&mut cycles)
+                .map(|c| Some(c))
+                .map_err(|e| {
+                    error!("failed to create the aperf counter on CPU{id}: {e}");
+                })?
+        } else {
+            None
+        };
 
-        let mperf_event = Msr::new(MsrId::MPERF)
-            .map_err(|e| error!("failed to create perf event for mperf msr: {e}"))?;
-        let mperf = Builder::new(mperf_event)
-            .one_cpu(id)
-            .any_pid()
-            .exclude_hv(false)
-            .exclude_kernel(false)
-            .build_with_group(&mut cycles)
-            .map(|c| Some(c))
-            .map_err(|e| {
-                error!("failed to create the mperf counter on CPU{id}: {e}");
-            })
-            .unwrap_or(None);
-
-        cycles.enable_group().map_err(|e| {
-            error!("failed to enable the perf group on CPU{id}: {e}");
-        })?;
+        let mperf = if let Ok(mperf_event) = Msr::new(MsrId::MPERF)
+            .map_err(|e| error!("failed to create perf event for mperf msr: {e}"))
+        {
+            Builder::new(mperf_event)
+                .one_cpu(id)
+                .any_pid()
+                .exclude_hv(false)
+                .exclude_kernel(false)
+                .build_with_group(&mut cycles)
+                .map(|c| Some(c))
+                .map_err(|e| {
+                    error!("failed to create the mperf counter on CPU{id}: {e}");
+                })?
+        } else {
+            None
+        };
 
         let prev = cycles
             .read_group()
