@@ -208,24 +208,16 @@ impl PerfGroup {
         let ipkc = (instructions * 1000) / cycles;
 
         // compute base frequency
-        let base_frequency_mhz = if let Some(tsc) = self.tsc {
+        let (base_frequency_mhz, running_frequency_mhz, ipus) = if let (Some(aperf), Some(mperf), Some(tsc)) = (self.aperf, self.mperf, self.tsc) {
             let tsc = current.delta(prev, &tsc).ok_or(())?;
             let base_frequency_mhz = tsc / running_us;
-            Some(base_frequency_mhz)
+            let running_frequency_mhz = (base_frequency_mhz * aperf) / mperf;
+            let ipus = (ipkc * aperf) / mperf;
+
+            (Some(base_frequency_mhz), Some(running_frequency_mhz), Some(ipus))
         } else {
-            None
+            (None, None, None)
         };
-
-        // compute running frequency and IPUS
-        let (Some(running_frequency_mhz), Some(ipus)) =
-            if let (Some(aperf), Some(mperf)) = (self.aperf, self.mperf) {
-                let running_frequency_mhz = (base_frequency_mhz * aperf) / mperf;
-                let ipus = (ipkc * aperf) / mperf;
-
-                (Some(running_frequency_mhz), Some(ipus))
-            } else {
-                (None, None)
-            };
 
         self.prev = Some(current);
 
