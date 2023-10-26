@@ -204,16 +204,21 @@ impl PerfGroup {
             return Err(());
         }
 
+        // compute IPKC 
+        let ipkc = (instructions * 1000) / cycles;
+
+        // compute base frequency
         let base_frequency_mhz = if let Some(tsc) = self.tsc {
-            let tsc = current.delta(prev, tsc).ok_or(())?;
+            let tsc = current.delta(prev, &tsc).ok_or(())?;
             let base_frequency_mhz = tsc / running_us;
             Some(base_frequency_mhz)
         } else {
             None
         };
 
+        // compute running frequency and IPUS
         let (Some(running_frequency_mhz), Some(ipus)) =
-            if let Some((aperf, mperf)) = (self.aperf, self.mperf) {
+            if let (Some(aperf), Some(mperf)) = (self.aperf, self.mperf) {
                 let running_frequency_mhz = (base_frequency_mhz * aperf) / mperf;
                 let ipus = (ipkc * aperf) / mperf;
 
@@ -221,9 +226,6 @@ impl PerfGroup {
             } else {
                 (None, None)
             };
-
-        // computer IPKC IPUS BASE_FREQUENCY RUNNING_FREQUENCY
-        let ipkc = (instructions * 1000) / cycles;
 
         self.prev = Some(current);
 
