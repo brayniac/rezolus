@@ -120,7 +120,7 @@ impl Sampler for Perf {
         let mut avg_base_frequency = None;
         let mut avg_running_frequency = None;
 
-        for group in &mut self.groups {
+        for (id, group) in self.groups.iter_mut().enumerate() {
             if let Ok(reading) = group.get_metrics() {
                 nr_active_groups += 1;
                 total_cycles += reading.cycles;
@@ -149,6 +149,8 @@ impl Sampler for Perf {
                 self.counters[reading.id][0].set(reading.cycles);
                 self.counters[reading.id][1].set(reading.instructions);
                 self.counters[reading.id][2].set(reading.ipkc);
+            } else {
+                error!("failed to read for group: {id}");
             }
         }
 
