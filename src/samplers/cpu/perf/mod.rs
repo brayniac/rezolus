@@ -152,25 +152,27 @@ impl Sampler for Perf {
             }
         }
 
-        // we increase the total cycles executed in the last sampling period instead of using the cycle perf event value to handle offlined CPUs.
-        CPU_CYCLES.add(total_cycles);
-        CPU_INSTRUCTIONS.add(total_instructions);
-        CPU_PERF_GROUPS_ACTIVE.set(nr_active_groups as i64);
-        CPU_IPKC_AVERAGE.set((avg_ipkc / nr_active_groups) as i64);
+        if nr_active_groups != 0 {
+            // we increase the total cycles executed in the last sampling period instead of using the cycle perf event value to handle offlined CPUs.
+            CPU_CYCLES.add(total_cycles);
+            CPU_INSTRUCTIONS.add(total_instructions);
+            CPU_PERF_GROUPS_ACTIVE.set(nr_active_groups as i64);
+            CPU_IPKC_AVERAGE.set((avg_ipkc / nr_active_groups) as i64);
 
-        if let Some(avg_ipus) = avg_ipus {
-            CPU_IPUS_AVERAGE.set((avg_ipus / nr_active_groups) as i64);
+            if let Some(avg_ipus) = avg_ipus {
+                CPU_IPUS_AVERAGE.set((avg_ipus / nr_active_groups) as i64);
+            }
+
+            if let Some(avg_base_frequency) = avg_base_frequency {
+                CPU_BASE_FREQUENCY_AVERAGE.set((avg_base_frequency / nr_active_groups) as i64);
+            }
+
+            if let Some(avg_running_frequency) = avg_running_frequency {
+                CPU_FREQUENCY_AVERAGE.set((avg_running_frequency / nr_active_groups) as i64);
+            }
+
+            CPU_CORES.set(nr_active_groups as _);
         }
-
-        if let Some(avg_base_frequency) = avg_base_frequency {
-            CPU_BASE_FREQUENCY_AVERAGE.set((avg_base_frequency / nr_active_groups) as i64);
-        }
-
-        if let Some(avg_running_frequency) = avg_running_frequency {
-            CPU_FREQUENCY_AVERAGE.set((avg_running_frequency / nr_active_groups) as i64);
-        }
-
-        CPU_CORES.set(nr_active_groups as _);
 
         // determine when to sample next
         let next = self.next + self.interval;
