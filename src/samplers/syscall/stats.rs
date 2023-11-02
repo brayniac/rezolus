@@ -52,47 +52,47 @@ bpfhistogram!(
     SYSCALL_TOTAL_LATENCY,
     "syscall/total/latency",
     "latency of all syscalls",
-    42
+    48
 );
 bpfhistogram!(
     SYSCALL_READ_LATENCY,
     "syscall/read/latency",
     "latency of read related syscalls (read, recvfrom, ...)",
-    42
+    48
 );
 bpfhistogram!(
     SYSCALL_WRITE_LATENCY,
     "syscall/write/latency",
     "latency of write related syscalls (write, sendto, ...)",
-    42
+    48
 );
 bpfhistogram!(
     SYSCALL_POLL_LATENCY,
     "syscall/poll/latency",
     "latency of poll related syscalls (poll, select, epoll, ...)",
-    42
+    48
 );
 bpfhistogram!(
     SYSCALL_LOCK_LATENCY,
     "syscall/lock/latency",
     "latency of lock related syscalls (futex)",
-    42
+    48
 );
 bpfhistogram!(
     SYSCALL_TIME_LATENCY,
     "syscall/time/latency",
     "latency of time related syscalls (clock_gettime, clock_settime, clock_getres, ...)",
-    42
+    48
 );
 bpfhistogram!(
     SYSCALL_SLEEP_LATENCY,
     "syscall/sleep/latency",
     "latency of sleep related syscalls (nanosleep, clock_nanosleep)",
-    42
+    48
 );
 bpfhistogram!(
     SYSCALL_SOCKET_LATENCY,
     "syscall/socket/latency",
     "latency of socket related syscalls (accept, connect, bind, setsockopt, ...)",
-    42
+    48
 );
