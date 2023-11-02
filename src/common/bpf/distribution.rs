@@ -46,6 +46,7 @@ impl<'a> Distribution<'a> {
             mmap,
             buffer: Vec::new(),
             histogram,
+            buckets,
         }
     }
 
