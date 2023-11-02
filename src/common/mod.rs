@@ -148,6 +148,14 @@ macro_rules! bpfhistogram {
         )]
         pub static $ident: metriken::RwLockHistogram = metriken::RwLockHistogram::new($crate::common::HISTOGRAM_GROUPING_POWER, 64);
     };
+    ($ident:ident, $name:tt, $description:tt, $power:tt) => {
+        #[metriken::metric(
+            name = $name,
+            description = $description,
+            crate = metriken
+        )]
+        pub static $ident: metriken::RwLockHistogram = metriken::RwLockHistogram::new($crate::common::HISTOGRAM_GROUPING_POWER, $power);
+    };
 }
 
 #[macro_export]
