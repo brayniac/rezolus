@@ -25,10 +25,13 @@ pub struct Distribution<'a> {
     mmap: memmap2::MmapMut,
     buffer: Vec<u64>,
     histogram: &'static RwLockHistogram,
+    buckets: usize,
 }
 
 impl<'a> Distribution<'a> {
     pub fn new(map: &'a libbpf_rs::Map, histogram: &'static RwLockHistogram) -> Self {
+        let buckets = histogram.config().total_buckets();
+
         let fd = map.as_fd().as_raw_fd();
         let file = unsafe { std::fs::File::from_raw_fd(fd as _) };
         let mmap = unsafe {
@@ -55,11 +58,11 @@ impl<'a> Distribution<'a> {
         let expected_len = HISTOGRAM_PAGES * PAGE_SIZE / 8;
 
         if buckets.len() == expected_len {
-            let _ = self.histogram.update_from(&buckets[0..HISTOGRAM_BUCKETS]);
+            let _ = self.histogram.update_from(&buckets[0..self.buckets]);
         } else {
             warn!("mmap region misaligned or did not have expected number of values {} != {expected_len}", buckets.len());
 
-            self.buffer.resize(HISTOGRAM_BUCKETS, 0);
+            self.buffer.resize(self.buckets, 0);
 
             for (idx, bucket) in self.buffer.iter_mut().enumerate() {
                 let start = idx * std::mem::size_of::<u64>();
@@ -84,7 +87,7 @@ impl<'a> Distribution<'a> {
 
             let _ = self
                 .histogram
-                .update_from(&self.buffer[0..HISTOGRAM_BUCKETS]);
+                .update_from(&self.buffer[0..self.buckets]);
         }
     }
 }
