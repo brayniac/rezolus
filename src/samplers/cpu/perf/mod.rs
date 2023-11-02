@@ -154,9 +154,9 @@ impl Sampler for Perf {
                 self.counters[reading.id][0].set(reading.cycles);
                 self.counters[reading.id][1].set(reading.instructions);
 
-                self.gauges[reading.id][0].set(reading.ipkc);
-                self.gauges[reading.id][1].set(reading.ipus);
-                self.gauges[reading.id][2].set(reading.running_frequency_mhz);
+                self.gauges[reading.id][0].set(reading.ipkc as i64);
+                self.gauges[reading.id][1].set(reading.ipus as i64);
+                self.gauges[reading.id][2].set(reading.running_frequency_mhz as i64);
             }
         }
 
