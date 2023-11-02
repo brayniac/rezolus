@@ -90,7 +90,7 @@ impl Perf {
                             .metadata("die", format!("{}", cpu.die()))
                             .metadata("package", format!("{}", cpu.package()))
                             .formatter(cpu_metric_formatter)
-                            .build(metriken::Counter::new())
+                            .build(metriken::Gauge::new())
                     })
                     .collect(),
             );
