@@ -35,6 +35,13 @@ counter_with_histogram!(
     "tcp/transmit/retransmit",
     "number of TCP segments retransmitted"
 );
+counter_with_histogram!(
+    TCP_TX_RETRANSMIT_SNMP,
+    TCP_TX_RETRANSMIT_SNMP_HISTOGRAM,
+    "tcp/transmit/retransmit_snmp",
+    "number of TCP segments retransmitted per /proc/net/snmp"
+);
+
 
 #[metric(
     name = "tcp/connection/state",

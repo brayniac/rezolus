@@ -47,6 +47,11 @@ impl Snmp {
                 "Tcp:",
                 "OutSegs",
             ),
+            (
+                Counter::new(&TCP_TX_RETRANSMIT_SNMP, Some(&TCP_TX_RETRANSMIT_SNMP_HISTOGRAM)),
+                "Tcp:",
+                "RetransSegs",
+            ),
         ];
 
         Ok(Self {
