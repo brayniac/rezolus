@@ -7,10 +7,7 @@ use std::fs::File;
 
 #[distributed_slice(TCP_SAMPLERS)]
 fn init(config: &Config) -> Box<dyn Sampler> {
-    // if we have bpf enabled, we don't need to run this sampler at all
-    if config.bpf() {
-        Box::new(Nop::new(config))
-    } else if let Ok(s) = Snmp::new(config) {
+    if let Ok(s) = Snmp::new(config) {
         Box::new(s)
     } else {
         Box::new(Nop::new(config))
@@ -36,23 +33,33 @@ impl Snmp {
 
         let now = Instant::now();
 
-        let counters = vec![
-            (
-                Counter::new(&TCP_RX_SEGMENTS, Some(&TCP_RX_SEGMENTS_HISTOGRAM)),
-                "Tcp:",
-                "InSegs",
-            ),
-            (
-                Counter::new(&TCP_TX_SEGMENTS, Some(&TCP_TX_SEGMENTS_HISTOGRAM)),
-                "Tcp:",
-                "OutSegs",
-            ),
-            (
-                Counter::new(&TCP_TX_RETRANSMIT_SNMP, Some(&TCP_TX_RETRANSMIT_SNMP_HISTOGRAM)),
-                "Tcp:",
-                "RetransSegs",
-            ),
-        ];
+        let counters = if !config.bpf() {
+            vec![
+                (
+                    Counter::new(&TCP_RX_SEGMENTS, Some(&TCP_RX_SEGMENTS_HISTOGRAM)),
+                    "Tcp:",
+                    "InSegs",
+                ),
+                (
+                    Counter::new(&TCP_TX_SEGMENTS, Some(&TCP_TX_SEGMENTS_HISTOGRAM)),
+                    "Tcp:",
+                    "OutSegs",
+                ),
+                (
+                    Counter::new(&TCP_TX_RETRANSMIT_SNMP, Some(&TCP_TX_RETRANSMIT_SNMP_HISTOGRAM)),
+                    "Tcp:",
+                    "RetransSegs",
+                ),
+            ]
+        } else {
+            vec![
+                (
+                    Counter::new(&TCP_TX_RETRANSMIT_SNMP, Some(&TCP_TX_RETRANSMIT_SNMP_HISTOGRAM)),
+                    "Tcp:",
+                    "RetransSegs",
+                ),
+            ]
+        };
 
         Ok(Self {
             file: File::open("/proc/net/snmp").expect("file not found"),
