@@ -7,7 +7,7 @@ use std::fs::File;
 
 #[distributed_slice(TCP_SAMPLERS)]
 fn init(config: &Config) -> Box<dyn Sampler> {
-    if let Ok(s) = Snmp::new(config) {
+    if let Ok(s) = Netstat::new(config) {
         Box::new(s)
     } else {
         Box::new(Nop::new(config))
