@@ -28,11 +28,8 @@ impl Snmp {
     pub fn new(config: &Config) -> Result<Self, ()> {
         // check if sampler should be enabled
         if !config.enabled(NAME) {
-            debug!("{NAME} is disabled");
             return Err(());
         }
-
-        debug!("{NAME} is initializing...");
 
         let now = Instant::now();
 
@@ -63,8 +60,6 @@ impl Snmp {
                 ),
             ]
         };
-
-        debug!("{NAME} has initialized");
 
         Ok(Self {
             file: File::open("/proc/net/snmp").expect("file not found"),
