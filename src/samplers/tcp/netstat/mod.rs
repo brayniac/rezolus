@@ -14,9 +14,9 @@ fn init(config: &Config) -> Box<dyn Sampler> {
     }
 }
 
-const NAME: &str = "tcp_snmp";
+const NAME: &str = "tcp_netstat";
 
-pub struct Snmp {
+pub struct Netstat {
     prev: Instant,
     next: Instant,
     interval: Duration,
@@ -24,7 +24,7 @@ pub struct Snmp {
     counters: Vec<(Counter, &'static str, &'static str)>,
 }
 
-impl Snmp {
+impl Netstat {
     pub fn new(config: &Config) -> Result<Self, ()> {
         // check if sampler should be enabled
         if !config.enabled(NAME) {
@@ -33,26 +33,22 @@ impl Snmp {
 
         let now = Instant::now();
 
+        // NOTE: we're assuming that IP traffic is all TCP
         let counters = vec![
             (
-                Counter::new(&TCP_RX_SEGMENTS_SNMP, Some(&TCP_RX_SEGMENTS_SNMP_HISTOGRAM)),
-                "Tcp:",
-                "InSegs",
+                Counter::new(&TCP_RX_BYTES_SNMP, Some(&TCP_RX_BYTES_SNMP_HISTOGRAM)),
+                "IpExt:",
+                "InOctets",
             ),
             (
-                Counter::new(&TCP_TX_SEGMENTS_SNMP, Some(&TCP_TX_SEGMENTS_SNMP_HISTOGRAM)),
-                "Tcp:",
-                "OutSegs",
-            ),
-            (
-                Counter::new(&TCP_TX_RETRANSMIT_SNMP, Some(&TCP_TX_RETRANSMIT_SNMP_HISTOGRAM)),
-                "Tcp:",
-                "RetransSegs",
+                Counter::new(&TCP_TX_BYTES_SNMP, Some(&TCP_TX_BYTES_SNMP_HISTOGRAM)),
+                "IpExt:",
+                "OutOctets",
             ),
         ];
 
         Ok(Self {
-            file: File::open("/proc/net/snmp").expect("file not found"),
+            file: File::open("/proc/net/netstat").expect("file not found"),
             counters,
             prev: now,
             next: now,
@@ -61,7 +57,7 @@ impl Snmp {
     }
 }
 
-impl Sampler for Snmp {
+impl Sampler for Netstat {
     fn sample(&mut self) {
         let now = Instant::now();
 

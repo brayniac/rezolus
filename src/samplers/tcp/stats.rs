@@ -12,10 +12,22 @@ counter_with_histogram!(
     "number of bytes received over TCP"
 );
 counter_with_histogram!(
+    TCP_RX_BYTES_SNMP,
+    TCP_RX_BYTES_SNMP_HISTOGRAM,
+    "tcp/receive/bytes_snmp",
+    "number of bytes received over TCP per /proc/net/snmp"
+);
+counter_with_histogram!(
     TCP_RX_SEGMENTS,
     TCP_RX_SEGMENTS_HISTOGRAM,
     "tcp/receive/segments",
     "number of TCP segments received"
+);
+counter_with_histogram!(
+    TCP_RX_SEGMENTS_SNMP,
+    TCP_RX_SEGMENTS_SNMP_HISTOGRAM,
+    "tcp/receive/segments_snmp",
+    "number of TCP segments received per /proc/net/snmp"
 );
 counter_with_histogram!(
     TCP_TX_BYTES,
@@ -24,10 +36,22 @@ counter_with_histogram!(
     "number of bytes transmitted over TCP"
 );
 counter_with_histogram!(
+    TCP_TX_BYTES_SNMP,
+    TCP_TX_BYTES_SNMP_HISTOGRAM,
+    "tcp/transmit/bytes_snmp",
+    "number of bytes transmitted over TCP per /proc/net/snmp"
+);
+counter_with_histogram!(
     TCP_TX_SEGMENTS,
     TCP_TX_SEGMENTS_HISTOGRAM,
     "tcp/transmit/segments",
     "number of TCP segments transmitted"
+);
+counter_with_histogram!(
+    TCP_TX_SEGMENTS_SNMP,
+    TCP_TX_SEGMENTS_SNMP_HISTOGRAM,
+    "tcp/transmit/segments_snmp",
+    "number of TCP segments transmitted per /proc/net/snmp"
 );
 counter_with_histogram!(
     TCP_TX_RETRANSMIT,
