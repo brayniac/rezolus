@@ -62,6 +62,9 @@ impl Sampler for LmSensors {
                                     Value::TemperatureInput(v) => v as i64,
                                     _ => { continue; }
                                 };
+                                if !data.contains_key(&name) {
+                                    data.insert(name.clone(), HashMap::new());
+                                }
                                 if let Some(c) = data.get_mut(&name) {
                                     c.insert(label.clone(), value);
                                 }
