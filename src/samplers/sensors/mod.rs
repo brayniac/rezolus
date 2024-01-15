@@ -1,6 +1,6 @@
 use crate::*;
 
-sampler!(Syscall, "sensors", SYSCALL_SAMPLERS);
+sampler!(Sensors, "sensors", SENSOR_SAMPLERS);
 
 mod stats;
 

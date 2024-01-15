@@ -1,9 +1,8 @@
+use ::lm_sensors::Value;
+
 use super::stats::*;
 use super::*;
-use crate::common::{Counter, Nop};
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::{Read, Seek};
+use crate::common::{Nop};
 
 #[distributed_slice(SENSOR_SAMPLERS)]
 fn init(config: &Config) -> Box<dyn Sampler> {
@@ -20,8 +19,8 @@ pub struct LmSensors {
     prev: Instant,
     next: Instant,
     interval: Duration,
-    counters: HashMap<&'static str, Counter>,
-    file: File,
+    sensors: ::lm_sensors::LMSensors,
+    // file: File,
 }
 
 impl LmSensors {
@@ -34,21 +33,8 @@ impl LmSensors {
 
         let now = Instant::now();
 
-        let counters = HashMap::from([
-            ("numa_hit", Counter::new(&MEMORY_NUMA_HIT, None)),
-            ("numa_miss", Counter::new(&MEMORY_NUMA_MISS, None)),
-            ("numa_foreign", Counter::new(&MEMORY_NUMA_FOREIGN, None)),
-            (
-                "numa_interleave",
-                Counter::new(&MEMORY_NUMA_INTERLEAVE, None),
-            ),
-            ("numa_local", Counter::new(&MEMORY_NUMA_LOCAL, None)),
-            ("numa_other", Counter::new(&MEMORY_NUMA_OTHER, None)),
-        ]);
-
         Ok(Self {
-            file: File::open("/proc/vmstat").expect("file not found"),
-            counters,
+            sensors: ::lm_sensors::Initializer::default().initialize().expect("file not found"),
             prev: now,
             next: now,
             interval: config.interval(NAME),
@@ -64,10 +50,46 @@ impl Sampler for LmSensors {
             return;
         }
 
-        let elapsed = (now - self.prev).as_secs_f64();
+        let mut data = HashMap::<String, HashMap<String, i64>>::new();
 
-        if self.sample_proc_vmstat(elapsed).is_err() {
-            return;
+        for chip in self.sensors.chip_iter(None) {
+            if let Ok(name) = chip.name() {
+                for feature in chip.feature_iter() {
+                    if let Ok(label) = feature.label() {
+                        for sub_feature in feature.sub_feature_iter() {
+                            if let Ok(value) = sub_feature.value() {
+                                let value = match value {
+                                    Value::TemperatureInput(v) => v as i64,
+                                    _ => { continue; }
+                                };
+                                if let Some(c) = data.get_mut(&name) {
+                                    c.insert(label.clone(), value);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(chip) = data.get("coretemp-isa-0000") {
+            if let Some(temp) = chip.get("Package id 0") {
+                CPU_TEMPERATURE.set(*temp);
+            }
+        }
+
+        if let Some(chip) = data.get("cpu_thermal-virtual-0") {
+            if let Some(temp) = chip.get("temp1") {
+                CPU_TEMPERATURE.set(*temp);
+            }
+        }
+
+        if let Some(chip) = data.get("k10temp-pci-00c3") {
+            if let Some(temp) = chip.get("Tdie") {
+                CPU_TEMPERATURE.set(*temp);
+            } else if let Some(temp) = chip.get("Tctl") {
+                CPU_TEMPERATURE.set(*temp);
+            }
         }
 
         // determine when to sample next
@@ -84,32 +106,5 @@ impl Sampler for LmSensors {
 
         // mark when we last sampled
         self.prev = now;
-    }
-}
-
-impl LmSensors {
-    fn sample_proc_vmstat(&mut self, elapsed: f64) -> Result<(), std::io::Error> {
-        self.file.rewind()?;
-
-        let mut data = String::new();
-        self.file.read_to_string(&mut data)?;
-
-        let lines = data.lines();
-
-        for line in lines {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-
-            if parts.is_empty() {
-                continue;
-            }
-
-            if let Some(counter) = self.counters.get_mut(*parts.first().unwrap()) {
-                if let Some(Ok(v)) = parts.get(1).map(|v| v.parse::<u64>()) {
-                    counter.set(elapsed, v);
-                }
-            }
-        }
-
-        Ok(())
     }
 }
