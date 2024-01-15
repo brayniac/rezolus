@@ -5,5 +5,6 @@ pub mod hwinfo;
 mod memory;
 mod rezolus;
 mod scheduler;
+mod sensors;
 mod syscall;
 mod tcp;
