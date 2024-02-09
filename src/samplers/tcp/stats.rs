@@ -148,17 +148,19 @@ pub static TCP_CONN_STATE_NEW_SYN_RECV: LazyGauge = LazyGauge::new(Gauge::defaul
 bpfhistogram!(
     TCP_RX_SIZE,
     "tcp/receive/size",
-    "distribution of logical receive sizes after reassembly"
+    "distribution of logical receive sizes after reassembly",
+    42
 );
 bpfhistogram!(
     TCP_TX_SIZE,
     "tcp/transmit/size",
-    "distribution of logical send sizes before fragmentation"
+    "distribution of logical send sizes before fragmentation",
+    42
 );
-bpfhistogram!(TCP_JITTER, "tcp/jitter");
-bpfhistogram!(TCP_SRTT, "tcp/srtt");
+bpfhistogram!(TCP_JITTER, "tcp/jitter", "", 42);
+bpfhistogram!(TCP_SRTT, "tcp/srtt", "", 42);
 
-bpfhistogram!(TCP_PACKET_LATENCY, "tcp/packet_latency");
+bpfhistogram!(TCP_PACKET_LATENCY, "tcp/packet_latency", "", 42);
 
 /// A function to format the tcp connection state metrics.
 ///
