@@ -54,7 +54,7 @@ impl<'a> Distribution<'a> {
 
         let expected_len = HISTOGRAM_PAGES * PAGE_SIZE / 8;
 
-        if buckets.len() == expected_len {
+        if buckets.len() >= expected_len {
             let _ = self.histogram.update_from(&buckets[0..HISTOGRAM_BUCKETS]);
         } else {
             warn!("mmap region misaligned or did not have expected number of values {} != {expected_len}", buckets.len());
