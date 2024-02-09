@@ -55,7 +55,7 @@ impl<'a> Distribution<'a> {
         let expected_len = HISTOGRAM_PAGES * PAGE_SIZE / 8;
 
         if buckets.len() == expected_len {
-            let _ = self.histogram.update_from(&buckets[0..self.histogram.as_slice().len()]);
+            let _ = self.histogram.update_from(&buckets[0..self.histogram.config().total_buckets()]);
         } else {
             warn!("mmap region misaligned or did not have expected number of values {} != {expected_len}", buckets.len());
 
@@ -84,7 +84,7 @@ impl<'a> Distribution<'a> {
 
             let _ = self
                 .histogram
-                .update_from(&self.buffer[0..self.histogram.as_slice().len()]);
+                .update_from(&self.buffer[0..self.histogram.config().total_buckets()]);
         }
     }
 }
