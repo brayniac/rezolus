@@ -1,4 +1,6 @@
 use super::*;
+use perf_event::events::Event;
+use perf_event_open_sys::bindings::perf_event_attr;
 
 struct GroupData {
     inner: perf_event::GroupData,
@@ -38,6 +40,7 @@ impl GroupData {
     }
 }
 
+#[derive(PartialEq, Copy, Clone, Debug)]
 enum PerfEvent {
     Cycles,
     Instructions,
@@ -46,14 +49,14 @@ enum PerfEvent {
     Mperf,
 }
 
-impl PerfEvent {
-    fn event(&self) -> dyn Event {
+impl Event for PerfEvent {
+    fn update_attrs(self, attr: &mut perf_event_attr) {
         match self {
-            Self::Cycles => Hardware::CYCLES,
-            Self::Instructions => Hardware::INSTRUCTIONS,
-            Self::Tsc => Msr::TSC,
-            Self::Aperf => Msr::APERF,
-            Self::Mperf => Msr::MPERF,
+            Self::Cycles => Hardware::CPU_CYCLES.update_attrs(attr),
+            Self::Instructions => Hardware::INSTRUCTIONS.update_attrs(attr),
+            Self::Tsc => Msr::new(MsrId::TSC).unwrap().update_attrs(attr),
+            Self::Aperf => Msr::new(MsrId::APERF).unwrap().update_attrs(attr),
+            Self::Mperf => Msr::new(MsrId::MPERF).unwrap().update_attrs(attr),
         }
     }
 }
@@ -68,7 +71,7 @@ impl PerfCounters {
     pub fn new(cpu: usize, leader: PerfEvent) -> Result<Self, ()> {
         let mut counters = Vec::new();
 
-        let counter = Builder::new(leader.event())
+        let counter = Builder::new(leader)
             .one_cpu(cpu)
             .any_pid()
             .exclude_hv(false)
@@ -80,28 +83,34 @@ impl PerfCounters {
             .build()
             .map_err(|_| ())?;
 
-        counters.resize_with(leader as usize, None);
-        counters.push(counter);
+        counters.resize_with(leader as usize, Default::default);
+        counters.push(Some(counter));
 
-        Self { leader, counters }
+        Ok(Self {
+            cpu,
+            leader,
+            counters,
+        })
     }
 
     pub fn add(&mut self, event: PerfEvent) -> Result<(), ()> {
-        let counter = Builder::new(Hardware::INSTRUCTIONS)
+        let counter = Builder::new(event)
             .one_cpu(self.cpu)
             .any_pid()
             .exclude_hv(false)
             .exclude_kernel(false)
-            .build_with_group(&mut self.counters[self.leader])
-            .map_err(|_| ())?;
+            .build_with_group(self.counters[self.leader as usize].as_mut().unwrap())
+            .ok();
 
-        counters.resize_with(event as usize, None);
-        counters.push(counter);
+        self.counters.resize_with(event as usize, Default::default);
+        self.counters.push(counter);
         Ok(())
     }
 
     pub fn enable(&mut self) -> Result<(), ()> {
         self.counters[self.leader as usize]
+            .as_mut()
+            .unwrap()
             .enable_group()
             .map_err(|e| {
                 error!("failed to enable the perf group on CPU{}: {e}", self.cpu);
@@ -110,20 +119,26 @@ impl PerfCounters {
 
     pub fn read(&mut self) -> Result<GroupData, ()> {
         self.counters[self.leader as usize]
+            .as_mut()
+            .unwrap()
             .read_group()
             .map_err(|e| {
-                warn!("failed to read the perf group on CPU{id}: {e}");
+                warn!("failed to read the perf group on CPU{}: {e}", self.cpu);
             })
             .map(|inner| GroupData { inner })
     }
 
-    pub fn counter(&self, event: PerfEvent) -> Option<perf_event::Counter> {
-        self.counters.get(event as usize)
+    pub fn counter(&self, event: PerfEvent) -> Option<&perf_event::Counter> {
+        if event as usize >= self.counters.len() {
+            None
+        } else {
+            self.counters[event as usize].as_ref()
+        }
     }
 
-    pub fn delta(&self, prev: GroupData, curr: GroupData, event: PerfEvent) -> Option<u64> {
+    pub fn delta(&self, prev: &GroupData, curr: &GroupData, event: PerfEvent) -> Option<u64> {
         let counter = self.counter(event)?;
-        curr.delta(prev, counter).ok()
+        curr.delta(prev, &counter)
     }
 }
 
@@ -151,8 +166,9 @@ pub struct PerfGroup {
 impl PerfGroup {
     /// Create and enable the group on the cpu
     pub fn new(id: usize) -> Result<Self, ()> {
-        let counters = PerfCounters::new(PerfCounter::Cycles)
-            .unwrap_or_else(PerfCounters::new(PerfCounter::Tsc))?;
+        let mut counters = PerfCounters::new(id, PerfEvent::Cycles)
+            .map_err(|_| PerfCounters::new(id, PerfEvent::Tsc))
+            .map_err(|_| ())?;
 
         if counters.leader == PerfEvent::Cycles {
             counters.add(PerfEvent::Instructions)?;
@@ -170,7 +186,7 @@ impl PerfGroup {
     }
 
     pub fn get_metrics(&mut self) -> Result<Reading, ()> {
-        let current = self.counters.read();
+        let current = self.counters.read()?;
 
         if self.prev.is_none() {
             self.prev = Some(current);
@@ -194,16 +210,16 @@ impl PerfGroup {
             .ok_or(())
             .map(|v| v.as_micros() as u64)?;
 
-        if running_us != enabled_us || running_us = 0 {
+        if running_us != enabled_us || running_us == 0 {
             self.prev = Some(current);
             return Err(());
         }
 
-        let cycles = self.counters.delta(prev, curr, PerfEvent::Cycles);
-        let instructions = self.counters.delta(prev, curr, PerfEvent::Instructions);
-        let tsc = self.counters.delta(prev, curr, PerfEvent::Tsc);
-        let aperf = self.counters.delta(prev, curr, PerfEvent::Aperf);
-        let mperf = self.counters.delta(prev, curr, PerfEvent::Mperf);
+        let cycles = self.counters.delta(prev, &current, PerfEvent::Cycles);
+        let instructions = self.counters.delta(prev, &current, PerfEvent::Instructions);
+        let tsc = self.counters.delta(prev, &current, PerfEvent::Tsc);
+        let aperf = self.counters.delta(prev, &current, PerfEvent::Aperf);
+        let mperf = self.counters.delta(prev, &current, PerfEvent::Mperf);
 
         // computed metrics
 

@@ -40,6 +40,7 @@ chrono = { version = "0.4.33", features = ["serde"] }
 libbpf-rs = { version = "0.21.2", optional = true }
 libbpf-sys = { version = "1.2.1", optional = true }
 perf-event2 = "0.7.0"
+perf-event-open-sys2 = "5.0.3"
 nvml-wrapper = "0.9.0"
 
 [target.'cfg(target_os = "linux")'.build-dependencies]

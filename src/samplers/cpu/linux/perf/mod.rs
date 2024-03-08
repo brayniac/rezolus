@@ -140,7 +140,7 @@ impl Sampler for Perf {
                 nr_active_groups += 1;
 
                 if let Some(value) = reading.cycles {
-                    total_cycles.0 += value;
+                    total_cycles += value;
 
                     self.counters[reading.id][0].set(value);
                 }
@@ -186,10 +186,18 @@ impl Sampler for Perf {
         CPU_CYCLES.add(total_cycles);
         CPU_INSTRUCTIONS.add(total_instructions);
         CPU_PERF_GROUPS_ACTIVE.set(nr_active_groups as i64);
-        CPU_IPKC_AVERAGE.set((ipkc.0 / ipkc.1) as i64);
-        CPU_IPUS_AVERAGE.set((ipus.0 / ipus.1) as i64);
-        CPU_BASE_FREQUENCY_AVERAGE.set((avg_base_frequency.0 / avg_base_frequency.1) as i64);
-        CPU_FREQUENCY_AVERAGE.set((avg_running_frequency.0 / avg_running_frequency.1) as i64);
+        if avg_ipkc.1 != 0 {
+            CPU_IPKC_AVERAGE.set((avg_ipkc.0 / avg_ipkc.1) as i64);
+        }
+        if avg_ipus.1 != 0 {
+            CPU_IPUS_AVERAGE.set((avg_ipus.0 / avg_ipus.1) as i64);
+        }
+        if avg_base_frequency.1 != 0 {
+            CPU_BASE_FREQUENCY_AVERAGE.set((avg_base_frequency.0 / avg_base_frequency.1) as i64);
+        }
+        if avg_running_frequency.1 != 0 {
+            CPU_FREQUENCY_AVERAGE.set((avg_running_frequency.0 / avg_running_frequency.1) as i64);
+        }
         CPU_CORES.set(nr_active_groups as _);
 
         // determine when to sample next
