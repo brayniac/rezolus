@@ -127,32 +127,58 @@ impl Sampler for Perf {
         }
 
         let mut nr_active_groups: u64 = 0;
+
         let mut total_cycles = 0;
         let mut total_instructions = 0;
-        let mut avg_ipkc = 0;
-        let mut avg_ipus = 0;
-        let mut avg_base_frequency = 0;
-        let mut avg_running_frequency = 0;
+        let mut avg_ipkc = (0, 0);
+        let mut avg_ipus = (0, 0);
+        let mut avg_base_frequency = (0, 0);
+        let mut avg_running_frequency = (0, 0);
 
         for group in &mut self.groups {
             if let Ok(reading) = group.get_metrics() {
                 nr_active_groups += 1;
-                total_cycles += reading.cycles;
-                total_instructions += reading.instructions;
-                avg_ipkc += reading.ipkc;
-                avg_ipus += reading.ipus;
-                avg_base_frequency += reading.base_frequency_mhz;
-                avg_running_frequency += reading.running_frequency_mhz;
-                let _ = CPU_IPKC_HISTOGRAM.increment(reading.ipkc);
-                let _ = CPU_IPUS_HISTOGRAM.increment(reading.ipus);
-                let _ = CPU_FREQUENCY_HISTOGRAM.increment(reading.running_frequency_mhz);
 
-                self.counters[reading.id][0].set(reading.cycles);
-                self.counters[reading.id][1].set(reading.instructions);
+                if let Some(value) = reading.cycles {
+                    total_cycles.0 += value;
 
-                self.gauges[reading.id][0].set(reading.ipkc as i64);
-                self.gauges[reading.id][1].set(reading.ipus as i64);
-                self.gauges[reading.id][2].set(reading.running_frequency_mhz as i64);
+                    self.counters[reading.id][0].set(value);
+                }
+
+                if let Some(value) = reading.instructions {
+                    total_instructions += value;
+
+                    self.counters[reading.id][1].set(value);
+                }
+
+                if let Some(value) = reading.ipkc {
+                    avg_ipkc.0 += value;
+                    avg_ipkc.1 += 1;
+
+                    let _ = CPU_IPKC_HISTOGRAM.increment(value);
+                    self.gauges[reading.id][0].set(value as i64);
+                }
+
+                if let Some(value) = reading.ipus {
+                    avg_ipus.0 += value;
+                    avg_ipus.1 += 1;
+
+                    let _ = CPU_IPUS_HISTOGRAM.increment(value);
+                    self.gauges[reading.id][1].set(value as i64);
+                }
+
+                if let Some(value) = reading.running_frequency_mhz {
+                    avg_running_frequency.0 += value;
+                    avg_running_frequency.1 += 1;
+
+                    let _ = CPU_FREQUENCY_HISTOGRAM.increment(value);
+                    self.gauges[reading.id][2].set(value as i64);
+                }
+
+                if let Some(value) = reading.base_frequency_mhz {
+                    avg_base_frequency.0 += value;
+                    avg_base_frequency.1 += 1;
+                }
             }
         }
 
@@ -160,10 +186,10 @@ impl Sampler for Perf {
         CPU_CYCLES.add(total_cycles);
         CPU_INSTRUCTIONS.add(total_instructions);
         CPU_PERF_GROUPS_ACTIVE.set(nr_active_groups as i64);
-        CPU_IPKC_AVERAGE.set((avg_ipkc / nr_active_groups) as i64);
-        CPU_IPUS_AVERAGE.set((avg_ipus / nr_active_groups) as i64);
-        CPU_BASE_FREQUENCY_AVERAGE.set((avg_base_frequency / nr_active_groups) as i64);
-        CPU_FREQUENCY_AVERAGE.set((avg_running_frequency / nr_active_groups) as i64);
+        CPU_IPKC_AVERAGE.set((ipkc.0 / ipkc.1) as i64);
+        CPU_IPUS_AVERAGE.set((ipus.0 / ipus.1) as i64);
+        CPU_BASE_FREQUENCY_AVERAGE.set((avg_base_frequency.0 / avg_base_frequency.1) as i64);
+        CPU_FREQUENCY_AVERAGE.set((avg_running_frequency.0 / avg_running_frequency.1) as i64);
         CPU_CORES.set(nr_active_groups as _);
 
         // determine when to sample next
