@@ -67,9 +67,6 @@ impl Runqlat {
 
         let counters = vec![
             Counter::new(&SCHEDULER_IVCSW, None),
-            Counter::new(&SCHEDULER_RUNQUEUE_WAIT, None),
-            Counter::new(&SCHEDULER_OFFCPU_TIME, None),
-            Counter::new(&SCHEDULER_ONCPU_TIME, None),
         ];
 
         bpf.add_counters("counters", counters);
@@ -77,6 +74,7 @@ impl Runqlat {
         let mut distributions = vec![
             ("runqlat", &SCHEDULER_RUNQUEUE_LATENCY),
             ("running", &SCHEDULER_RUNNING),
+            ("offcpu", &SCHEDULER_OFFCPU),
         ];
 
         for (name, histogram) in distributions.drain(..) {

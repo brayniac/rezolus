@@ -23,9 +23,6 @@
 
 // counter positions
 #define IVCSW 0
-#define RUNQUEUE_WAIT 1
-#define OFFCPU_TIME 2
-#define ONCPU_TIME 3
 
 /**
  * commit 2f064a59a1 ("sched: Change task_struct::state") changes
@@ -104,6 +101,14 @@ struct {
 	__uint(max_entries, HISTOGRAM_BUCKETS);
 } running SEC(".maps");
 
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(map_flags, BPF_F_MMAPABLE);
+	__type(key, u32);
+	__type(value, u64);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
+} offcpu SEC(".maps");
+
 /* record enqueue timestamp */
 static __always_inline
 int trace_enqueue(u32 tgid, u32 pid)
@@ -179,13 +184,6 @@ int handle__sched_switch(u64 *ctx)
 		if (tsp && *tsp) {
 			delta_ns = ts - *tsp;
 
-			// update counter
-			idx = COUNTER_GROUP_WIDTH * processor_id + ONCPU_TIME;
-			cnt = bpf_map_lookup_elem(&counters, &idx);
-			if (cnt) {
-				__sync_fetch_and_add(cnt, delta_ns);
-			}
-
 			// update histogram
 			idx = value_to_index(delta_ns);
 			cnt = bpf_map_lookup_elem(&running, &idx);
@@ -216,14 +214,6 @@ int handle__sched_switch(u64 *ctx)
 	if (tsp && *tsp) {
 		delta_ns = ts - *tsp;
 
-		// update the counter
-		idx = COUNTER_GROUP_WIDTH * processor_id + RUNQUEUE_WAIT;
-		cnt = bpf_map_lookup_elem(&counters, &idx);
-
-		if (cnt) {
-			__sync_fetch_and_add(cnt, delta_ns);
-		}
-
 		// update the histogram
 		idx = value_to_index(delta_ns);
 		cnt = bpf_map_lookup_elem(&runqlat, &idx);
@@ -239,12 +229,11 @@ int handle__sched_switch(u64 *ctx)
 	if (tsp && *tsp) {
 		delta_ns = ts - *tsp;
 
-		// update the counter
-		idx = COUNTER_GROUP_WIDTH * processor_id + OFFCPU_TIME;
-		cnt = bpf_map_lookup_elem(&counters, &idx);
-
+		// update the histogram
+		idx = value_to_index(delta_ns);
+		cnt = bpf_map_lookup_elem(&offcpu, &idx);
 		if (cnt) {
-			__sync_fetch_and_add(cnt, delta_ns);
+			__sync_fetch_and_add(cnt, 1);
 		}
 
 		*tsp = 0;
