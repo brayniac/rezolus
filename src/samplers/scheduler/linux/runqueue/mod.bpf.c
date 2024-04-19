@@ -164,7 +164,7 @@ int handle__sched_switch(u64 *ctx)
 
 	// prev task is moving from running
 	// - update prev->pid enqueued_at with now
-	// - calculate how long prev task was running, update hist
+	// - calculate how long prev task was running and update hist
 	if (get_task_state(prev) == TASK_RUNNING) {
 		// count involuntary context switch
 		idx = COUNTER_GROUP_WIDTH * processor_id + IVCSW;
@@ -179,7 +179,7 @@ int handle__sched_switch(u64 *ctx)
 		// mark when it was enqueued
 		bpf_map_update_elem(&enqueued_at, &pid, &ts, 0);
 
-		// calculate how long it was running, increment stats
+		// calculate how long it was running and increment stats
 		tsp = bpf_map_lookup_elem(&running_at, &pid);
 		if (tsp && *tsp) {
 			delta_ns = ts - *tsp;
@@ -195,7 +195,7 @@ int handle__sched_switch(u64 *ctx)
 		}
 	}
 
-	// for all tasks, track when it went off-cpu
+	// for all tasks: track when it went off-cpu
 	pid = prev->pid;
 
 	// mark off-cpu at
@@ -209,7 +209,7 @@ int handle__sched_switch(u64 *ctx)
 	// update running_at
 	bpf_map_update_elem(&running_at, &pid, &ts, 0);
 
-	// calculate how long it was enqueued, increment stats
+	// calculate how long it was enqueued and increment stats
 	tsp = bpf_map_lookup_elem(&enqueued_at, &pid);
 	if (tsp && *tsp) {
 		delta_ns = ts - *tsp;
@@ -222,21 +222,22 @@ int handle__sched_switch(u64 *ctx)
 		}
 
 		*tsp = 0;
-	}
 
-	// calculate how long it was off cpu, increment stats
-	tsp = bpf_map_lookup_elem(&offcpu_at, &pid);
-	if (tsp && *tsp) {
-		delta_ns = ts - *tsp;
+		// calculate how long it was off-cpu, not including runqueue wait,
+		// and increment stats
+		tsp = bpf_map_lookup_elem(&offcpu_at, &pid);
+		if (tsp && *tsp) {
+			delta_ns = ts - *tsp - delta_ns;
 
-		// update the histogram
-		idx = value_to_index(delta_ns);
-		cnt = bpf_map_lookup_elem(&offcpu, &idx);
-		if (cnt) {
-			__sync_fetch_and_add(cnt, 1);
+			// update the histogram
+			idx = value_to_index(delta_ns);
+			cnt = bpf_map_lookup_elem(&offcpu, &idx);
+			if (cnt) {
+				__sync_fetch_and_add(cnt, 1);
+			}
+
+			*tsp = 0;
 		}
-
-		*tsp = 0;
 	}
 
 	return 0;
