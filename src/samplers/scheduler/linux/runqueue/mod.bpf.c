@@ -394,7 +394,7 @@ int handle__sched_switch(u64 *ctx)
 
 			// update pid histogram if defined
 			u8 *hist_idx = bpf_map_lookup_elem(&pid_lut, &pid);
-			switch (hist_idx) {
+			switch ((u32)hist_idx) {
 			case 1:
 				cnt = bpf_map_lookup_elem(&running_1, &idx);
 				if (cnt) {
@@ -478,7 +478,7 @@ int handle__sched_switch(u64 *ctx)
 
 		// update pid histogram if defined
 		u8 *hist_idx = bpf_map_lookup_elem(&pid_lut, &pid);
-		switch (hist_idx) {
+		switch ((u32)hist_idx) {
 		case 1:
 			cnt = bpf_map_lookup_elem(&runqlat_1, &idx);
 			if (cnt) {
@@ -550,7 +550,7 @@ int handle__sched_switch(u64 *ctx)
 
 				// update pid histogram if defined
 				u8 *hist_idx = bpf_map_lookup_elem(&pid_lut, &pid);
-				switch (hist_idx) {
+				switch ((u32)hist_idx) {
 				case 1:
 					cnt = bpf_map_lookup_elem(&offcpu_1, &idx);
 					if (cnt) {
