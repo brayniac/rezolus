@@ -65,6 +65,19 @@ impl Runqlat {
 
         let mut bpf = Bpf::from_skel(skel);
 
+        let fd = bpf.map("pid_lut").as_fd().as_raw_fd();
+        let file = unsafe { std::fs::File::from_raw_fd(fd as _) };
+        let mut pid_lut = unsafe {
+            memmap2::MmapOptions::new()
+                .len(4194304)
+                .map_mut(&file)
+                .expect("failed to mmap() bpf pid lut")
+        };
+
+        //TODO(bmartin): add some actual lut writes here
+
+        let _ = pid_lut.flush();
+
         let counters = vec![Counter::new(&SCHEDULER_IVCSW, None)];
 
         bpf.add_counters("counters", counters);
