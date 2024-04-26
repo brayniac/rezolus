@@ -20,6 +20,8 @@ use crate::common::*;
 use crate::samplers::scheduler::stats::*;
 use crate::samplers::scheduler::*;
 
+use std::os::fd::{AsFd, AsRawFd, FromRawFd};
+
 impl GetMap for ModSkel<'_> {
     fn map(&self, name: &str) -> &libbpf_rs::Map {
         self.obj.map(name).unwrap()
