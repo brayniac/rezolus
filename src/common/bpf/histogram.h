@@ -2,14 +2,9 @@
 
 // Function to count leading zeros, since we cannot use the builtin CLZ from
 // within BPF. But since we also can't loop, this is implemented as a binary
-// search with a maximum of 6 branches.
+// search with a maximum of 6 branches. 
 static u32 clz(u64 value) {
     u32 count = 0;
-
-    // quick return if value is 0
-    if (!value) {
-        return 64;
-    }
 
     // binary search to find number of leading zeros
     if (value & 0xFFFFFFFF00000000) {
@@ -203,25 +198,50 @@ static u32 clz(u64 value) {
     } else {
         return 63;
     }
+
+    return 64;
 }
 
 // base-2 histogram indexing function that is compatible with Rust `histogram`
-// crate for m = 0, r = 8, n = 64 this gives us the ability to store counts for
-// values from 1 -> u64::MAX and uses 7424 buckets per histogram, which occupies
-// 58KB of space in kernelspace (where we use 64bit counters)
-static u32 value_to_index(u64 value) {
+// crate with grouping power = 4. This uses 2 pages (8KB) in kernel space and
+// 7.6KB in user space and has a relative error of 6.25%
+//
+// See the indexing logic here:
+// https://github.com/pelikan-io/rustcommon/blob/main/histogram/src/config.rs
+static u32 value_to_index4(u64 value) {
     if (value == 0) {
         return 0;
     }
 
-    u64 h = 63 - clz(value);
-    // h < r
-    if (h < 8) {
+    u64 power = 63 - clz(value);
+
+    // if power is less than the cutoff power, the bucket index is the value
+    if (power < 5) {
         return value;
     } else {
-        // d = h - r + 1
-        u64 d = h - 7;
-        // ((d + 1) * G + ((value - (1 << h)) >> (m + d)))
-        return ((d + 1) * 128) + ((value - (1 << h)) >> d);
+        // this is reduced from the histogram crate
+        return (32 + ((power - 5) << 4) + (value - (1 << power)) >> (power - 4));
+    }
+}
+
+// base-2 histogram indexing function that is compatible with Rust `histogram`
+// crate with grouping power = 7. This uses 15 pages (60KB) in kernel space and
+// 58KB in user space per histogram with a relative error of 0.781%
+//
+// See the indexing logic here:
+// https://github.com/pelikan-io/rustcommon/blob/main/histogram/src/config.rs
+static u32 value_to_index7(u64 value) {
+    if (value == 0) {
+        return 0;
+    }
+
+    u64 power = 63 - clz(value);
+
+    // if power is less than the cutoff power, the bucket index is the value
+    if (power < 8) {
+        return value;
+    } else {
+        // this is reduced from the histogram crate
+        return (256 + ((power - 8) << 7) + (value - (1 << power)) >> (power - 7));
     }
 }
