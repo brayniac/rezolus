@@ -19,6 +19,9 @@
 #define MAX_CPUS 1024
 #define MAX_PID 4194304
 
+// controls the number of trackable pid groups
+#define MAX_GROUPS 8
+
 #define TASK_RUNNING 0
 
 // counter positions
@@ -98,64 +101,8 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS);
-} runqlat_1 SEC(".maps");
-
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
-	__type(key, u32);
-	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS);
-} runqlat_2 SEC(".maps");
-
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
-	__type(key, u32);
-	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS);
-} runqlat_3 SEC(".maps");
-
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
-	__type(key, u32);
-	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS);
-} runqlat_4 SEC(".maps");
-
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
-	__type(key, u32);
-	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS);
-} runqlat_5 SEC(".maps");
-
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
-	__type(key, u32);
-	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS);
-} runqlat_6 SEC(".maps");
-
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
-	__type(key, u32);
-	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS);
-} runqlat_7 SEC(".maps");
-
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
-	__type(key, u32);
-	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS);
-} runqlat_8 SEC(".maps");
+	__uint(max_entries, HISTOGRAM_BUCKETS * MAX_GROUPS);
+} runqlat_per_group SEC(".maps");
 
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
@@ -170,64 +117,8 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS);
-} running_1 SEC(".maps");
-
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
-	__type(key, u32);
-	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS);
-} running_2 SEC(".maps");
-
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
-	__type(key, u32);
-	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS);
-} running_3 SEC(".maps");
-
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
-	__type(key, u32);
-	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS);
-} running_4 SEC(".maps");
-
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
-	__type(key, u32);
-	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS);
-} running_5 SEC(".maps");
-
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
-	__type(key, u32);
-	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS);
-} running_6 SEC(".maps");
-
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
-	__type(key, u32);
-	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS);
-} running_7 SEC(".maps");
-
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
-	__type(key, u32);
-	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS);
-} running_8 SEC(".maps");
+	__uint(max_entries, HISTOGRAM_BUCKETS * MAX_GROUPS);
+} running_per_group SEC(".maps");
 
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
@@ -242,71 +133,15 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS);
-} offcpu_1 SEC(".maps");
+	__uint(max_entries, HISTOGRAM_BUCKETS * MAX_GROUPS);
+} offcpu_per_group SEC(".maps");
 
+// provides a lookup table from pid to a histogram index offset
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS);
-} offcpu_2 SEC(".maps");
-
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
-	__type(key, u32);
-	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS);
-} offcpu_3 SEC(".maps");
-
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
-	__type(key, u32);
-	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS);
-} offcpu_4 SEC(".maps");
-
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
-	__type(key, u32);
-	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS);
-} offcpu_5 SEC(".maps");
-
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
-	__type(key, u32);
-	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS);
-} offcpu_6 SEC(".maps");
-
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
-	__type(key, u32);
-	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS);
-} offcpu_7 SEC(".maps");
-
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
-	__type(key, u32);
-	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS);
-} offcpu_8 SEC(".maps");
-
-// provides a lookup table from PID to a counter index offset
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
-	__type(key, u32);
-	__type(value, u8);
 	__uint(max_entries, MAX_PID);
 } pid_lut SEC(".maps");
 
@@ -352,7 +187,7 @@ int handle__sched_switch(u64 *ctx)
 	struct task_struct *prev = (struct task_struct *)ctx[1];
 	struct task_struct *next = (struct task_struct *)ctx[2];
 
-	u32 pid, idx;
+	u32 pid, ppid, idx, offset;
 	u64 *tsp, delta_ns, *cnt, offcpu_ns;
 
 	u32 processor_id = bpf_get_smp_processor_id();
@@ -376,6 +211,7 @@ int handle__sched_switch(u64 *ctx)
 		}
 
 		pid = prev->pid;
+		ppid = prev->ppid;
 
 		// mark when it was enqueued
 		bpf_map_update_elem(&enqueued_at, &pid, &ts, 0);
@@ -392,58 +228,21 @@ int handle__sched_switch(u64 *ctx)
 				__sync_fetch_and_add(cnt, 1);
 			}
 
-			// update pid histogram if defined
-			u8 *hist_idx = bpf_map_lookup_elem(&pid_lut, &pid);
-			switch ((u32)hist_idx) {
-			case 1:
-				cnt = bpf_map_lookup_elem(&running_1, &idx);
+			// check if PID is in the table
+			offset = bpf_map_lookup_elem(&pid_lut, &pid);
+
+			// otherwise check if PPID is in table
+			if (!offset) {
+				offset = bpf_map_lookup_elem(&pid_lut, &ppid);
+			}
+
+			// if there is a group histogram, update it
+			if (offset) {
+				idx = idx + offset * HISTOGRAM_BUCKETS;
+				cnt = bpf_map_lookup_elem(&running_per_group, &idx);
 				if (cnt) {
 					__sync_fetch_and_add(cnt, 1);
 				}
-				break;
-			case 2:
-				cnt = bpf_map_lookup_elem(&running_2, &idx);
-				if (cnt) {
-					__sync_fetch_and_add(cnt, 1);
-				}
-				break;
-			case 3:
-				cnt = bpf_map_lookup_elem(&running_3, &idx);
-				if (cnt) {
-					__sync_fetch_and_add(cnt, 1);
-				}
-				break;
-			case 4:
-				cnt = bpf_map_lookup_elem(&running_4, &idx);
-				if (cnt) {
-					__sync_fetch_and_add(cnt, 1);
-				}
-				break;
-			case 5:
-				cnt = bpf_map_lookup_elem(&running_5, &idx);
-				if (cnt) {
-					__sync_fetch_and_add(cnt, 1);
-				}
-				break;
-			case 6:
-				cnt = bpf_map_lookup_elem(&running_6, &idx);
-				if (cnt) {
-					__sync_fetch_and_add(cnt, 1);
-				}
-				break;
-			case 7:
-				cnt = bpf_map_lookup_elem(&running_7, &idx);
-				if (cnt) {
-					__sync_fetch_and_add(cnt, 1);
-				}
-				break;
-			case 8:
-				cnt = bpf_map_lookup_elem(&running_8, &idx);
-				if (cnt) {
-					__sync_fetch_and_add(cnt, 1);
-				}
-				break;
-			default: break;
 			}
 
 			*tsp = 0;
@@ -476,58 +275,23 @@ int handle__sched_switch(u64 *ctx)
 			__sync_fetch_and_add(cnt, 1);
 		}
 
-		// update pid histogram if defined
-		u8 *hist_idx = bpf_map_lookup_elem(&pid_lut, &pid);
-		switch ((u32)hist_idx) {
-		case 1:
-			cnt = bpf_map_lookup_elem(&runqlat_1, &idx);
+		// update group histogram if defined
+
+		// check if PID is in the table
+		offset = bpf_map_lookup_elem(&pid_lut, &pid);
+
+		// otherwise check if PPID is in table
+		if (!offset) {
+			offset = bpf_map_lookup_elem(&pid_lut, &ppid);
+		}
+
+		// if there is a group histogram, update it
+		if (offset) {
+			idx = idx + offset * HISTOGRAM_BUCKETS;
+			cnt = bpf_map_lookup_elem(&running_per_group, &idx);
 			if (cnt) {
 				__sync_fetch_and_add(cnt, 1);
 			}
-			break;
-		case 2:
-			cnt = bpf_map_lookup_elem(&runqlat_2, &idx);
-			if (cnt) {
-				__sync_fetch_and_add(cnt, 1);
-			}
-			break;
-		case 3:
-			cnt = bpf_map_lookup_elem(&runqlat_3, &idx);
-			if (cnt) {
-				__sync_fetch_and_add(cnt, 1);
-			}
-			break;
-		case 4:
-			cnt = bpf_map_lookup_elem(&runqlat_4, &idx);
-			if (cnt) {
-				__sync_fetch_and_add(cnt, 1);
-			}
-			break;
-		case 5:
-			cnt = bpf_map_lookup_elem(&runqlat_5, &idx);
-			if (cnt) {
-				__sync_fetch_and_add(cnt, 1);
-			}
-			break;
-		case 6:
-			cnt = bpf_map_lookup_elem(&runqlat_6, &idx);
-			if (cnt) {
-				__sync_fetch_and_add(cnt, 1);
-			}
-			break;
-		case 7:
-			cnt = bpf_map_lookup_elem(&runqlat_7, &idx);
-			if (cnt) {
-				__sync_fetch_and_add(cnt, 1);
-			}
-			break;
-		case 8:
-			cnt = bpf_map_lookup_elem(&runqlat_8, &idx);
-			if (cnt) {
-				__sync_fetch_and_add(cnt, 1);
-			}
-			break;
-		default: break;
 		}
 
 		*tsp = 0;
@@ -548,58 +312,21 @@ int handle__sched_switch(u64 *ctx)
 					__sync_fetch_and_add(cnt, 1);
 				}
 
-				// update pid histogram if defined
-				u8 *hist_idx = bpf_map_lookup_elem(&pid_lut, &pid);
-				switch ((u32)hist_idx) {
-				case 1:
-					cnt = bpf_map_lookup_elem(&offcpu_1, &idx);
+				// check if PID is in the table
+				offset = bpf_map_lookup_elem(&pid_lut, &pid);
+
+				// otherwise check if PPID is in table
+				if (!offset) {
+					offset = bpf_map_lookup_elem(&pid_lut, &ppid);
+				}
+
+				// if there is a group histogram, update it
+				if (offset) {
+					idx = idx + offset * HISTOGRAM_BUCKETS;
+					cnt = bpf_map_lookup_elem(&offcpu_per_group, &idx);
 					if (cnt) {
 						__sync_fetch_and_add(cnt, 1);
 					}
-					break;
-				case 2:
-					cnt = bpf_map_lookup_elem(&offcpu_2, &idx);
-					if (cnt) {
-						__sync_fetch_and_add(cnt, 1);
-					}
-					break;
-				case 3:
-					cnt = bpf_map_lookup_elem(&offcpu_3, &idx);
-					if (cnt) {
-						__sync_fetch_and_add(cnt, 1);
-					}
-					break;
-				case 4:
-					cnt = bpf_map_lookup_elem(&offcpu_4, &idx);
-					if (cnt) {
-						__sync_fetch_and_add(cnt, 1);
-					}
-					break;
-				case 5:
-					cnt = bpf_map_lookup_elem(&offcpu_5, &idx);
-					if (cnt) {
-						__sync_fetch_and_add(cnt, 1);
-					}
-					break;
-				case 6:
-					cnt = bpf_map_lookup_elem(&offcpu_6, &idx);
-					if (cnt) {
-						__sync_fetch_and_add(cnt, 1);
-					}
-					break;
-				case 7:
-					cnt = bpf_map_lookup_elem(&offcpu_7, &idx);
-					if (cnt) {
-						__sync_fetch_and_add(cnt, 1);
-					}
-					break;
-				case 8:
-					cnt = bpf_map_lookup_elem(&offcpu_8, &idx);
-					if (cnt) {
-						__sync_fetch_and_add(cnt, 1);
-					}
-					break;
-				default: break;
 				}
 			}
 
