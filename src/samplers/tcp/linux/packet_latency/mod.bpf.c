@@ -66,9 +66,9 @@ static int handle_tcp_rcv_space_adjust(void *ctx, struct sock *sk)
 	const struct inet_sock *inet = (struct inet_sock *)(sk);
 	u64 sock_ident = get_sock_ident(sk);
 	u32 idx;
-	u64 now, delta_ns, *cnt;
+	u64 now, delta_ns, *cnt, *tsp;
 
-	u64 tsp = bpf_map_lookup_elem(&start, &sock_ident);
+	tsp = bpf_map_lookup_elem(&start, &sock_ident);
 	if (!tsp) {
 		return 0;
 	}
