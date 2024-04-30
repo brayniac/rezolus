@@ -136,7 +136,9 @@ int sys_exit(struct trace_event_raw_sys_exit *args)
 	u32 tid = id;
 
 	u64 *cnt;
-	u32 idx;
+	u32 idx, cpu_offset;
+
+	cpu_offset = COUNTER_GROUP_WIDTH * bpf_get_smp_processor_id();
 
 	if (args->id < 0) {
 		return 0;
@@ -145,8 +147,7 @@ int sys_exit(struct trace_event_raw_sys_exit *args)
 	u32 syscall_id = args->id;
 
 	// update the total counter
-	idx = COUNTER_GROUP_WIDTH * bpf_get_smp_processor_id();
-	cnt = bpf_map_lookup_elem(&counters, &idx);
+	cnt = bpf_map_lookup_elem(&counters, &cpu_offset);
 
 	if (cnt) {
 		__sync_fetch_and_add(cnt, 1);
@@ -159,7 +160,7 @@ int sys_exit(struct trace_event_raw_sys_exit *args)
 		u32 *counter_offset = bpf_map_lookup_elem(&syscall_lut, &syscall_id);
 
 		if (counter_offset && *counter_offset && *counter_offset < COUNTER_GROUP_WIDTH) {
-			idx = COUNTER_GROUP_WIDTH * bpf_get_smp_processor_id() + ((u32)*counter_offset);
+			idx = cpu_offset + ((u32)*counter_offset);
 			cnt = bpf_map_lookup_elem(&counters, &idx);
 
 			if (cnt) {
