@@ -68,20 +68,20 @@ int BPF_PROG(netif_receive_skb, struct sk_buff *skb)
 
 
 SEC("raw_tp/net_dev_start_xmit")
-int BPF_PROG(tcp_cleanup_rbuf, struct sk_buff *skb, struct net_device *dev, void *txq, bool more)
+int BPF_PROG(net_dev_start_xmit, struct sk_buff *skb, struct net_device *dev, void *txq, bool more)
 {
 	u64 len;
 	u64 *cnt;
 	u32 idx, cpu_offset;
 	u8 addr_assign_type;
 
-	cpu_offset = COUNTER_GROUP_WIDTH * bpf_get_smp_processor_id();
-
 	addr_assign_type = BPF_CORE_READ(dev, addr_assign_type);
 
 	if (addr_assign_type != 0) {
 		return 0;
 	}
+
+	cpu_offset = COUNTER_GROUP_WIDTH * bpf_get_smp_processor_id();
 
 	len = BPF_CORE_READ(skb, len);
 

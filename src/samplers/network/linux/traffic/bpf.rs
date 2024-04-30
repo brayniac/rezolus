@@ -55,8 +55,8 @@ impl NetworkTraffic {
             skel.progs().netif_receive_skb().insn_cnt()
         );
         debug!(
-            "{NAME} tcp_cleanup_rbuf() BPF instruction count: {}",
-            skel.progs().tcp_cleanup_rbuf().insn_cnt()
+            "{NAME} net_dev_start_xmit() BPF instruction count: {}",
+            skel.progs().net_dev_start_xmit().insn_cnt()
         );
 
         skel.attach()
