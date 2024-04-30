@@ -15,11 +15,14 @@
 #include <bpf/bpf_helpers.h>
 
 #define COUNTER_GROUP_WIDTH 8
-#define HISTOGRAM_BUCKETS 7424
+#define HISTOGRAM_BUCKETS HISTOGRAM_BUCKETS_POW_7
+#define HISTOGRAM_POWER 7
+#define GROUP_HISTOGRAM_BUCKETS HISTOGRAM_BUCKETS_POW_5
+#define GROUP_HISTOGRAM_POWER 5
 #define MAX_CPUS 1024
 #define MAX_PID 4194304
 
-// controls the number of trackable pid groups
+// controls the number of trackable pid/tid groups
 #define MAX_GROUPS 8
 
 #define TASK_RUNNING 0
@@ -101,7 +104,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS * MAX_GROUPS);
+	__uint(max_entries, GROUP_HISTOGRAM_BUCKETS * MAX_GROUPS);
 } runqlat_per_group SEC(".maps");
 
 struct {
@@ -117,7 +120,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS * MAX_GROUPS);
+	__uint(max_entries, GROUP_HISTOGRAM_BUCKETS * MAX_GROUPS);
 } running_per_group SEC(".maps");
 
 struct {
@@ -133,7 +136,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS * MAX_GROUPS);
+	__uint(max_entries, GROUP_HISTOGRAM_BUCKETS * MAX_GROUPS);
 } offcpu_per_group SEC(".maps");
 
 // provides a lookup table from pid to a histogram index offset
@@ -222,7 +225,7 @@ int handle__sched_switch(u64 *ctx)
 			delta_ns = ts - *tsp;
 
 			// update histogram
-			idx = value_to_index(delta_ns);
+			idx = value_to_index(delta_ns, HISTOGRAM_POWER);
 			cnt = bpf_map_lookup_elem(&running, &idx);
 			if (cnt) {
 				__sync_fetch_and_add(cnt, 1);
@@ -238,7 +241,7 @@ int handle__sched_switch(u64 *ctx)
 
 			// if there is a group histogram, update it
 			if (offset) {
-				idx = idx + offset * HISTOGRAM_BUCKETS;
+				idx = value_to_index(offcpu_ns, GROUP_HISTOGRAM_POWER) + offset * GROUP_HISTOGRAM_BUCKETS;
 				cnt = bpf_map_lookup_elem(&running_per_group, &idx);
 				if (cnt) {
 					__sync_fetch_and_add(cnt, 1);
@@ -269,7 +272,7 @@ int handle__sched_switch(u64 *ctx)
 		delta_ns = ts - *tsp;
 
 		// update the histogram
-		idx = value_to_index(delta_ns);
+		idx = value_to_index(delta_ns, HISTOGRAM_POWER);
 		cnt = bpf_map_lookup_elem(&runqlat, &idx);
 		if (cnt) {
 			__sync_fetch_and_add(cnt, 1);
@@ -287,7 +290,7 @@ int handle__sched_switch(u64 *ctx)
 
 		// if there is a group histogram, update it
 		if (offset) {
-			idx = idx + offset * HISTOGRAM_BUCKETS;
+			idx = value_to_index(offcpu_ns, GROUP_HISTOGRAM_POWER) + offset * GROUP_HISTOGRAM_BUCKETS;
 			cnt = bpf_map_lookup_elem(&running_per_group, &idx);
 			if (cnt) {
 				__sync_fetch_and_add(cnt, 1);
@@ -306,7 +309,7 @@ int handle__sched_switch(u64 *ctx)
 				offcpu_ns = offcpu_ns - delta_ns;
 
 				// update the histogram
-				idx = value_to_index(offcpu_ns);
+				idx = value_to_index(offcpu_ns, HISTOGRAM_POWER);
 				cnt = bpf_map_lookup_elem(&offcpu, &idx);
 				if (cnt) {
 					__sync_fetch_and_add(cnt, 1);
@@ -322,7 +325,7 @@ int handle__sched_switch(u64 *ctx)
 
 				// if there is a group histogram, update it
 				if (offset) {
-					idx = idx + offset * HISTOGRAM_BUCKETS;
+					idx = value_to_index(offcpu_ns, GROUP_HISTOGRAM_POWER) + offset * GROUP_HISTOGRAM_BUCKETS;
 					cnt = bpf_map_lookup_elem(&offcpu_per_group, &idx);
 					if (cnt) {
 						__sync_fetch_and_add(cnt, 1);
