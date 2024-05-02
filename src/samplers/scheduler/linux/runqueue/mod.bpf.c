@@ -22,7 +22,7 @@
 #define MAX_CPUS 1024
 #define MAX_PID 4194304
 
-// controls the number of trackable pid/tid groups
+// controls the number of trackable pid/tgid groups
 #define MAX_GROUPS 8
 
 #define TASK_RUNNING 0
@@ -190,7 +190,7 @@ int handle__sched_switch(u64 *ctx)
 	struct task_struct *prev = (struct task_struct *)ctx[1];
 	struct task_struct *next = (struct task_struct *)ctx[2];
 
-	u32 pid, ppid, idx, offset;
+	u32 pid, tgid, idx, offset;
 	u64 *tsp, delta_ns, *cnt, offcpu_ns;
 
 	u32 processor_id = bpf_get_smp_processor_id();
@@ -214,7 +214,7 @@ int handle__sched_switch(u64 *ctx)
 		}
 
 		pid = prev->pid;
-		ppid = prev->ppid;
+		tgid = prev->tgid;
 
 		// mark when it was enqueued
 		bpf_map_update_elem(&enqueued_at, &pid, &ts, 0);
@@ -231,12 +231,12 @@ int handle__sched_switch(u64 *ctx)
 				__sync_fetch_and_add(cnt, 1);
 			}
 
-			// check if PID is in the table
+			// check if pid is in the table (this is a thread-level identifier)
 			offset = bpf_map_lookup_elem(&pid_lut, &pid);
 
-			// otherwise check if PPID is in table
+			// otherwise check if thread group is in table
 			if (!offset) {
-				offset = bpf_map_lookup_elem(&pid_lut, &ppid);
+				offset = bpf_map_lookup_elem(&pid_lut, &tgid);
 			}
 
 			// if there is a group histogram, update it
@@ -262,6 +262,7 @@ int handle__sched_switch(u64 *ctx)
 	// - update next->pid running_at with now
 	// - calculate how long next task was enqueued, update hist
 	pid = next->pid;
+	tgid = next->tgid;
 
 	// update running_at
 	bpf_map_update_elem(&running_at, &pid, &ts, 0);
@@ -280,12 +281,12 @@ int handle__sched_switch(u64 *ctx)
 
 		// update group histogram if defined
 
-		// check if PID is in the table
+		// check if pid is in the table (this is a thread-level identifier)
 		offset = bpf_map_lookup_elem(&pid_lut, &pid);
 
-		// otherwise check if PPID is in table
+		// otherwise check if thread group is in table
 		if (!offset) {
-			offset = bpf_map_lookup_elem(&pid_lut, &ppid);
+			offset = bpf_map_lookup_elem(&pid_lut, &tgid);
 		}
 
 		// if there is a group histogram, update it
@@ -315,12 +316,12 @@ int handle__sched_switch(u64 *ctx)
 					__sync_fetch_and_add(cnt, 1);
 				}
 
-				// check if PID is in the table
+				// check if pid is in the table (this is a thread-level identifier)
 				offset = bpf_map_lookup_elem(&pid_lut, &pid);
 
-				// otherwise check if PPID is in table
+				// otherwise check if thread group is in table
 				if (!offset) {
-					offset = bpf_map_lookup_elem(&pid_lut, &ppid);
+					offset = bpf_map_lookup_elem(&pid_lut, &tgid);
 				}
 
 				// if there is a group histogram, update it
