@@ -79,19 +79,19 @@ impl<'a> Distribution<'a> {
 
         let expected_len = self.pages * PAGE_SIZE / 8;
 
-        let buckets = self.histograms[0].config().total_buckets();
+        let histogram_buckets = self.histograms[0].config().total_buckets();
 
         if buckets.len() == expected_len {
             let mut offset = 0;
 
             for histogram in self.histograms {
-                let _ = histogram.update_from(&buckets[offset..(offset + buckets)]);
-                offset += buckets;
+                let _ = histogram.update_from(&buckets[offset..(offset + histogram_buckets)]);
+                offset += histogram_buckets;
             }
         } else {
             warn!("mmap region misaligned or did not have expected number of values {} != {expected_len}", buckets.len());
         
-            self.buffer.resize(buckets, 0);
+            self.buffer.resize(histogram_buckets, 0);
 
             for histogram in self.histograms {
                 for (idx, bucket) in self.buffer.iter_mut().enumerate() {
@@ -116,7 +116,7 @@ impl<'a> Distribution<'a> {
                 }
 
                 let _ = histogram
-                    .update_from(&self.buffer[0..HISTOGRAM_BUCKETS]);
+                    .update_from(&self.buffer[0..histogram_buckets]);
             }
         }
     }
