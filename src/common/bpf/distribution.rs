@@ -84,7 +84,7 @@ impl<'a> Distribution<'a> {
         if buckets.len() == expected_len {
             let mut offset = 0;
 
-            for histogram in self.histograms {
+            for histogram in &self.histograms {
                 let _ = histogram.update_from(&buckets[offset..(offset + histogram_buckets)]);
                 offset += histogram_buckets;
             }
@@ -93,7 +93,7 @@ impl<'a> Distribution<'a> {
         
             self.buffer.resize(histogram_buckets, 0);
 
-            for histogram in self.histograms {
+            for histogram in &self.histograms {
                 for (idx, bucket) in self.buffer.iter_mut().enumerate() {
                     let start = idx * std::mem::size_of::<u64>();
 
