@@ -31,6 +31,10 @@ static MAX_CPUS: usize = 1024;
 const HISTOGRAM_BUCKETS: usize = 7424;
 const HISTOGRAM_PAGES: usize = 15;
 
+pub fn buckets_to_pages(total_buckets: usize) -> usize {
+    ((total_buckets * 8) + PAGE_SIZE - 1) / PAGE_SIZE
+}
+
 #[self_referencing]
 pub struct Bpf<T: 'static> {
     skel: T,
