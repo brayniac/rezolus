@@ -30,7 +30,7 @@ pub struct Distribution<'a> {
 
 impl<'a> Distribution<'a> {
     pub fn new(map: &'a libbpf_rs::Map, histogram: &'static RwLockHistogram) -> Self {
-        Self::multi(map, &[histogram]).unwrap()
+        Self::multi(map, vec![histogram]).unwrap()
     }
 
     pub fn multi(
@@ -79,9 +79,10 @@ impl<'a> Distribution<'a> {
 
         let expected_len = self.pages * PAGE_SIZE / 8;
 
+        let buckets = self.histograms[0].config().total_buckets();
+
         if buckets.len() == expected_len {
             let mut offset = 0;
-            let buckets = histograms[0].config().total_buckets();
 
             for histogram in self.histograms {
                 let _ = histogram.update_from(&buckets[offset..(offset + buckets)]);
@@ -89,9 +90,7 @@ impl<'a> Distribution<'a> {
             }
         } else {
             warn!("mmap region misaligned or did not have expected number of values {} != {expected_len}", buckets.len());
-
-            let buckets = histograms[0].config().total_buckets();
-
+        
             self.buffer.resize(buckets, 0);
 
             for histogram in self.histograms {
@@ -116,8 +115,7 @@ impl<'a> Distribution<'a> {
                     *bucket = val;
                 }
 
-                let _ = self
-                    .histogram
+                let _ = histogram
                     .update_from(&self.buffer[0..HISTOGRAM_BUCKETS]);
             }
         }
