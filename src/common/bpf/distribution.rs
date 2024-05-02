@@ -44,7 +44,7 @@ impl<'a> Distribution<'a> {
 
         let buckets = histograms[1].config().total_buckets();
 
-        for histogram in histograms {
+        for histogram in &histograms {
             if histogram.config().total_buckets() != buckets {
                 error!("the histograms provided for the distribution had different configurations");
                 return Err(());
