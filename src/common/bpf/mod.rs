@@ -26,14 +26,6 @@ const CACHELINE_SIZE: usize = 64;
 /// no CPUs will share cacheline sized segments of the counter map.
 static MAX_CPUS: usize = 1024;
 
-/// The number of histogram buckets based on a rustcommon histogram with the
-/// parameters `grouping_power = 7` `max_value_power = 64`.
-///
-/// NOTE: this *must* remain in-sync across both C and Rust components of BPF
-/// code.
-const HISTOGRAM_BUCKETS: usize = 7424;
-const HISTOGRAM_PAGES: usize = 15;
-
 pub fn buckets_to_pages(total_buckets: usize) -> usize {
     ((total_buckets * 8) + PAGE_SIZE - 1) / PAGE_SIZE
 }
@@ -110,15 +102,31 @@ impl<T: 'static + GetMap> Bpf<T> {
                 Err(())
             } else {
                 this.multi_distributions
-                    .insert(name.to_owned(), MultiDistribution::new(this.skel.map(name), config, len));
+                    .insert(name.to_owned(), MultiDistribution::new(this.skel.map(name), config, len)?);
                 Ok(())
             }
         })
     }
 
-    pub fn get_multi_distributions(&mut self, name: &str) -> Option<&mut MultiDistribution> {
+    pub fn add_to_multi_distribution(&mut self, name: &str, index: usize, histogram: Arc<DynBoxedMetric<RwLockHistogram>>) -> Result<(), ()> {
         self.with_mut(|this| {
-            this.multi_distributions.get_mut(name)
+            if let Some(d) = this.multi_distributions.get_mut(name) {
+                d.register(index, histogram)
+            } else {
+                error!("no multi distribution with name: {name}");
+                Err(())
+            }
+        })
+    }
+
+    pub fn remove_from_multi_distribution(&mut self, name: &str, index: usize) -> Result<(), ()> {
+        self.with_mut(|this| {
+            if let Some(d) = this.multi_distributions.get_mut(name) {
+                d.deregister(index)
+            } else {
+                error!("no multi distribution with name: {name}");
+                Err(())
+            }
         })
     }
 

@@ -213,4 +213,10 @@ fn main() {
 pub trait Sampler {
     /// Do some sampling and updating of stats
     fn sample(&mut self);
+
+    /// Create a new PID group
+    #[allow(unused_variables)]
+    fn register_pid_group(&mut self, name: &str, index: usize) -> Result<(), ()> {
+        Ok(())
+    }
 }

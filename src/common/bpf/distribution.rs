@@ -62,45 +62,38 @@ impl<'a> Distribution<'a> {
 
         let expected_len = self.pages * PAGE_SIZE / 8;
 
-        let histogram_buckets = self.histograms[0].config().total_buckets();
+        let histogram_buckets = self.histogram.config().total_buckets();
 
         if buckets.len() == expected_len {
-            let mut offset = 0;
-
-            for histogram in &self.histograms {
-                let _ = histogram.update_from(&buckets[offset..(offset + histogram_buckets)]);
-                offset += histogram_buckets;
-            }
+            let _ = self.histogram.update_from(&buckets[0..histogram_buckets]);
         } else {
             warn!("mmap region misaligned or did not have expected number of values {} != {expected_len}", buckets.len());
         
             self.buffer.resize(histogram_buckets, 0);
 
-            for histogram in &self.histograms {
-                for (idx, bucket) in self.buffer.iter_mut().enumerate() {
-                    let start = idx * std::mem::size_of::<u64>();
+            for (idx, bucket) in self.buffer.iter_mut().enumerate() {
+                let start = idx * std::mem::size_of::<u64>();
 
-                    if start + 7 >= self.mmap.len() {
-                        break;
-                    }
-
-                    let val = u64::from_ne_bytes([
-                        self.mmap[start + 0],
-                        self.mmap[start + 1],
-                        self.mmap[start + 2],
-                        self.mmap[start + 3],
-                        self.mmap[start + 4],
-                        self.mmap[start + 5],
-                        self.mmap[start + 6],
-                        self.mmap[start + 7],
-                    ]);
-
-                    *bucket = val;
+                if start + 7 >= self.mmap.len() {
+                    break;
                 }
 
-                let _ = histogram
-                    .update_from(&self.buffer[0..histogram_buckets]);
+                let val = u64::from_ne_bytes([
+                    self.mmap[start + 0],
+                    self.mmap[start + 1],
+                    self.mmap[start + 2],
+                    self.mmap[start + 3],
+                    self.mmap[start + 4],
+                    self.mmap[start + 5],
+                    self.mmap[start + 6],
+                    self.mmap[start + 7],
+                ]);
+
+                *bucket = val;
             }
+
+            let _ = self.histogram
+                .update_from(&self.buffer[0..histogram_buckets]);
         }
     }
 }
@@ -111,7 +104,7 @@ pub struct MultiDistribution<'a> {
     config: histogram::Config,
     pages: usize,
     buffer: Vec<u64>,
-    histograms: Box<[Option<Arc<RwLockHistogram>>]>,
+    histograms: Box<[Option<Arc<DynBoxedMetric<RwLockHistogram>>>]>,
 }
 
 impl<'a> MultiDistribution<'a> {
@@ -137,13 +130,14 @@ impl<'a> MultiDistribution<'a> {
         Ok(Self {
             _map: map,
             mmap,
+            config,
             pages,
             buffer: Vec::new(),
             histograms,
         })
     }
 
-    pub fn register(&mut self, index: usize, histogram: Arc<RwLockHistogram>) -> Result<(), ()> {
+    pub fn register(&mut self, index: usize, histogram: Arc<DynBoxedMetric<RwLockHistogram>>) -> Result<(), ()> {
         if index >= self.histograms.len() {
             error!("index out of range");
             return Err(());
@@ -160,6 +154,8 @@ impl<'a> MultiDistribution<'a> {
         }
 
         self.histograms[index] = Some(histogram);
+
+        Ok(())
     }
 
     pub fn deregister(&mut self, index: usize) -> Result<(), ()> {
@@ -174,6 +170,8 @@ impl<'a> MultiDistribution<'a> {
         }
 
         self.histograms[index] = None;
+
+        Ok(())
     }
 
     pub fn refresh(&mut self) {

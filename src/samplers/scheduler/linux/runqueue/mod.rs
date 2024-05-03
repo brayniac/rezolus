@@ -13,6 +13,12 @@ mod bpf {
 
 const NAME: &str = "scheduler_runqueue";
 
+// use metriken::MetricBuilder;
+use metriken::MetricBuilder;
+use metriken::DynBoxedMetric;
+use metriken::RwLockHistogram;
+use std::collections::HashSet;
+use memmap2::MmapMut;
 use bpf::*;
 
 use crate::common::bpf::*;
@@ -40,12 +46,22 @@ impl GetMap for ModSkel<'_> {
 /// * `scheduler/context_switch/voluntary`
 pub struct Runqlat {
     bpf: Bpf<ModSkel<'static>>,
+    pid_lut: MmapMut,
+    pid_groups: HashMap<String, PidGroup>,
     counter_interval: Duration,
     counter_next: Instant,
     counter_prev: Instant,
     distribution_interval: Duration,
     distribution_next: Instant,
     distribution_prev: Instant,
+}
+
+pub struct PidGroup {
+    name: String,
+    pids: HashSet<u32>,
+    offcpu: Arc<DynBoxedMetric<RwLockHistogram>>,
+    running: Arc<DynBoxedMetric<RwLockHistogram>>,
+    runqlat: Arc<DynBoxedMetric<RwLockHistogram>>,
 }
 
 impl Runqlat {
@@ -82,16 +98,12 @@ impl Runqlat {
 
         let fd = bpf.map("pid_lut").as_fd().as_raw_fd();
         let file = unsafe { std::fs::File::from_raw_fd(fd as _) };
-        let mut pid_lut = unsafe {
+        let pid_lut = unsafe {
             memmap2::MmapOptions::new()
                 .len(4194304)
                 .map_mut(&file)
                 .expect("failed to mmap() bpf pid lut")
         };
-
-        //TODO(bmartin): add some actual lut writes here
-
-        let _ = pid_lut.flush();
 
         let counters = vec![Counter::new(&SCHEDULER_IVCSW, None)];
 
@@ -107,8 +119,14 @@ impl Runqlat {
             bpf.add_distribution(name, histogram);
         }
 
+        bpf.add_multi_distribution("runqlat_grouped", histogram::Config::new(5, 64).unwrap(), 8).unwrap();
+        bpf.add_multi_distribution("running_grouped", histogram::Config::new(5, 64).unwrap(), 8).unwrap();
+        bpf.add_multi_distribution("offcpu_grouped", histogram::Config::new(5, 64).unwrap(), 8).unwrap();
+
         Ok(Self {
             bpf,
+            pid_lut,
+            pid_groups: HashMap::new(),
             counter_interval: config.interval(NAME),
             counter_next: Instant::now(),
             counter_prev: Instant::now(),
@@ -168,5 +186,46 @@ impl Sampler for Runqlat {
         let now = Instant::now();
         self.refresh_counters(now);
         self.refresh_distributions(now);
+    }
+
+    fn register_pid_group(&mut self, name: &str, index: usize) -> Result<(), ()> {
+        if self.pid_groups.contains_key(name) {
+            error!("pid group already defined");
+            return Err(());
+        }
+
+        let runqlat = Arc::new(MetricBuilder::new("runqlat")
+            .metadata("group", name.to_string())
+            .formatter(scheduler_metric_formatter)
+            .build(metriken::RwLockHistogram::new(5, 64)));
+
+        self.bpf.add_to_multi_distribution("runqlat_grouped", index, runqlat.clone()).unwrap();
+
+        let running = Arc::new(MetricBuilder::new("running")
+            .metadata("group", name.to_string())
+            .formatter(scheduler_metric_formatter)
+            .build(metriken::RwLockHistogram::new(5, 64)));
+
+        self.bpf.add_to_multi_distribution("running_grouped", index, running.clone()).unwrap();
+
+        let offcpu = Arc::new(MetricBuilder::new("offcpu")
+            .metadata("group", name.to_string())
+            .formatter(scheduler_metric_formatter)
+            .build(metriken::RwLockHistogram::new(5, 64)));
+
+        self.bpf.add_to_multi_distribution("offcpu_grouped", index, offcpu.clone()).unwrap();
+
+
+        let pid_group = PidGroup {
+            name: name.to_string(),
+            pids: HashSet::new(),
+            runqlat,
+            running,
+            offcpu,
+        };
+
+        self.pid_groups.insert(name.to_string(), pid_group);
+
+        Ok(())
     }
 }

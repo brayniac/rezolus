@@ -105,7 +105,7 @@ struct {
 	__type(key, u32);
 	__type(value, u64);
 	__uint(max_entries, GROUP_HISTOGRAM_BUCKETS * MAX_GROUPS);
-} runqlat_per_group SEC(".maps");
+} runqlat_grouped SEC(".maps");
 
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
@@ -121,7 +121,7 @@ struct {
 	__type(key, u32);
 	__type(value, u64);
 	__uint(max_entries, GROUP_HISTOGRAM_BUCKETS * MAX_GROUPS);
-} running_per_group SEC(".maps");
+} running_grouped SEC(".maps");
 
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
@@ -137,7 +137,7 @@ struct {
 	__type(key, u32);
 	__type(value, u64);
 	__uint(max_entries, GROUP_HISTOGRAM_BUCKETS * MAX_GROUPS);
-} offcpu_per_group SEC(".maps");
+} offcpu_grouped SEC(".maps");
 
 // provides a lookup table from pid to a histogram index offset
 struct {
@@ -242,7 +242,7 @@ int handle__sched_switch(u64 *ctx)
 			// if there is a group histogram, update it
 			if (offset) {
 				idx = value_to_index(offcpu_ns, GROUP_HISTOGRAM_POWER) + offset * GROUP_HISTOGRAM_BUCKETS;
-				cnt = bpf_map_lookup_elem(&running_per_group, &idx);
+				cnt = bpf_map_lookup_elem(&running_grouped, &idx);
 				if (cnt) {
 					__sync_fetch_and_add(cnt, 1);
 				}
@@ -291,8 +291,8 @@ int handle__sched_switch(u64 *ctx)
 
 		// if there is a group histogram, update it
 		if (offset) {
-			idx = value_to_index(offcpu_ns, GROUP_HISTOGRAM_POWER) + offset * GROUP_HISTOGRAM_BUCKETS;
-			cnt = bpf_map_lookup_elem(&running_per_group, &idx);
+			idx = value_to_index(delta_ns, GROUP_HISTOGRAM_POWER) + offset * GROUP_HISTOGRAM_BUCKETS;
+			cnt = bpf_map_lookup_elem(&runqlat_grouped, &idx);
 			if (cnt) {
 				__sync_fetch_and_add(cnt, 1);
 			}
@@ -327,7 +327,7 @@ int handle__sched_switch(u64 *ctx)
 				// if there is a group histogram, update it
 				if (offset) {
 					idx = value_to_index(offcpu_ns, GROUP_HISTOGRAM_POWER) + offset * GROUP_HISTOGRAM_BUCKETS;
-					cnt = bpf_map_lookup_elem(&offcpu_per_group, &idx);
+					cnt = bpf_map_lookup_elem(&offcpu_grouped, &idx);
 					if (cnt) {
 						__sync_fetch_and_add(cnt, 1);
 					}
