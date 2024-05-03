@@ -34,7 +34,7 @@ impl<'a> Distribution<'a> {
         histogram: &'static RwLockHistogram,
     ) -> Result<Self, ()> {
         let buckets = histogram.config().total_buckets();
-        let pages = buckets_to_pages(buckets * histograms.len());
+        let pages = buckets_to_pages(buckets);
 
         let fd = map.as_fd().as_raw_fd();
         let file = unsafe { std::fs::File::from_raw_fd(fd as _) };
@@ -120,8 +120,8 @@ impl<'a> MultiDistribution<'a> {
         config: histogram::Config,
         len: usize,
     ) -> Result<Self, ()> {
-        let buckets = histogram.config().total_buckets();
-        let pages = buckets_to_pages(buckets * histograms.len());
+        let buckets = config.total_buckets();
+        let pages = buckets_to_pages(buckets * len);
 
         let fd = map.as_fd().as_raw_fd();
         let file = unsafe { std::fs::File::from_raw_fd(fd as _) };

@@ -1,7 +1,10 @@
 use super::*;
-use metriken::DynBoxedMetric;
-use metriken::RwLockHistogram;
+
+use metriken::{DynBoxedMetric, RwLockHistogram};
 use ouroboros::*;
+use ringlog::error;
+
+use std::collections::HashMap;
 use std::os::fd::{AsFd, AsRawFd, FromRawFd};
 use std::sync::Arc;
 
@@ -11,7 +14,7 @@ mod counters;
 mod distribution;
 
 use counters::Counters;
-use distribution::Distribution;
+use distribution::{Distribution, MultiDistribution};
 
 pub use counters::PercpuCounters;
 
