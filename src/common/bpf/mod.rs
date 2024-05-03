@@ -62,6 +62,7 @@ impl<T: 'static + GetMap> Bpf<T> {
             skel,
             counters_builder: |_| Vec::new(),
             distributions_builder: |_| Vec::new(),
+            multi_distributions_builder: |_| HashMap::new(),
         }
         .build()
     }
@@ -102,14 +103,15 @@ impl<T: 'static + GetMap> Bpf<T> {
         })
     }
 
-    pub fn add_multi_distribution(&mut self, name: &str, config: histogram::Config, len: usize) {
+    pub fn add_multi_distribution(&mut self, name: &str, config: histogram::Config, len: usize) -> Result<(), ()> {
         self.with_mut(|this| {
             if this.multi_distributions.contains_key(name) {
                 error!("an existing multi distribution has the name: {name}");
                 Err(())
             } else {
                 this.multi_distributions
-                    .insert(name.to_owned(), MutliDistribution::new(this.skel.map(name), config, len));
+                    .insert(name.to_owned(), MultiDistribution::new(this.skel.map(name), config, len));
+                Ok(())
             }
         })
     }

@@ -32,7 +32,7 @@ impl<'a> Distribution<'a> {
     pub fn new(
         map: &'a libbpf_rs::Map,
         histogram: &'static RwLockHistogram,
-    ) -> Result<Self, ()> {
+    ) -> Self {
         let buckets = histogram.config().total_buckets();
         let pages = buckets_to_pages(buckets);
 
@@ -45,13 +45,13 @@ impl<'a> Distribution<'a> {
                 .expect("failed to mmap() bpf distribution")
         };
 
-        Ok(Self {
+        Self {
             _map: map,
             mmap,
             pages,
             buffer: Vec::new(),
             histogram,
-        })
+        }
     }
 
     pub fn refresh(&mut self) {
@@ -188,7 +188,7 @@ impl<'a> MultiDistribution<'a> {
         let mut offset = 0;
 
         if buckets.len() == expected_len {
-            for histogram in &self.histograms {
+            for histogram in self.histograms.iter() {
                 if let Some(histogram) = histogram {
                     let _ = histogram.update_from(&buckets[offset..(offset + histogram_buckets)]);
                 }
@@ -200,7 +200,7 @@ impl<'a> MultiDistribution<'a> {
         
             self.buffer.resize(histogram_buckets, 0);
 
-            for histogram in &self.histograms {
+            for histogram in self.histograms.iter() {
                 if let Some(histogram) = histogram {
                     for (idx, bucket) in self.buffer.iter_mut().enumerate() {
                         let start = (idx + offset) * std::mem::size_of::<u64>();
