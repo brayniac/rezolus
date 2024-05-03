@@ -114,14 +114,9 @@ impl<T: 'static + GetMap> Bpf<T> {
         })
     }
 
-    pub fn add_to_multi_distributions(&mut self, name: &str, histogram: Arc<RwLockHistogram>) -> Result<(), ()> {
+    pub fn get_multi_distributions(&mut self, name: &str) -> Option<&mut MultiDistribution> {
         self.with_mut(|this| {
-            if let Some(d) = this.multi_distributions.get_mut(name) {
-                d.register(histogram)
-            } else {
-                error!("no multi distribution with the name: {name}");
-                Err(())
-            }
+            this.multi_distributions.get_mut(name)
         })
     }
 
