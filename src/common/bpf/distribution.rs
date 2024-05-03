@@ -25,32 +25,15 @@ pub struct Distribution<'a> {
     mmap: memmap2::MmapMut,
     pages: usize,
     buffer: Vec<u64>,
-    histograms: Vec<&'static RwLockHistogram>,
+    histogram: &'static RwLockHistogram,
 }
 
 impl<'a> Distribution<'a> {
-    pub fn new(map: &'a libbpf_rs::Map, histogram: &'static RwLockHistogram) -> Self {
-        Self::multi(map, vec![histogram]).unwrap()
-    }
-
-    pub fn multi(
+    pub fn new(
         map: &'a libbpf_rs::Map,
-        histograms: Vec<&'static RwLockHistogram>,
+        histogram: &'static RwLockHistogram,
     ) -> Result<Self, ()> {
-        if histograms.is_empty() {
-            error!("no histograms were provided when initializing the distribution");
-            return Err(());
-        }
-
-        let buckets = histograms[1].config().total_buckets();
-
-        for histogram in &histograms {
-            if histogram.config().total_buckets() != buckets {
-                error!("the histograms provided for the distribution had different configurations");
-                return Err(());
-            }
-        }
-
+        let buckets = histogram.config().total_buckets();
         let pages = buckets_to_pages(buckets * histograms.len());
 
         let fd = map.as_fd().as_raw_fd();
@@ -67,7 +50,7 @@ impl<'a> Distribution<'a> {
             mmap,
             pages,
             buffer: Vec::new(),
-            histograms: histograms,
+            histogram,
         })
     }
 
@@ -117,6 +100,134 @@ impl<'a> Distribution<'a> {
 
                 let _ = histogram
                     .update_from(&self.buffer[0..histogram_buckets]);
+            }
+        }
+    }
+}
+
+pub struct MultiDistribution<'a> {
+    _map: &'a libbpf_rs::Map,
+    mmap: memmap2::MmapMut,
+    config: histogram::Config,
+    pages: usize,
+    buffer: Vec<u64>,
+    histograms: Box<[Option<Arc<RwLockHistogram>>]>,
+}
+
+impl<'a> MultiDistribution<'a> {
+    pub fn new(
+        map: &'a libbpf_rs::Map,
+        config: histogram::Config,
+        len: usize,
+    ) -> Result<Self, ()> {
+        let buckets = histogram.config().total_buckets();
+        let pages = buckets_to_pages(buckets * histograms.len());
+
+        let fd = map.as_fd().as_raw_fd();
+        let file = unsafe { std::fs::File::from_raw_fd(fd as _) };
+        let mmap = unsafe {
+            memmap2::MmapOptions::new()
+                .len(pages * PAGE_SIZE)
+                .map_mut(&file)
+                .expect("failed to mmap() bpf distribution")
+        };
+
+        let histograms = vec![None; len].into_boxed_slice();
+
+        Ok(Self {
+            _map: map,
+            mmap,
+            pages,
+            buffer: Vec::new(),
+            histograms,
+        })
+    }
+
+    pub fn register(&mut self, index: usize, histogram: Arc<RwLockHistogram>) -> Result<(), ()> {
+        if index >= self.histograms.len() {
+            error!("index out of range");
+            return Err(());
+        }
+
+        if self.histograms[index].is_some() {
+            error!("an existing histogram is registered at this index");
+            return Err(());
+        }
+
+        if histogram.config() != self.config {
+            error!("histogram config does not match");
+            return Err(());
+        }
+
+        self.histograms[index] = Some(histogram);
+    }
+
+    pub fn deregister(&mut self, index: usize) -> Result<(), ()> {
+        if index >= self.histograms.len() {
+            error!("index out of range");
+            return Err(());
+        }
+
+        if self.histograms[index].is_none() {
+            error!("no histogram is registered at this index");
+            return Err(());
+        }
+
+        self.histograms[index] = None;
+    }
+
+    pub fn refresh(&mut self) {
+        // If the mmap'd region is properly aligned we can more efficiently
+        // update the histogram. Otherwise, fall-back to the old strategy.
+
+        let (_prefix, buckets, _suffix) = unsafe { self.mmap.align_to::<u64>() };
+
+        let expected_len = self.pages * PAGE_SIZE / 8;
+
+        let histogram_buckets = self.config.total_buckets();
+        let mut offset = 0;
+
+        if buckets.len() == expected_len {
+            for histogram in &self.histograms {
+                if let Some(histogram) = histogram {
+                    let _ = histogram.update_from(&buckets[offset..(offset + histogram_buckets)]);
+                }
+                
+                offset += histogram_buckets;
+            }
+        } else {
+            warn!("mmap region misaligned or did not have expected number of values {} != {expected_len}", buckets.len());
+        
+            self.buffer.resize(histogram_buckets, 0);
+
+            for histogram in &self.histograms {
+                if let Some(histogram) = histogram {
+                    for (idx, bucket) in self.buffer.iter_mut().enumerate() {
+                        let start = (idx + offset) * std::mem::size_of::<u64>();
+
+                        if start + 7 >= self.mmap.len() {
+                            break;
+                        }
+
+                        let val = u64::from_ne_bytes([
+                            self.mmap[start + 0],
+                            self.mmap[start + 1],
+                            self.mmap[start + 2],
+                            self.mmap[start + 3],
+                            self.mmap[start + 4],
+                            self.mmap[start + 5],
+                            self.mmap[start + 6],
+                            self.mmap[start + 7],
+                        ]);
+
+                        *bucket = val;
+                    }
+
+                    let _ = histogram
+                        .update_from(&self.buffer[0..histogram_buckets]);
+                }
+                
+                offset += histogram_buckets;
             }
         }
     }

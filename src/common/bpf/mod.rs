@@ -44,6 +44,9 @@ pub struct Bpf<T: 'static> {
     #[borrows(skel)]
     #[covariant]
     distributions: Vec<Distribution<'this>>,
+    #[borrows(skel)]
+    #[covariant]
+    multi_distributions: HashMap<String, MultiDistribution<'this>>,
 }
 
 pub trait GetMap {
@@ -96,6 +99,29 @@ impl<T: 'static + GetMap> Bpf<T> {
         })
     }
 
+    pub fn add_multi_distribution(&mut self, name: &str, config: histogram::Config, len: usize) {
+        self.with_mut(|this| {
+            if this.multi_distributions.contains_key(name) {
+                error!("an existing multi distribution has the name: {name}");
+                Err(())
+            } else {
+                this.multi_distributions
+                    .insert(name.to_owned(), MutliDistribution::new(this.skel.map(name), config, len));
+            }
+        })
+    }
+
+    pub fn add_to_multi_distributions(&mut self, name: &str, histogram: Arc<RwLockHistogram>) -> Result<(), ()> {
+        self.with_mut(|this| {
+            if let Some(d) = this.multi_distributions.get_mut(name) {
+                d.register(histogram)
+            } else {
+                error!("no multi distribution with the name: {name}");
+                Err(())
+            }
+        })
+    }
+
     pub fn refresh_counters(&mut self, elapsed: f64) {
         self.with_mut(|this| {
             for counters in this.counters.iter_mut() {
@@ -108,6 +134,10 @@ impl<T: 'static + GetMap> Bpf<T> {
         self.with_mut(|this| {
             for distribution in this.distributions.iter_mut() {
                 distribution.refresh();
+            }
+
+            for distribution in this.multi_distributions.values_mut() {
+                distribution.refresh()
             }
         })
     }
