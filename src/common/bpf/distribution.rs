@@ -93,3 +93,12 @@ impl<'a> Distribution<'a> {
         }
     }
 }
+
+pub struct DynDistribution {
+    _map: &'a libbpf_rs::Map,
+    mmap: memmap2::MmapMut,
+    buffer: Vec<u64>,
+    buckets: usize,
+    aligned: bool,
+    histogram: DynBoxedMetric<RwLockHistogram>,
+}
