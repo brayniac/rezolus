@@ -1,3 +1,4 @@
+use core::ops::Deref;
 use super::*;
 use ringlog::*;
 
@@ -20,17 +21,17 @@ use ringlog::*;
 /// 60KB in kernel space and an additional 60KB in user space.
 ///
 /// The distribution should be given some meaningful name in the BPF program.
-pub struct Distribution<'a> {
+pub struct Distribution<'a, T> {
     _map: &'a libbpf_rs::Map,
     mmap: memmap2::MmapMut,
     buffer: Vec<u64>,
     buckets: usize,
     aligned: bool,
-    histogram: &'static RwLockHistogram,
+    histogram: T,
 }
 
-impl<'a> Distribution<'a> {
-    pub fn new(map: &'a libbpf_rs::Map, histogram: &'static RwLockHistogram) -> Self {
+impl<'a, T> Distribution<'a, T> where T: Deref<Target = RwLockHistogram> {
+    pub fn new(map: &'a libbpf_rs::Map, histogram: T) -> Self {
         let buckets = histogram.config().total_buckets();
 
         let mmap_len = histogram_pages(buckets) * PAGE_SIZE;

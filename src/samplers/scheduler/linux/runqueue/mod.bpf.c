@@ -15,6 +15,10 @@
 #include <bpf/bpf_helpers.h>
 
 #define COUNTER_GROUP_WIDTH 8
+#define HISTOGRAM_GROUPED_BUCKETS HISTOGRAM_BUCKETS_POW_5
+#define HISTOGRAM_GROUPED_GROUPS 8
+#define HISTOGRAM_GROUPED_POWER 5
+#define HISTOGRAM_BUCKETS HISTOGRAM_BUCKETS_POW_7
 #define HISTOGRAM_POWER 7
 #define MAX_CPUS 1024
 #define MAX_PID 4194304
@@ -90,7 +94,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } runqlat SEC(".maps");
 
 struct {
@@ -98,7 +102,15 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_GROUPED_BUCKETS * HISTOGRAM_GROUPED_GROUPS);
+} runqlat_grouped SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(map_flags, BPF_F_MMAPABLE);
+	__type(key, u32);
+	__type(value, u64);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } running SEC(".maps");
 
 struct {
@@ -106,8 +118,33 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_GROUPED_BUCKETS * HISTOGRAM_GROUPED_GROUPS);
+} running_grouped SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(map_flags, BPF_F_MMAPABLE);
+	__type(key, u32);
+	__type(value, u64);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } offcpu SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(map_flags, BPF_F_MMAPABLE);
+	__type(key, u32);
+	__type(value, u64);
+	__uint(max_entries, HISTOGRAM_GROUPED_BUCKETS * HISTOGRAM_GROUPED_GROUPS);
+} offcpu_grouped SEC(".maps");
+
+// provides a lookup table from process id to a histogram index offset
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(map_flags, BPF_F_MMAPABLE);
+	__type(key, u32);
+	__type(value, u64);
+	__uint(max_entries, MAX_PID);
+} pid_group_lut SEC(".maps");
 
 /* record enqueue timestamp */
 static __always_inline
@@ -152,7 +189,7 @@ int handle__sched_switch(u64 *ctx)
 	struct task_struct *next = (struct task_struct *)ctx[2];
 
 	u32 pid, idx;
-	u64 *tsp, delta_ns, *cnt, offcpu_ns;
+	u64 *tsp, delta_ns, *cnt, offcpu_ns, *group;
 
 	u32 processor_id = bpf_get_smp_processor_id();
 	u64 ts = bpf_ktime_get_ns();
@@ -191,6 +228,16 @@ int handle__sched_switch(u64 *ctx)
 				__sync_fetch_and_add(cnt, 1);
 			}
 
+			// update grouped histogram
+			group = bpf_map_lookup_elem(&pid_group_lut, &pid);
+			if (group && *group > 0 && *group <= HISTOGRAM_GROUPED_GROUPS) {
+				idx = idx + HISTOGRAM_GROUPED_BUCKETS * (*group - 1);
+				cnt = bpf_map_lookup_elem(&running_grouped, &idx);
+				if (cnt) {
+					__sync_fetch_and_add(cnt, 1);
+				}
+			}
+
 			*tsp = 0;
 		}
 	}
@@ -221,6 +268,16 @@ int handle__sched_switch(u64 *ctx)
 			__sync_fetch_and_add(cnt, 1);
 		}
 
+		// update grouped histogram
+		group = bpf_map_lookup_elem(&pid_group_lut, &pid);
+		if (group && *group > 0 && *group <= HISTOGRAM_GROUPED_GROUPS) {
+			idx = idx + HISTOGRAM_GROUPED_BUCKETS * (*group - 1);
+			cnt = bpf_map_lookup_elem(&runqlat_grouped, &idx);
+			if (cnt) {
+				__sync_fetch_and_add(cnt, 1);
+			}
+		}
+
 		*tsp = 0;
 
 		// calculate how long it was off-cpu, not including runqueue wait,
@@ -237,6 +294,16 @@ int handle__sched_switch(u64 *ctx)
 				cnt = bpf_map_lookup_elem(&offcpu, &idx);
 				if (cnt) {
 					__sync_fetch_and_add(cnt, 1);
+				}
+
+				// update grouped histogram
+				group = bpf_map_lookup_elem(&pid_group_lut, &pid);
+				if (group && *group > 0 && *group <= HISTOGRAM_GROUPED_GROUPS) {
+					idx = idx + HISTOGRAM_GROUPED_BUCKETS * (*group - 1);
+					cnt = bpf_map_lookup_elem(&offcpu_grouped, &idx);
+					if (cnt) {
+						__sync_fetch_and_add(cnt, 1);
+					}
 				}
 			}
 

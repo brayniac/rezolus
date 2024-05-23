@@ -98,6 +98,10 @@ pub struct Bpf<T: 'static> {
 }
 
 impl<T: 'static + GetMap> Bpf<T> {
+    pub fn register_distribution(&mut self, name: &str, distribution: DynBoxedMetric<RwLockHistogram>) {
+        self.bpf.register_distribution(name, distribution)
+    }
+
     pub fn refresh_counters(&mut self, elapsed: Duration) {
         self.bpf.refresh_counters(elapsed.as_secs_f64())
     }
@@ -115,7 +119,10 @@ struct _Bpf<T: 'static> {
     counters: Vec<Counters<'this>>,
     #[borrows(skel)]
     #[covariant]
-    distributions: Vec<Distribution<'this>>,
+    distributions: Vec<Distribution<'this, &'static RwLockHistogram>>,
+    #[borrows(skel)]
+    #[covariant]
+    dyn_distributions: Vec<Distribution<'this, DynBoxedMetric<RwLockHistogram>>>,
 }
 
 pub trait GetMap {
@@ -123,20 +130,21 @@ pub trait GetMap {
 }
 
 impl<T: 'static + GetMap> _Bpf<T> {
-    pub fn from_skel(skel: T) -> Self {
+    fn from_skel(skel: T) -> Self {
         _BpfBuilder {
             skel,
             counters_builder: |_| Vec::new(),
             distributions_builder: |_| Vec::new(),
+            dyn_distributions_builder: |_| Vec::new(),
         }
         .build()
     }
 
-    pub fn map(&self, name: &str) -> &libbpf_rs::Map {
+    fn map(&self, name: &str) -> &libbpf_rs::Map {
         self.with(|this| this.skel.map(name))
     }
 
-    pub fn add_counters(&mut self, name: &str, counters: Vec<Counter>) {
+    fn add_counters(&mut self, name: &str, counters: Vec<Counter>) {
         self.with_mut(|this| {
             this.counters.push(Counters::new(
                 this.skel.map(name),
@@ -146,7 +154,7 @@ impl<T: 'static + GetMap> _Bpf<T> {
         })
     }
 
-    pub fn add_counters_with_percpu(
+    fn add_counters_with_percpu(
         &mut self,
         name: &str,
         counters: Vec<Counter>,
@@ -161,14 +169,21 @@ impl<T: 'static + GetMap> _Bpf<T> {
         })
     }
 
-    pub fn add_distribution(&mut self, name: &str, histogram: &'static RwLockHistogram) {
+    fn add_distribution(&mut self, name: &str, histogram: &'static RwLockHistogram) {
         self.with_mut(|this| {
             this.distributions
                 .push(Distribution::new(this.skel.map(name), histogram));
         })
     }
 
-    pub fn refresh_counters(&mut self, elapsed: f64) {
+    fn register_distribution(&mut self, name: &str, distribution: DynBoxedMetric<RwLockHistogram>) {
+        self.with_mut(|this| {
+            this.dyn_distributions
+                .push(Distribution::new(this.skel.map(name), distribution));
+        })
+    }
+
+    fn refresh_counters(&mut self, elapsed: f64) {
         self.with_mut(|this| {
             for counters in this.counters.iter_mut() {
                 counters.refresh(elapsed);
@@ -176,9 +191,12 @@ impl<T: 'static + GetMap> _Bpf<T> {
         })
     }
 
-    pub fn refresh_distributions(&mut self) {
+    fn refresh_distributions(&mut self) {
         self.with_mut(|this| {
             for distribution in this.distributions.iter_mut() {
+                distribution.refresh();
+            }
+            for distribution in this.dyn_distributions.iter_mut() {
                 distribution.refresh();
             }
         })
