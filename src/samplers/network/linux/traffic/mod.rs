@@ -1,6 +1,5 @@
-use crate::common::Nop;
-use crate::samplers::network::*;
 use crate::samplers::network::linux::*;
+use crate::samplers::network::*;
 
 const NAME: &str = "network_traffic";
 
@@ -48,4 +47,3 @@ fn init(config: &Config) -> Box<dyn Sampler> {
         Box::new(Nop::new(config))
     }
 }
-

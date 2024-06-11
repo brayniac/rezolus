@@ -16,7 +16,11 @@ pub struct SysfsNetSampler {
 }
 
 impl SysfsNetSampler {
-    pub fn new(config: &Config, name: &str, mut metrics: Vec<(&'static Lazy<Counter>, &'static str)>) -> Result<Self, ()> {
+    pub fn new(
+        config: &Config,
+        name: &str,
+        mut metrics: Vec<(&'static Lazy<Counter>, &'static str)>,
+    ) -> Result<Self, ()> {
         // check if sampler should be enabled
         if !config.enabled(name) {
             return Err(());

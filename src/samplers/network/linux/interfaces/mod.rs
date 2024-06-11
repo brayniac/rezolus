@@ -1,11 +1,6 @@
-use crate::common::{Interval, Nop};
-use crate::samplers::hwinfo::hardware_info;
+use crate::samplers::network::linux::*;
 use crate::samplers::network::stats::*;
 use crate::samplers::network::*;
-use metriken::Counter;
-use std::fs::File;
-use std::io::Read;
-use std::io::Seek;
 
 #[distributed_slice(NETWORK_SAMPLERS)]
 fn init(config: &Config) -> Box<dyn Sampler> {
