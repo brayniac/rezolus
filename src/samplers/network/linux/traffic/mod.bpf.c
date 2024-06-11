@@ -39,9 +39,9 @@ int BPF_PROG(netif_receive_skb, struct sk_buff *skb)
 
 	driver = BPF_CORE_READ(skb, dev, dev.driver);
 
-	if (!driver) {
-		return 0;
-	}
+	// if (!driver) {
+	// 	return 0;
+	// }
 
 	len = BPF_CORE_READ(skb, len);
 
@@ -73,9 +73,9 @@ int BPF_PROG(tcp_cleanup_rbuf, struct sk_buff *skb, struct net_device *dev, void
 
 	driver = BPF_CORE_READ(dev, dev.driver);
 
-	if (!driver) {
-		return 0;
-	}
+	// if (!driver) {
+	// 	return 0;
+	// }
 
 	len = BPF_CORE_READ(skb, len);
 
