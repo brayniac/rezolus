@@ -36,7 +36,9 @@ impl SysfsNetSampler {
         for (counter, stat) in metrics.drain(..) {
             let mut if_stats = HashMap::new();
 
-            for interface in &hwinfo.network {            	
+            for interface in &hwinfo.network {
+            	d.clear();
+            	        	
                 if interface.driver.is_none() {
                     continue;
                 }
