@@ -36,7 +36,7 @@ int BPF_PROG(netif_receive_skb, struct sk_buff *skb)
 	u64 *cnt;
 	u32 idx;
 	struct net_device *dev;
-	struct device phydev;
+	struct device *phydev;
 	struct device_driver *driver;
 
 	dev = BPF_CORE_READ(skb, dev);
