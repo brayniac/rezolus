@@ -1,5 +1,4 @@
 use crate::samplers::network::linux::*;
-use crate::samplers::network::*;
 
 const NAME: &str = "network_traffic";
 

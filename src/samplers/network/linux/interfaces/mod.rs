@@ -1,6 +1,4 @@
 use crate::samplers::network::linux::*;
-use crate::samplers::network::stats::*;
-use crate::samplers::network::*;
 
 #[distributed_slice(NETWORK_SAMPLERS)]
 fn init(config: &Config) -> Box<dyn Sampler> {
