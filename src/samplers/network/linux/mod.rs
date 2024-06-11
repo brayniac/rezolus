@@ -46,6 +46,7 @@ impl SysfsNetSampler {
                     interface.name
                 )) {
                     if f.read_to_string(&mut d).is_ok() && d.parse::<u64>().is_ok() {
+                        println!("tracking: {stat} for {}", interface.name);
                         if_stats.insert(interface.name.to_string(), f);
                     }
                 }
