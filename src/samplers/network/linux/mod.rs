@@ -40,14 +40,14 @@ impl SysfsNetSampler {
                 if interface.driver.is_none() {
                     continue;
                 }
-                
+
                 if let Ok(mut f) = std::fs::File::open(&format!(
                     "/sys/class/net/{}/statistics/{stat}",
                     interface.name
                 )) {
                 	data.clear();
 
-                    if f.read_to_string(&mut data).is_ok() && data.parse::<u64>().is_ok() {
+                    if f.read_to_string(&mut data).is_ok() && data.trim_end().parse::<u64>().is_ok() {
                         if_stats.insert(interface.name.to_string(), f);
                     }
                 }
@@ -83,7 +83,7 @@ impl Sampler for SysfsNetSampler {
                         continue 'outer;
                     }
 
-                    if let Ok(v) = data.parse::<u64>() {
+                    if let Ok(v) = data.trim_end().parse::<u64>() {
                         sum += v;
                     } else {
                         continue 'outer;
