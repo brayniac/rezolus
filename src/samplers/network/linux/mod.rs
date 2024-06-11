@@ -31,42 +31,25 @@ impl SysfsNetSampler {
         })?;
 
         let mut stats = Vec::new();
-        let mut d = String::new();
+        let mut data = String::new();
 
         for (counter, stat) in metrics.drain(..) {
             let mut if_stats = HashMap::new();
 
             for interface in &hwinfo.network {
-            	d.clear();
-            	        	
                 if interface.driver.is_none() {
                     continue;
                 }
-
-                info!("initializing {stat} for if: {}", interface.name);
-
-                let path = format!(
+                
+                if let Ok(mut f) = std::fs::File::open(&format!(
                     "/sys/class/net/{}/statistics/{stat}",
                     interface.name
-                );
+                )) {
+                	data.clear();
 
-                match std::fs::File::open(&path) {
-                	Ok(mut f) => match f.read_to_string(&mut d) {
-                		Ok(_) => {
-                			if d.parse::<u64>().is_ok() {
-	                			info!("tracking: {stat} for {}", interface.name);
-	                        	if_stats.insert(interface.name.to_string(), f);
-	                		} else {
-	                			error!("failed to parse: {d}");
-	                		}
-	                	}
-                		Err(e) => {
-                			error!("failed to read: {e}");
-                		}
-                	}
-                	Err(e) => {
-                		error!("failed to open {path}: {e}");
-                	}
+                    if f.read_to_string(&mut data).is_ok() && data.parse::<u64>().is_ok() {
+                        if_stats.insert(interface.name.to_string(), f);
+                    }
                 }
             }
 
@@ -93,6 +76,8 @@ impl Sampler for SysfsNetSampler {
 
             for file in if_stats.values_mut() {
                 if file.rewind().is_ok() {
+                	data.clear();
+
                     if let Err(e) = file.read_to_string(&mut data) {
                         error!("error reading: {e}");
                         continue 'outer;
