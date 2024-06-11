@@ -36,11 +36,12 @@ impl SysfsNetSampler {
         for (counter, stat) in metrics.drain(..) {
             let mut if_stats = HashMap::new();
 
-            for interface in &hwinfo.network {
-            	println!("initializing for if: {}", interface.name);
-                // if interface.driver.is_none() {
-                //     continue;
-                // }
+            for interface in &hwinfo.network {            	
+                if interface.driver.is_none() {
+                    continue;
+                }
+
+                println!("initializing {stat} for if: {}", interface.name);
 
                 if let Ok(mut f) = std::fs::File::open(&format!(
                     "/sys/class/net/{}/statistics/{stat}",
@@ -49,7 +50,11 @@ impl SysfsNetSampler {
                     if f.read_to_string(&mut d).is_ok() && d.parse::<u64>().is_ok() {
                         println!("tracking: {stat} for {}", interface.name);
                         if_stats.insert(interface.name.to_string(), f);
+                    } else {
+                    	println!("couldn't read or parse...");
                     }
+                } else {
+                	println!("couldn't open");
                 }
             }
 
