@@ -188,50 +188,50 @@ int sys_exit(struct trace_event_raw_sys_exit *args)
 	*start_ts = 0;
 
 	// calculate the histogram index for this latency value
-	idx = value_to_index(lat, HISTOGRAM_POWER);
+	// idx = value_to_index(lat, HISTOGRAM_POWER);
 
 	// update the total latency histogram
-	cnt = bpf_map_lookup_elem(&total_latency, &idx);
+	// cnt = bpf_map_lookup_elem(&total_latency, &idx);
 
-	if (cnt) {
-		__sync_fetch_and_add(cnt, 1);
-	}
+	// if (cnt) {
+	// 	__sync_fetch_and_add(cnt, 1);
+	// }
 
 	// increment latency histogram for the syscall family
-	if (syscall_id < MAX_SYSCALL_ID) {
-		u32 *counter_offset = bpf_map_lookup_elem(&syscall_lut, &syscall_id);
+	// if (syscall_id < MAX_SYSCALL_ID) {
+	// 	u32 *counter_offset = bpf_map_lookup_elem(&syscall_lut, &syscall_id);
 
-		if (!counter_offset || !*counter_offset || *counter_offset >= COUNTER_GROUP_WIDTH) {
-			return 0;
-		}
+	// 	if (!counter_offset || !*counter_offset || *counter_offset >= COUNTER_GROUP_WIDTH) {
+	// 		return 0;
+	// 	}
 
-		// nested if-else binary search. finds the correct histogram in 3 branches
-		if (*counter_offset < 5) {
-			if (*counter_offset < 3) {
-				if (*counter_offset == 1) {
-					cnt = bpf_map_lookup_elem(&read_latency, &idx);
-				} else {
-					cnt = bpf_map_lookup_elem(&write_latency, &idx);
-				}
-			} else if (*counter_offset == 3) {
-				cnt = bpf_map_lookup_elem(&poll_latency, &idx);
-			} else {
-				cnt = bpf_map_lookup_elem(&lock_latency, &idx);
-			}
-		} else if (*counter_offset < 7) {
-			if (*counter_offset == 5) {
-				cnt = bpf_map_lookup_elem(&time_latency, &idx);
-			} else {
-				cnt = bpf_map_lookup_elem(&sleep_latency, &idx);
-			}
-		} else {
-			cnt = bpf_map_lookup_elem(&socket_latency, &idx);
-		}
+	// 	// nested if-else binary search. finds the correct histogram in 3 branches
+	// 	if (*counter_offset < 5) {
+	// 		if (*counter_offset < 3) {
+	// 			if (*counter_offset == 1) {
+	// 				cnt = bpf_map_lookup_elem(&read_latency, &idx);
+	// 			} else {
+	// 				cnt = bpf_map_lookup_elem(&write_latency, &idx);
+	// 			}
+	// 		} else if (*counter_offset == 3) {
+	// 			cnt = bpf_map_lookup_elem(&poll_latency, &idx);
+	// 		} else {
+	// 			cnt = bpf_map_lookup_elem(&lock_latency, &idx);
+	// 		}
+	// 	} else if (*counter_offset < 7) {
+	// 		if (*counter_offset == 5) {
+	// 			cnt = bpf_map_lookup_elem(&time_latency, &idx);
+	// 		} else {
+	// 			cnt = bpf_map_lookup_elem(&sleep_latency, &idx);
+	// 		}
+	// 	} else {
+	// 		cnt = bpf_map_lookup_elem(&socket_latency, &idx);
+	// 	}
 
-		if (cnt) {
-			__sync_fetch_and_add(cnt, 1);
-		}
-	}
+	// 	if (cnt) {
+	// 		__sync_fetch_and_add(cnt, 1);
+	// 	}
+	// }
 
 	return 0;
 }

@@ -74,12 +74,12 @@ static int probe_ip(bool receiving, struct sock *sk, size_t size)
 			__sync_fetch_and_add(cnt, (u64) size);
 		}
 
-		idx = value_to_index((u64) size, HISTOGRAM_POWER);
-		cnt = bpf_map_lookup_elem(&rx_size, &idx);
+		// idx = value_to_index((u64) size, HISTOGRAM_POWER);
+		// cnt = bpf_map_lookup_elem(&rx_size, &idx);
 
-		if (cnt) {
-			__sync_fetch_and_add(cnt, 1);
-		}
+		// if (cnt) {
+		// 	__sync_fetch_and_add(cnt, 1);
+		// }
 
 		idx = 8 * bpf_get_smp_processor_id() + TCP_RX_PACKETS;
 		cnt = bpf_map_lookup_elem(&counters, &idx);
@@ -95,12 +95,12 @@ static int probe_ip(bool receiving, struct sock *sk, size_t size)
 			__sync_fetch_and_add(cnt, (u64) size);
 		}
 
-		idx = value_to_index((u64) size, HISTOGRAM_POWER);
-		cnt = bpf_map_lookup_elem(&tx_size, &idx);
+		// idx = value_to_index((u64) size, HISTOGRAM_POWER);
+		// cnt = bpf_map_lookup_elem(&tx_size, &idx);
 
-		if (cnt) {
-			__sync_fetch_and_add(cnt, 1);
-		}
+		// if (cnt) {
+		// 	__sync_fetch_and_add(cnt, 1);
+		// }
 
 		idx = 8 * bpf_get_smp_processor_id() + TCP_TX_PACKETS;
 		cnt = bpf_map_lookup_elem(&counters, &idx);
