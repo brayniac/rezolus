@@ -71,7 +71,7 @@ int BPF_PROG(tcp_cleanup_rbuf, struct sk_buff *skb, struct net_device *dev, void
 	u32 idx;
 	struct device_driver *driver;
 
-	driver = BPF_CORE_READ(dev, driver);
+	driver = BPF_CORE_READ(dev, dev.driver);
 
 	if (!driver) {
 		return 0;
