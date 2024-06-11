@@ -35,13 +35,6 @@ int BPF_PROG(netif_receive_skb, struct sk_buff *skb)
 	u64 len;
 	u64 *cnt;
 	u32 idx;
-	u16 irq;
-
-	irq = BPF_CORE_READ(skb, dev, irq);
-
-	if (!irq) {
-		return 0;
-	}
 
 	len = BPF_CORE_READ(skb, len);
 
@@ -69,13 +62,6 @@ int BPF_PROG(tcp_cleanup_rbuf, struct sk_buff *skb, struct net_device *dev, void
 	u64 len;
 	u64 *cnt;
 	u32 idx;
-	u16 irq;
-
-	irq = BPF_CORE_READ(dev, irq);
-
-	if (!irq) {
-		return 0;
-	}
 
 	len = BPF_CORE_READ(skb, len);
 
