@@ -40,7 +40,7 @@ int BPF_PROG(netif_receive_skb, struct sk_buff *skb)
 	struct device_driver *driver;
 
 	dev = BPF_CORE_READ(skb, dev);
-	&phydev = BPF_CORE_READ(dev, dev);
+	*phydev = BPF_CORE_READ(dev, dev);
 	driver = BPF_CORE_READ(phydev, driver);
 
 	if (!driver) {
