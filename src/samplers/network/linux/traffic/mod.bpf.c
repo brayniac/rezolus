@@ -39,7 +39,7 @@ int BPF_PROG(netif_receive_skb, struct sk_buff *skb)
 	struct device *phydev;
 
 	dev = BPF_CORE_READ(skb, dev);
-	phydev = BPF_CORE_READ(dev, dev);
+	phydev = BPF_CORE_READ(dev, phydev);
 
 	if (phydev == 0) {
 		return 0;
@@ -73,7 +73,7 @@ int BPF_PROG(tcp_cleanup_rbuf, struct sk_buff *skb, struct net_device *dev, void
 	u32 idx;
 	struct device *phydev;
 
-	phydev = BPF_CORE_READ(dev, dev);
+	phydev = BPF_CORE_READ(dev, phydev);
 
 	if (phydev == 0) {
 		return 0;
