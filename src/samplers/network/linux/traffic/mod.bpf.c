@@ -33,15 +33,14 @@ SEC("raw_tp/netif_receive_skb")
 int BPF_PROG(netif_receive_skb, struct sk_buff *skb)
 {
 	u64 len;
-	u64 *cnt;
+	u64 *cnt, *phydev;
 	u32 idx;
 	struct net_device *dev;
-	u16 irq;
 
 	dev = BPF_CORE_READ(skb, dev);
-	irq = BPF_CORE_READ(dev, irq);
+	phydev = BPF_CORE_READ(dev, dev);
 
-	if (irq == 0) {
+	if (phydev == 0) {
 		return 0;
 	}
 
@@ -69,13 +68,12 @@ SEC("raw_tp/net_dev_start_xmit")
 int BPF_PROG(tcp_cleanup_rbuf, struct sk_buff *skb, struct net_device *dev, void *txq, bool more)
 {
 	u64 len;
-	u64 *cnt;
+	u64 *cnt, *phydev;
 	u32 idx;
-	u16 irq;
 
-	irq = BPF_CORE_READ(dev, irq);
+	phydev = BPF_CORE_READ(dev, dev);
 
-	if (irq == 0) {
+	if (phydev == 0) {
 		return 0;
 	}
 
