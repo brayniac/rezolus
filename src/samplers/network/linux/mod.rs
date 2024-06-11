@@ -41,20 +41,30 @@ impl SysfsNetSampler {
                     continue;
                 }
 
-                println!("initializing {stat} for if: {}", interface.name);
+                info!("initializing {stat} for if: {}", interface.name);
 
-                if let Ok(mut f) = std::fs::File::open(&format!(
+                let path = format!(
                     "/sys/class/net/{}/statistics/{stat}",
                     interface.name
-                )) {
-                    if f.read_to_string(&mut d).is_ok() && d.parse::<u64>().is_ok() {
-                        println!("tracking: {stat} for {}", interface.name);
-                        if_stats.insert(interface.name.to_string(), f);
-                    } else {
-                    	println!("couldn't read or parse...");
-                    }
-                } else {
-                	println!("couldn't open");
+                );
+
+                match std::fs::File::open(&path) {
+                	Ok(mut f) => match f.read_to_string(&mut d) {
+                		Ok(_) => {
+                			if d.parse::<u64>().is_ok() {
+	                			info!("tracking: {stat} for {}", interface.name);
+	                        	if_stats.insert(interface.name.to_string(), f);
+	                		} else {
+	                			error!("failed to parse: {d}");
+	                		}
+	                	}
+                		Err(e) => {
+                			error!("failed to read: {e}");
+                		}
+                	}
+                	Err(e) => {
+                		error!("failed to open {path}: {e}");
+                	}
                 }
             }
 
