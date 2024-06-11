@@ -37,9 +37,9 @@ impl SysfsNetSampler {
             let mut if_stats = HashMap::new();
 
             for interface in &hwinfo.network {
-                if interface.driver.is_none() {
-                    continue;
-                }
+                // if interface.driver.is_none() {
+                //     continue;
+                // }
 
                 if let Ok(mut f) = std::fs::File::open(&format!(
                     "/sys/class/net/{}/statistics/{stat}",
