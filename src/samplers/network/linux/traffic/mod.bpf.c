@@ -37,11 +37,13 @@ int BPF_PROG(netif_receive_skb, struct sk_buff *skb)
 	u32 idx;
 	struct net_device *dev;
 	struct device *phydev;
+	struct device_driver *driver;
 
 	dev = BPF_CORE_READ(skb, dev);
 	phydev = BPF_CORE_READ(dev, phydev);
+	driver = BPF_CORE_READ(phydev, driver);
 
-	if (phydev == 0) {
+	if !(driver) {
 		return 0;
 	}
 
@@ -72,10 +74,12 @@ int BPF_PROG(tcp_cleanup_rbuf, struct sk_buff *skb, struct net_device *dev, void
 	u64 *cnt;
 	u32 idx;
 	struct device *phydev;
+	struct device_driver *driver;
 
 	phydev = BPF_CORE_READ(dev, phydev);
+	driver = BPF_CORE_READ(phydev, driver);
 
-	if (phydev == 0) {
+	if !(driver) {
 		return 0;
 	}
 
