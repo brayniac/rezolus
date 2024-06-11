@@ -37,6 +37,7 @@ impl SysfsNetSampler {
             let mut if_stats = HashMap::new();
 
             for interface in &hwinfo.network {
+            	println!("initializing for if: {}", interface.name);
                 // if interface.driver.is_none() {
                 //     continue;
                 // }
