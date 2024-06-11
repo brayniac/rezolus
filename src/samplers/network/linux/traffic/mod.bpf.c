@@ -37,7 +37,7 @@ int BPF_PROG(netif_receive_skb, struct sk_buff *skb)
 	u32 idx;
 	struct device_driver *driver;
 
-	driver = BPF_CORE_READ(skb, dev, dev, driver);
+	driver = BPF_CORE_READ(skb, dev, dev.driver);
 
 	if (!driver) {
 		return 0;
