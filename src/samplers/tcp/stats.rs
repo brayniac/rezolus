@@ -1,8 +1,10 @@
-use crate::common::HISTOGRAM_GROUPING_POWER;
 use metriken::{
     metric, AtomicHistogram, Counter, Format, Gauge, LazyCounter, LazyGauge, MetricEntry,
     RwLockHistogram,
 };
+
+const HISTOGRAM_GROUPING_POWER: u8 = 4;
+const HISTOGRAM_MAX_VALUE_POWER: u8 = 35;
 
 #[metric(
     name = "tcp/receive/bytes",
@@ -17,7 +19,7 @@ pub static TCP_RX_BYTES: LazyCounter = LazyCounter::new(Counter::default);
     metadata = { unit = "bytes/second" }
 )]
 pub static TCP_RX_BYTES_HISTOGRAM: AtomicHistogram =
-    AtomicHistogram::new(HISTOGRAM_GROUPING_POWER, 64);
+    AtomicHistogram::new(HISTOGRAM_GROUPING_POWER, HISTOGRAM_MAX_VALUE_POWER);
 
 #[metric(
     name = "tcp/receive/packets",
@@ -32,7 +34,7 @@ pub static TCP_RX_PACKETS: LazyCounter = LazyCounter::new(Counter::default);
     metadata = { unit = "packets/second" }
 )]
 pub static TCP_RX_PACKETS_HISTOGRAM: AtomicHistogram =
-    AtomicHistogram::new(HISTOGRAM_GROUPING_POWER, 64);
+    AtomicHistogram::new(HISTOGRAM_GROUPING_POWER, HISTOGRAM_MAX_VALUE_POWER);
 
 #[metric(
     name = "tcp/receive/read",
@@ -47,7 +49,7 @@ pub static TCP_RX_READ: LazyCounter = LazyCounter::new(Counter::default);
     metadata = { unit = "operations/second" }
 )]
 pub static TCP_RX_READ_HISTOGRAM: AtomicHistogram =
-    AtomicHistogram::new(HISTOGRAM_GROUPING_POWER, 64);
+    AtomicHistogram::new(HISTOGRAM_GROUPING_POWER, HISTOGRAM_MAX_VALUE_POWER);
 
 #[metric(
     name = "tcp/transmit/bytes",
@@ -62,7 +64,7 @@ pub static TCP_TX_BYTES: LazyCounter = LazyCounter::new(Counter::default);
     metadata = { unit = "bytes/second" }
 )]
 pub static TCP_TX_BYTES_HISTOGRAM: AtomicHistogram =
-    AtomicHistogram::new(HISTOGRAM_GROUPING_POWER, 64);
+    AtomicHistogram::new(HISTOGRAM_GROUPING_POWER, HISTOGRAM_MAX_VALUE_POWER);
 
 #[metric(
     name = "tcp/transmit/packets",
@@ -77,7 +79,7 @@ pub static TCP_TX_PACKETS: LazyCounter = LazyCounter::new(Counter::default);
     metadata = { unit = "packets/second" }
 )]
 pub static TCP_TX_PACKETS_HISTOGRAM: AtomicHistogram =
-    AtomicHistogram::new(HISTOGRAM_GROUPING_POWER, 64);
+    AtomicHistogram::new(HISTOGRAM_GROUPING_POWER, HISTOGRAM_MAX_VALUE_POWER);
 
 #[metric(
     name = "tcp/transmit/send",
@@ -92,7 +94,7 @@ pub static TCP_TX_SEND: LazyCounter = LazyCounter::new(Counter::default);
     metadata = { unit = "operations/second" }
 )]
 pub static TCP_TX_SEND_HISTOGRAM: AtomicHistogram =
-    AtomicHistogram::new(HISTOGRAM_GROUPING_POWER, 64);
+    AtomicHistogram::new(HISTOGRAM_GROUPING_POWER, HISTOGRAM_MAX_VALUE_POWER);
 
 #[metric(
     name = "tcp/transmit/retransmit",
@@ -107,7 +109,7 @@ pub static TCP_TX_RETRANSMIT: LazyCounter = LazyCounter::new(Counter::default);
     metadata = { unit = "packets/second" }
 )]
 pub static TCP_TX_RETRANSMIT_HISTOGRAM: AtomicHistogram =
-    AtomicHistogram::new(HISTOGRAM_GROUPING_POWER, 64);
+    AtomicHistogram::new(HISTOGRAM_GROUPING_POWER, HISTOGRAM_MAX_VALUE_POWER);
 
 #[metric(
     name = "tcp/connection/state",
@@ -210,35 +212,35 @@ pub static TCP_CONN_STATE_NEW_SYN_RECV: LazyGauge = LazyGauge::new(Gauge::defaul
     description = "Distribution of the size of TCP packets received after reassembly",
     metadata = { unit = "bytes" }
 )]
-pub static TCP_RX_SIZE: RwLockHistogram = RwLockHistogram::new(HISTOGRAM_GROUPING_POWER, 64);
+pub static TCP_RX_SIZE: RwLockHistogram = RwLockHistogram::new(HISTOGRAM_GROUPING_POWER, HISTOGRAM_MAX_VALUE_POWER);
 
 #[metric(
     name = "tcp/transmit/size",
     description = "Distribution of the size of TCP packets transmitted before fragmentation",
     metadata = { unit = "bytes" }
 )]
-pub static TCP_TX_SIZE: RwLockHistogram = RwLockHistogram::new(HISTOGRAM_GROUPING_POWER, 64);
+pub static TCP_TX_SIZE: RwLockHistogram = RwLockHistogram::new(HISTOGRAM_GROUPING_POWER, HISTOGRAM_MAX_VALUE_POWER);
 
 #[metric(
     name = "tcp/jitter",
     description = "Distribution of TCP latency jitter",
     metadata = { unit = "nanoseconds" }
 )]
-pub static TCP_JITTER: RwLockHistogram = RwLockHistogram::new(HISTOGRAM_GROUPING_POWER, 64);
+pub static TCP_JITTER: RwLockHistogram = RwLockHistogram::new(HISTOGRAM_GROUPING_POWER, HISTOGRAM_MAX_VALUE_POWER);
 
 #[metric(
     name = "tcp/srtt",
     description = "Distribution of TCP smoothed round-trip time",
     metadata = { unit = "nanoseconds" }
 )]
-pub static TCP_SRTT: RwLockHistogram = RwLockHistogram::new(HISTOGRAM_GROUPING_POWER, 64);
+pub static TCP_SRTT: RwLockHistogram = RwLockHistogram::new(HISTOGRAM_GROUPING_POWER, HISTOGRAM_MAX_VALUE_POWER);
 
 #[metric(
     name = "tcp/packet_latency",
     description = "Distribution of latency from a socket becoming readable until a userspace read",
     metadata = { unit = "nanoseconds" }
 )]
-pub static TCP_PACKET_LATENCY: RwLockHistogram = RwLockHistogram::new(HISTOGRAM_GROUPING_POWER, 64);
+pub static TCP_PACKET_LATENCY: RwLockHistogram = RwLockHistogram::new(HISTOGRAM_GROUPING_POWER, HISTOGRAM_MAX_VALUE_POWER);
 
 /// A function to format the tcp connection state metrics.
 ///

@@ -16,14 +16,15 @@
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_endian.h>
 
-#define HISTOGRAM_POWER 7
+#define HISTOGRAM_POWER 4
+#define HISTOGRAM_BUCKETS 512 // grouping power = 4, max value power = 35
 
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } jitter SEC(".maps");
 
 struct {
@@ -31,7 +32,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } srtt SEC(".maps");
 
 SEC("kprobe/tcp_rcv_established")

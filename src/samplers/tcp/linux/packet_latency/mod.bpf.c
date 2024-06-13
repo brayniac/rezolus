@@ -16,7 +16,8 @@
 #include <bpf/bpf_core_read.h>
 #include <bpf/bpf_tracing.h>
 
-#define HISTOGRAM_POWER 7
+#define HISTOGRAM_POWER 4
+#define HISTOGRAM_BUCKETS 512 // grouping power = 4, max value power = 35
 
 #define MAX_ENTRIES	10240
 
@@ -38,7 +39,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } latency SEC(".maps");
 
 struct {

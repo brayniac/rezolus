@@ -17,7 +17,9 @@
 #include <bpf/bpf_endian.h>
 
 #define COUNTER_GROUP_WIDTH 8
-#define HISTOGRAM_POWER 7
+
+#define HISTOGRAM_POWER 4
+#define HISTOGRAM_BUCKETS 512 // grouping power = 4, max value power = 35
 
 /* Taken from kernel include/linux/socket.h. */
 #define AF_INET		2	/* Internet IP Protocol 	*/
@@ -42,7 +44,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } rx_size SEC(".maps");
 
 struct {
@@ -50,7 +52,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } tx_size SEC(".maps");
 
 SEC("kprobe/tcp_sendmsg")
