@@ -73,7 +73,6 @@ mod filters {
 
 mod handlers {
     use super::*;
-    use crate::common::HISTOGRAM_GROUPING_POWER;
     use crate::SNAPSHOTS;
     use core::convert::Infallible;
 
@@ -144,12 +143,12 @@ mod handlers {
                 }
                 if config.prometheus().histograms() {
                     if let Some(histogram) = snapshots.previous.get(metric.name()) {
-                        let current = HISTOGRAM_GROUPING_POWER;
+                        let current = histogram.value.config().grouping_power();
                         let target = config.prometheus().histogram_grouping_power();
 
                         // downsample the histogram if necessary
-                        let downsampled: Option<histogram::Histogram> = if current == target {
-                            // the powers matched, we don't need to downsample
+                        let downsampled: Option<histogram::Histogram> = if current <= target {
+                            // the powers was low enough, we don't need to downsample
                             None
                         } else {
                             Some(histogram.value.downsample(target).unwrap())
