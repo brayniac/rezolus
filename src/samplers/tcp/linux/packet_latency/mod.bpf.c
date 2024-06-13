@@ -23,7 +23,7 @@
 #define AF_INET		2
 #define NO_EXIST    1
 
-// config fields
+// lut fields
 #define SAMPLE_MASK_IDX 0
 
 struct {
@@ -47,7 +47,7 @@ struct {
 	__type(key, u32);
 	__type(value, u64);
 	__uint(max_entries, 1);
-} config SEC(".maps");
+} lut SEC(".maps");
 
 static __always_inline __u64 get_sock_ident(struct sock *sk)
 {
@@ -61,7 +61,7 @@ static int handle_tcp_probe(struct sock *sk, struct sk_buff *skb)
 
 	sock_ident = get_sock_ident(sk);
 
-	u64 *sample_mask = bpf_map_lookup_elem(&config, SAMPLE_MASK_IDX);
+	u64 *sample_mask = bpf_map_lookup_elem(&lut, SAMPLE_MASK_IDX);
 
 	if (sock_ident & sample_mask) {
 		return 0;
@@ -90,7 +90,7 @@ static int handle_tcp_rcv_space_adjust(void *ctx, struct sock *sk)
 	u32 idx;
 	u64 now, delta_ns, *cnt;
 
-	u64 *sample_mask = bpf_map_lookup_elem(&config, SAMPLE_MASK_IDX);
+	u64 *sample_mask = bpf_map_lookup_elem(&lut, SAMPLE_MASK_IDX);
 
 	if (sock_ident & sample_mask) {
 		return 0;
