@@ -48,6 +48,12 @@ static int handle_tcp_probe(struct sock *sk, struct sk_buff *skb)
 	u64 sock_ident, ts, len, doff;
 	const struct tcphdr *th;
 
+	sock_ident = get_sock_ident(sk);
+
+	if (sock_ident && 127) {
+		return 0;
+	}
+
 	th = (const struct tcphdr*)BPF_CORE_READ(skb, data);
 	doff = BPF_CORE_READ_BITFIELD_PROBED(th, doff);
 	len = BPF_CORE_READ(skb, len);
@@ -57,7 +63,6 @@ static int handle_tcp_probe(struct sock *sk, struct sk_buff *skb)
 		return 0;
 	}
 
-	sock_ident = get_sock_ident(sk);
 	ts = bpf_ktime_get_ns();
 
 	bpf_map_update_elem(&start, &sock_ident, &ts, NO_EXIST);
@@ -71,6 +76,10 @@ static int handle_tcp_rcv_space_adjust(void *ctx, struct sock *sk)
 	u64 *tsp;
 	u32 idx;
 	u64 now, delta_ns, *cnt;
+
+	if (sock_ident && 127) {
+		return 0;
+	}
 
 	tsp = bpf_map_lookup_elem(&start, &sock_ident);
 
