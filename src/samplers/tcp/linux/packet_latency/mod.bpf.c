@@ -63,7 +63,7 @@ static int handle_tcp_probe(struct sock *sk, struct sk_buff *skb)
 
 	u64 *sample_mask = bpf_map_lookup_elem(&lut, SAMPLE_MASK_IDX);
 
-	if (sock_ident & sample_mask) {
+	if (sock_ident & *sample_mask) {
 		return 0;
 	}
 
@@ -92,7 +92,7 @@ static int handle_tcp_rcv_space_adjust(void *ctx, struct sock *sk)
 
 	u64 *sample_mask = bpf_map_lookup_elem(&lut, SAMPLE_MASK_IDX);
 
-	if (sock_ident & sample_mask) {
+	if (sock_ident & *sample_mask) {
 		return 0;
 	}
 
