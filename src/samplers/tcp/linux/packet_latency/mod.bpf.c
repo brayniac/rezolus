@@ -50,7 +50,7 @@ static int handle_tcp_probe(struct sock *sk, struct sk_buff *skb)
 
 	sock_ident = get_sock_ident(sk);
 
-	if (sock_ident && 127) {
+	if (sock_ident & 127) {
 		return 0;
 	}
 
@@ -77,7 +77,7 @@ static int handle_tcp_rcv_space_adjust(void *ctx, struct sock *sk)
 	u32 idx;
 	u64 now, delta_ns, *cnt;
 
-	if (sock_ident && 127) {
+	if (sock_ident & 127) {
 		return 0;
 	}
 
