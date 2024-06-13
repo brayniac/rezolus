@@ -16,6 +16,7 @@
 #include <bpf/bpf_core_read.h>
 #include <bpf/bpf_tracing.h>
 
+#define COUNTER_GROUP_WIDTH 8
 #define HISTOGRAM_POWER 7
 
 #define MAX_ENTRIES	10240

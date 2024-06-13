@@ -16,6 +16,7 @@
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_endian.h>
 
+#define COUNTER_GROUP_WIDTH 8
 #define HISTOGRAM_POWER 7
 
 /* Taken from kernel include/linux/socket.h. */
@@ -122,7 +123,7 @@ int BPF_KPROBE(tcp_cleanup_rbuf, struct sock *sk, int copied)
 	cnt = bpf_map_lookup_elem(&counters, &idx);
 
 	if (cnt) {
-		__atomic_fetch_add(cnt, (u64) size, __ATOMIC_RELAXED);
+		__atomic_fetch_add(cnt, (u64) copied, __ATOMIC_RELAXED);
 	}
 
 	idx = cpu_idx + TCP_RX_PACKETS;
@@ -132,7 +133,7 @@ int BPF_KPROBE(tcp_cleanup_rbuf, struct sock *sk, int copied)
 		__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
 	}
 
-	idx = value_to_index((u64) size, HISTOGRAM_POWER);
+	idx = value_to_index((u64) copied, HISTOGRAM_POWER);
 	cnt = bpf_map_lookup_elem(&rx_size, &idx);
 
 	if (cnt) {
