@@ -16,12 +16,15 @@
 #include <bpf/bpf_core_read.h>
 #include <bpf/bpf_tracing.h>
 
-#define COUNTER_GROUP_WIDTH 8
 #define HISTOGRAM_POWER 7
 
 #define MAX_ENTRIES	10240
+
 #define AF_INET		2
 #define NO_EXIST    1
+
+// config fields
+#define SAMPLE_MASK_IDX 0
 
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
@@ -38,6 +41,14 @@ struct {
 	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
 } latency SEC(".maps");
 
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(map_flags, BPF_F_MMAPABLE);
+	__type(key, u32);
+	__type(value, u64);
+	__uint(max_entries, 1);
+} config SEC(".maps");
+
 static __always_inline __u64 get_sock_ident(struct sock *sk)
 {
 	return (__u64)sk;
@@ -50,7 +61,9 @@ static int handle_tcp_probe(struct sock *sk, struct sk_buff *skb)
 
 	sock_ident = get_sock_ident(sk);
 
-	if (sock_ident & 127) {
+	u64 *sample_mask = bpf_map_lookup_elem(&config, SAMPLE_MASK_IDX);
+
+	if (sock_ident & sample_mask) {
 		return 0;
 	}
 
@@ -77,7 +90,9 @@ static int handle_tcp_rcv_space_adjust(void *ctx, struct sock *sk)
 	u32 idx;
 	u64 now, delta_ns, *cnt;
 
-	if (sock_ident & 127) {
+	u64 *sample_mask = bpf_map_lookup_elem(&config, SAMPLE_MASK_IDX);
+
+	if (sock_ident & sample_mask) {
 		return 0;
 	}
 
