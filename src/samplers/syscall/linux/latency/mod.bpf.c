@@ -19,6 +19,7 @@
 
 #define COUNTER_GROUP_WIDTH 8
 #define HISTOGRAM_POWER 7
+#define HISTOGRAM_BUCKETS HISTOGRAM_BUCKETS_POW_7
 #define MAX_CPUS 1024
 #define MAX_SYSCALL_ID 1024
 #define MAX_PID 4194304
@@ -48,7 +49,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } total_latency SEC(".maps");
 
 struct {
@@ -56,7 +57,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } read_latency SEC(".maps");
 
 struct {
@@ -64,7 +65,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } write_latency SEC(".maps");
 
 struct {
@@ -72,7 +73,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } poll_latency SEC(".maps");
 
 struct {
@@ -80,7 +81,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } lock_latency SEC(".maps");
 
 struct {
@@ -88,7 +89,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } time_latency SEC(".maps");
 
 struct {
@@ -96,7 +97,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } sleep_latency SEC(".maps");
 
 struct {
@@ -104,7 +105,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } socket_latency SEC(".maps");
 
 // provides a lookup table from syscall id to a counter index offset
@@ -136,7 +137,7 @@ int sys_exit(struct trace_event_raw_sys_exit *args)
 	u32 tid = id;
 
 	u64 *cnt;
-	u32 idx;
+	u32 idx, cpu_idx;
 
 	if (args->id < 0) {
 		return 0;
@@ -145,8 +146,8 @@ int sys_exit(struct trace_event_raw_sys_exit *args)
 	u32 syscall_id = args->id;
 
 	// update the total counter
-	idx = COUNTER_GROUP_WIDTH * bpf_get_smp_processor_id();
-	cnt = bpf_map_lookup_elem(&counters, &idx);
+	cpu_idx = COUNTER_GROUP_WIDTH * bpf_get_smp_processor_id();
+	cnt = bpf_map_lookup_elem(&counters, &cpu_idx);
 
 	if (cnt) {
 		__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
@@ -159,7 +160,7 @@ int sys_exit(struct trace_event_raw_sys_exit *args)
 		u32 *counter_offset = bpf_map_lookup_elem(&syscall_lut, &syscall_id);
 
 		if (counter_offset && *counter_offset && *counter_offset < COUNTER_GROUP_WIDTH) {
-			idx = COUNTER_GROUP_WIDTH * bpf_get_smp_processor_id() + ((u32)*counter_offset);
+			idx = cpu_idx + ((u32)*counter_offset);
 			cnt = bpf_map_lookup_elem(&counters, &idx);
 
 			if (cnt) {
