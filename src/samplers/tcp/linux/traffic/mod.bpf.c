@@ -52,11 +52,12 @@ struct {
 	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
 } tx_size SEC(".maps");
 
-static int probe_ip(bool receiving, struct sock *sk, size_t size)
+SEC("kprobe/tcp_sendmsg")
+int BPF_KPROBE(tcp_sendmsg, struct sock *sk, struct msghdr *msg, size_t size)
 {
 	u16 family;
 	u64 *cnt;
-	u32 idx;
+	u32 idx, cpu_idx;
 
 	family = BPF_CORE_READ(sk, __sk_common.skc_family);
 
@@ -65,58 +66,30 @@ static int probe_ip(bool receiving, struct sock *sk, size_t size)
 		return 0;
 	}
 
+	cpu_idx = COUNTER_GROUP_WIDTH * bpf_get_smp_processor_id();
 
-	if (receiving) {
-		idx = 8 * bpf_get_smp_processor_id() + TCP_RX_BYTES;
-		cnt = bpf_map_lookup_elem(&counters, &idx);
+	idx = cpu_idx + TCP_TX_BYTES;
+	cnt = bpf_map_lookup_elem(&counters, &idx);
 
-		if (cnt) {
-			__atomic_fetch_add(cnt, (u64) size, __ATOMIC_RELAXED);
-		}
+	if (cnt) {
+		__atomic_fetch_add(cnt, (u64) size, __ATOMIC_RELAXED);
+	}
 
-		idx = value_to_index((u64) size, HISTOGRAM_POWER);
-		cnt = bpf_map_lookup_elem(&rx_size, &idx);
+	idx = cpu_idx + TCP_TX_PACKETS;
+	cnt = bpf_map_lookup_elem(&counters, &idx);
 
-		if (cnt) {
-			__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
-		}
+	if (cnt) {
+		__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
+	}
 
-		idx = 8 * bpf_get_smp_processor_id() + TCP_RX_PACKETS;
-		cnt = bpf_map_lookup_elem(&counters, &idx);
+	idx = value_to_index((u64) size, HISTOGRAM_POWER);
+	cnt = bpf_map_lookup_elem(&tx_size, &idx);
 
-		if (cnt) {
-			__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
-		}
-	} else {
-		idx = 8 * bpf_get_smp_processor_id() + TCP_TX_BYTES;
-		cnt = bpf_map_lookup_elem(&counters, &idx);
-
-		if (cnt) {
-			__atomic_fetch_add(cnt, (u64) size, __ATOMIC_RELAXED);
-		}
-
-		idx = value_to_index((u64) size, HISTOGRAM_POWER);
-		cnt = bpf_map_lookup_elem(&tx_size, &idx);
-
-		if (cnt) {
-			__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
-		}
-
-		idx = 8 * bpf_get_smp_processor_id() + TCP_TX_PACKETS;
-		cnt = bpf_map_lookup_elem(&counters, &idx);
-
-		if (cnt) {
-			__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
-		}
+	if (cnt) {
+		__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
 	}
 
 	return 0;
-}
-
-SEC("kprobe/tcp_sendmsg")
-int BPF_KPROBE(tcp_sendmsg, struct sock *sk, struct msghdr *msg, size_t size)
-{
-	return probe_ip(false, sk, size);
 }
 
 /*
@@ -128,11 +101,45 @@ int BPF_KPROBE(tcp_sendmsg, struct sock *sk, struct msghdr *msg, size_t size)
 SEC("kprobe/tcp_cleanup_rbuf")
 int BPF_KPROBE(tcp_cleanup_rbuf, struct sock *sk, int copied)
 {
+	u16 family;
+	u64 *cnt;
+	u32 idx, cpu_idx;
+
 	if (copied <= 0) {
 		return 0;
 	}
 
-	return probe_ip(true, sk, copied);
+	family = BPF_CORE_READ(sk, __sk_common.skc_family);
+
+	/* drop */
+	if (family != AF_INET && family != AF_INET6) {
+		return 0;
+	}
+
+	cpu_idx = COUNTER_GROUP_WIDTH * bpf_get_smp_processor_id();
+
+	idx = cpu_idx + TCP_RX_BYTES;
+	cnt = bpf_map_lookup_elem(&counters, &idx);
+
+	if (cnt) {
+		__atomic_fetch_add(cnt, (u64) size, __ATOMIC_RELAXED);
+	}
+
+	idx = cpu_idx + TCP_RX_PACKETS;
+	cnt = bpf_map_lookup_elem(&counters, &idx);
+
+	if (cnt) {
+		__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
+	}
+
+	idx = value_to_index((u64) size, HISTOGRAM_POWER);
+	cnt = bpf_map_lookup_elem(&rx_size, &idx);
+
+	if (cnt) {
+		__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
+	}
+
+	return 0;
 }
 
 char LICENSE[] SEC("license") = "GPL";
