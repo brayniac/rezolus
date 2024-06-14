@@ -77,7 +77,7 @@ static int handle_tcp_rcv_space_adjust(void *ctx, struct sock *sk)
 
 	ts = bpf_map_lookup_elem(&start, &sock_ident);
 
-	if (!tsp) {
+	if (!ts) {
 		return 0;
 	}
 
