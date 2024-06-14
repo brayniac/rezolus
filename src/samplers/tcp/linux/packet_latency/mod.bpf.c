@@ -47,7 +47,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, 1);
+	__uint(max_entries, 8);
 } lut SEC(".maps");
 
 static __always_inline __u64 get_sock_ident(struct sock *sk)
@@ -62,7 +62,7 @@ static int handle_tcp_probe(struct sock *sk, struct sk_buff *skb)
 
 	sock_ident = get_sock_ident(sk);
 
-	u64 *sample_mask = bpf_map_lookup_elem(&lut, SAMPLE_MASK_IDX);
+	u64 *sample_mask = bpf_map_lookup_elem(&lut, &SAMPLE_MASK_IDX);
 
 	if (sock_ident & *sample_mask) {
 		return 0;

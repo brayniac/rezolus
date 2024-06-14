@@ -69,7 +69,7 @@ impl PacketLatency {
         skel.attach()
             .map_err(|e| error!("failed to attach bpf program: {e}"))?;
 
-        let lut: Vec<u64> = vec![127];
+        let lut: Vec<u64> = vec![127, 0, 0, 0, 0, 0, 0, 0];
 
         let bpf = BpfBuilder::new(skel)
             .distribution("latency", &TCP_PACKET_LATENCY)
