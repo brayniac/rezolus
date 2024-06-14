@@ -93,6 +93,7 @@ static int handle_tcp_rcv_space_adjust(void *ctx, struct sock *sk)
 	u32 idx;
 	u64 now, delta_ns, *cnt;
 	u32 mask_idx = 0;
+	u64 *mask;
 
 	mask = bpf_map_lookup_elem(&lut, &mask_idx);
 
