@@ -59,10 +59,11 @@ static int handle_tcp_probe(struct sock *sk, struct sk_buff *skb)
 {
 	u64 sock_ident, ts, len, doff;
 	const struct tcphdr *th;
+	u32 mask_idx = 0;
 
 	sock_ident = get_sock_ident(sk);
 
-	u64 *sample_mask = bpf_map_lookup_elem(&lut, 0);
+	u64 *sample_mask = bpf_map_lookup_elem(&lut, &mask_idx);
 
 	if (sock_ident & *sample_mask) {
 		return 0;
@@ -90,8 +91,9 @@ static int handle_tcp_rcv_space_adjust(void *ctx, struct sock *sk)
 	u64 *tsp;
 	u32 idx;
 	u64 now, delta_ns, *cnt;
+	u32 mask_idx = 0;
 
-	u64 *sample_mask = bpf_map_lookup_elem(&lut, 0);
+	u64 *sample_mask = bpf_map_lookup_elem(&lut, &mask_idx);
 
 	if (sock_ident & *sample_mask) {
 		return 0;
