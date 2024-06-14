@@ -42,14 +42,6 @@ struct {
 	__uint(max_entries, HISTOGRAM_BUCKETS);
 } latency SEC(".maps");
 
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
-	__type(key, u32);
-	__type(value, u64);
-	__uint(max_entries, 8);
-} lut SEC(".maps");
-
 static __always_inline __u64 get_sock_ident(struct sock *sk)
 {
 	return (__u64)sk;
@@ -57,18 +49,9 @@ static __always_inline __u64 get_sock_ident(struct sock *sk)
 
 static int handle_tcp_probe(struct sock *sk, struct sk_buff *skb)
 {
-	u64 sock_ident, ts, len, doff;
+	u64 ts, len, doff;
 	const struct tcphdr *th;
-	u64 *mask;
-	u32 mask_idx = 0;
-
-	sock_ident = get_sock_ident(sk);
-
-	mask = bpf_map_lookup_elem(&lut, &mask_idx);
-
-	if (!mask || sock_ident & *mask) {
-		return 0;
-	}
+	u64 sock_ident = get_sock_ident(sk);
 
 	th = (const struct tcphdr*)BPF_CORE_READ(skb, data);
 	doff = BPF_CORE_READ_BITFIELD_PROBED(th, doff);
@@ -89,19 +72,10 @@ static int handle_tcp_probe(struct sock *sk, struct sk_buff *skb)
 static int handle_tcp_rcv_space_adjust(void *ctx, struct sock *sk)
 {
 	u64 sock_ident = get_sock_ident(sk);
-	u64 *tsp;
 	u32 idx;
-	u64 now, delta_ns, *cnt;
-	u32 mask_idx = 0;
-	u64 *mask;
+	u64 now, delta_ns, *cnt, *ts;
 
-	mask = bpf_map_lookup_elem(&lut, &mask_idx);
-
-	if (!mask || sock_ident & *mask) {
-		return 0;
-	}
-
-	tsp = bpf_map_lookup_elem(&start, &sock_ident);
+	ts = bpf_map_lookup_elem(&start, &sock_ident);
 
 	if (!tsp) {
 		return 0;
@@ -109,8 +83,8 @@ static int handle_tcp_rcv_space_adjust(void *ctx, struct sock *sk)
 
 	now = bpf_ktime_get_ns();
 
-	if (*tsp < now) {
-		delta_ns = (now - *tsp);
+	if (*ts < now) {
+		delta_ns = (now - *ts);
 
 		idx = value_to_index(delta_ns, HISTOGRAM_POWER);
 		cnt = bpf_map_lookup_elem(&latency, &idx);
