@@ -6,6 +6,16 @@ use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
 use std::path::Path;
 
+mod general;
+mod log;
+mod prometheus;
+mod sampler;
+
+use general::*;
+use log::*;
+use prometheus::*;
+use sampler::*;
+
 #[derive(Deserialize)]
 pub struct Config {
     general: General,
@@ -110,108 +120,6 @@ impl Config {
     }
 }
 
-#[derive(Deserialize)]
-pub struct General {
-    listen: String,
-    #[serde(default = "disabled")]
-    compression: bool,
-}
-
-impl General {
-    pub fn listen(&self) -> SocketAddr {
-        self.listen
-            .to_socket_addrs()
-            .map_err(|e| {
-                eprintln!("bad listen address: {e}");
-                std::process::exit(1);
-            })
-            .unwrap()
-            .next()
-            .ok_or_else(|| {
-                eprintln!("could not resolve socket addr");
-                std::process::exit(1);
-            })
-            .unwrap()
-    }
-
-    pub fn compression(&self) -> bool {
-        self.compression
-    }
-}
-
-#[derive(Deserialize)]
-pub struct Log {
-    #[serde(with = "LevelDef")]
-    #[serde(default = "log_level")]
-    level: Level,
-}
-
-impl Default for Log {
-    fn default() -> Self {
-        Self { level: log_level() }
-    }
-}
-
-impl Log {
-    pub fn level(&self) -> Level {
-        self.level
-    }
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
-#[serde(remote = "Level")]
-#[serde(deny_unknown_fields)]
-enum LevelDef {
-    Error,
-    Warn,
-    Info,
-    Debug,
-    Trace,
-}
-
-fn log_level() -> Level {
-    Level::Info
-}
-
-#[derive(Deserialize)]
-pub struct Prometheus {
-    #[serde(default = "disabled")]
-    histograms: bool,
-    #[serde(default = "four")]
-    histogram_grouping_power: u8,
-}
-
-impl Default for Prometheus {
-    fn default() -> Self {
-        Self {
-            histograms: false,
-            histogram_grouping_power: 4,
-        }
-    }
-}
-
-impl Prometheus {
-    pub fn check(&self) {
-        if !(2..=(crate::common::HISTOGRAM_GROUPING_POWER)).contains(&self.histogram_grouping_power)
-        {
-            eprintln!(
-                "prometheus histogram downsample factor must be in the range 2..={}",
-                crate::common::HISTOGRAM_GROUPING_POWER
-            );
-            std::process::exit(1);
-        }
-    }
-
-    pub fn histograms(&self) -> bool {
-        self.histograms
-    }
-
-    pub fn histogram_grouping_power(&self) -> u8 {
-        self.histogram_grouping_power
-    }
-}
-
 pub fn enabled() -> bool {
     true
 }
@@ -230,56 +138,4 @@ pub fn interval() -> String {
 
 pub fn distribution_interval() -> String {
     "50ms".into()
-}
-
-#[derive(Deserialize, Default)]
-pub struct SamplerConfig {
-    #[serde(default)]
-    enabled: Option<bool>,
-    #[serde(default)]
-    bpf: Option<bool>,
-    #[serde(default)]
-    interval: Option<String>,
-    #[serde(default)]
-    distribution_interval: Option<String>,
-}
-
-impl SamplerConfig {
-    fn check(&self, name: &str) {
-        match self
-            .interval
-            .as_ref()
-            .map(|v| v.parse::<humantime::Duration>())
-        {
-            Some(Err(e)) => {
-                eprintln!("{name} sampler interval is not valid: {e}");
-                std::process::exit(1);
-            }
-            Some(Ok(interval)) => {
-                if Duration::from_nanos(interval.as_nanos() as u64) < Duration::from_millis(1) {
-                    eprintln!("{name} sampler interval is too short. Minimum interval is: 1ms");
-                    std::process::exit(1);
-                }
-            }
-            _ => {}
-        }
-
-        match self
-            .distribution_interval
-            .as_ref()
-            .map(|v| v.parse::<humantime::Duration>())
-        {
-            Some(Err(e)) => {
-                eprintln!("{name} sampler distribution_interval is not valid: {e}");
-                std::process::exit(1);
-            }
-            Some(Ok(interval)) => {
-                if Duration::from_nanos(interval.as_nanos() as u64) < Duration::from_millis(1) {
-                    eprintln!("{name} sampler distribution_interval is too short. Minimum interval is: 1ms");
-                    std::process::exit(1);
-                }
-            }
-            _ => {}
-        }
-    }
 }
