@@ -73,3 +73,10 @@ pub static RU_NVCSW: LazyCounter = LazyCounter::new(Counter::default);
     description = "The number of involuntary context switches"
 )]
 pub static RU_NIVCSW: LazyCounter = LazyCounter::new(Counter::default);
+
+#[metric(
+    name = "rezolus/uptime",
+    description = "The amount of time that Rezolus has been running without restart",
+    metadata = { unit = "nanoseconds" }
+)]
+pub static REZOLUS_UPTIME: LazyCounter = LazyCounter::new(Counter::default);

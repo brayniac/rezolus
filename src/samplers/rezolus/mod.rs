@@ -5,3 +5,4 @@ sampler!(Rezolus, "rezolus", REZOLUS_SAMPLERS);
 mod stats;
 
 mod rusage;
+mod uptime;
