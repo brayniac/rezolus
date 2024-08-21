@@ -1,6 +1,7 @@
 use crate::common::{Counter, Interval};
 use crate::samplers::cpu::*;
 use crate::samplers::hwinfo::hardware_info;
+use clocksource::precise::UnixInstant;
 use metriken::DynBoxedMetric;
 use metriken::MetricBuilder;
 use std::fs::File;
@@ -113,6 +114,8 @@ impl ProcStat {
 impl Sampler for ProcStat {
     fn sample(&mut self) {
         if let Ok(elapsed) = self.interval.try_wait(Instant::now()) {
+            METADATA_CPU_USAGE_COLLECTED_AT.set(UnixInstant::EPOCH.elapsed().as_nanos());
+
             let _ = self.sample_proc_stat(elapsed.as_secs_f64());
         }
     }

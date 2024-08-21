@@ -1,6 +1,7 @@
 use crate::common::{Counter, Interval, Nop};
 use crate::samplers::cpu::*;
 use crate::{distributed_slice, Config, Sampler};
+use clocksource::precise::UnixInstant;
 use libc::mach_port_t;
 use metriken::{DynBoxedMetric, MetricBuilder};
 use ringlog::error;
@@ -80,6 +81,8 @@ impl CpuUsage {
 impl Sampler for CpuUsage {
     fn sample(&mut self) {
         if let Ok(elapsed) = self.interval.try_wait(Instant::now()) {
+            METADATA_CPU_USAGE_COLLECTED_AT.set(UnixInstant::EPOCH.elapsed().as_nanos());
+
             unsafe {
                 let _ = self.sample_processor_info(elapsed.as_secs_f64());
             }

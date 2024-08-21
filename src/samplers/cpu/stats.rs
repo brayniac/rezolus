@@ -2,6 +2,13 @@ use crate::common::HISTOGRAM_GROUPING_POWER;
 use metriken::{metric, AtomicHistogram, Counter, Format, LazyCounter, MetricEntry};
 
 #[metric(
+    name = "metadata/cpu/usage/collected_at",
+    description = "The offset from the Unix epoch when the cpu/usage metrics were collected",
+    metadata = { unit = "nanoseconds" }
+)]
+pub static METADATA_CPU_USAGE_COLLECTED_AT: LazyCounter = LazyCounter::new(Counter::default);
+
+#[metric(
     name = "cpu/usage",
     description = "The amount of CPU time spent executing normal tasks is user mode",
     formatter = cpu_metric_formatter,
