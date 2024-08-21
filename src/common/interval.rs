@@ -10,7 +10,7 @@ impl Interval {
     pub fn new(start: Instant, period: Duration) -> Self {
         Self {
             prev: start,
-            next: start,
+            next: start + period,
             period,
         }
     }
