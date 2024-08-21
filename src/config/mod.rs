@@ -157,13 +157,13 @@ impl General {
         self.compression
     }
 
-    pub fn snapshot_interval(&self) -> Duration {
+    pub fn snapshot_interval(&self) -> core::time::Duration {
         let interval = self
             .snapshot_interval
             .parse::<humantime::Duration>()
             .unwrap();
 
-        Duration::from_nanos(interval.as_nanos() as u64)
+        core::time::Duration::from_nanos(interval.as_nanos() as u64)
     }
 }
 

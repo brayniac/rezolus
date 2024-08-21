@@ -4,7 +4,7 @@ use crate::{distributed_slice, Config, Sampler};
 use libc::mach_port_t;
 use metriken::{DynBoxedMetric, MetricBuilder};
 use ringlog::error;
-use std::time::Instant;
+use crate::Instant;
 
 const NAME: &str = "cpu_usage";
 

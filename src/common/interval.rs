@@ -1,5 +1,4 @@
-use crate::Instant;
-use core::time::Duration;
+use crate::{Duration, Instant};
 
 pub struct Interval {
     prev: Instant,

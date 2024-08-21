@@ -1,5 +1,6 @@
 use backtrace::Backtrace;
 use clap::{Arg, Command};
+use clocksource::precise::{Duration, Instant};
 use linkme::distributed_slice;
 use metriken::{metric, Lazy, LazyCounter};
 use metriken_exposition::Histogram;
@@ -8,7 +9,7 @@ use tokio::sync::RwLock;
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{SystemTime};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -210,7 +211,7 @@ fn main() {
 
         // Sleep for the remainder of one millisecond minus the sampling time.
         // This wakeup period allows a maximum of 1kHz sampling
-        let delay = Duration::from_millis(1).saturating_sub(start.elapsed());
+        let delay = core::time::Duration::from_millis(1).saturating_sub(core::time::Duration::from_nanos(start.elapsed().as_nanos()));
         std::thread::sleep(delay);
     }
 }

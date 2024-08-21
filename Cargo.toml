@@ -16,6 +16,7 @@ systeminfo = { workspace = true }
 backtrace = "0.3.71"
 chrono = { version = "0.4.38", features = ["serde"] }
 clap = "4.5.4"
+clocksource = "0.8.1"
 histogram = { version = "0.11.0", features = ["serde"] }
 humantime = "2.1.0"
 lazy_static = "1.4.0"
@@ -36,6 +37,7 @@ tokio = { version = "1.37.0", features = ["full"] }
 toml = "0.8.13"
 walkdir = "2.5.0"
 warp = { version = "0.3.7", features = ["compression"] }
+
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libbpf-rs = { version = "0.21.2", optional = true }
