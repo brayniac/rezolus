@@ -1,5 +1,5 @@
 use super::*;
-use core::time::Duration;
+use crate::Duration;
 use metriken::DynBoxedMetric;
 use metriken::RwLockHistogram;
 use ouroboros::*;
