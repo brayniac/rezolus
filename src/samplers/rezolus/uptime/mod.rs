@@ -15,6 +15,7 @@ const NAME: &str = "rezolus_uptime";
 
 pub struct Uptime {
     interval: Interval,
+    start: Instant,
 }
 
 impl Uptime {
@@ -26,15 +27,16 @@ impl Uptime {
 
         Ok(Self {
             interval: Interval::new(Instant::now(), config.interval(NAME)),
+            start: Instant::now(),
         })
     }
 }
 
 impl Sampler for Uptime {
     fn sample(&mut self) {
-        if let Ok(elapsed) = self.interval.try_wait(Instant::now()) {
+        if let Ok(_elapsed) = self.interval.try_wait(Instant::now()) {
             // adds the elapsed time since last sample to the counter
-            REZOLUS_UPTIME.add(elapsed.as_nanos() as u64);
+            REZOLUS_UPTIME.set(self.start.elapsed().as_nanos());
         }
     }
 }
