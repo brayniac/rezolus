@@ -80,3 +80,9 @@ pub static RU_NIVCSW: LazyCounter = LazyCounter::new(Counter::default);
     metadata = { unit = "nanoseconds" }
 )]
 pub static REZOLUS_UPTIME: LazyCounter = LazyCounter::new(Counter::default);
+
+#[metric(
+    name = "rezolus/uptime_samples",
+    description = "The number of times that Rezolus uptime has been refreshed"
+)]
+pub static REZOLUS_UPTIME_SAMPLES: LazyCounter = LazyCounter::new(Counter::default);

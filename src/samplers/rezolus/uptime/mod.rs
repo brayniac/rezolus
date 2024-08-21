@@ -37,6 +37,9 @@ impl Sampler for Uptime {
         if let Ok(_elapsed) = self.interval.try_wait(Instant::now()) {
             // adds the elapsed time since last sample to the counter
             REZOLUS_UPTIME.set(self.start.elapsed().as_nanos());
+
+            // increment the number of times we sampled
+            REZOLUS_UPTIME_SAMPLES.add(1);
         }
     }
 }
