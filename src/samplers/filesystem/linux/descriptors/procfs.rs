@@ -1,5 +1,5 @@
 use crate::common::Interval;
-use crate::samplers::filesystem::*;
+use super::super::*;
 use crate::{error, Config, Instant, Sampler};
 use std::fs::File;
 use std::io::{Read, Seek};
@@ -31,11 +31,19 @@ impl Procfs {
 
 impl Sampler for Procfs {
     fn sample(&mut self) {
-        if self.interval.try_wait(Instant::now()).is_err() {
+        let now = Instant::now();
+
+        if self.interval.try_wait(now).is_err() {
             return;
         }
 
+        METADATA_FILESYSTEM_DESCRIPTORS_COLLECTED_AT.set(UnixInstant::EPOCH.elapsed().as_nanos());
+
         let _ = self.sample_procfs();
+
+        let elapsed = now.elapsed().as_nanos() as u64;
+        METADATA_FILESYSTEM_DESCRIPTORS_RUNTIME.add(elapsed);
+        let _ = METADATA_FILESYSTEM_DESCRIPTORS_RUNTIME_HISTOGRAM.increment(elapsed);
     }
 }
 

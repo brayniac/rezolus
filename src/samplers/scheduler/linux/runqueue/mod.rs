@@ -1,4 +1,4 @@
-#[distributed_slice(SCHEDULER_SAMPLERS)]
+#[distributed_slice(SAMPLERS)]
 fn init(config: &Config) -> Box<dyn Sampler> {
     if let Ok(s) = Runqlat::new(config) {
         Box::new(s)
@@ -17,8 +17,8 @@ use bpf::*;
 
 use crate::common::bpf::*;
 use crate::common::*;
-use crate::samplers::scheduler::stats::*;
-use crate::samplers::scheduler::*;
+use super::stats::*;
+use super::*;
 
 impl GetMap for ModSkel<'_> {
     fn map(&self, name: &str) -> &libbpf_rs::Map {
@@ -108,6 +108,10 @@ impl Runqlat {
 }
 
 impl Sampler for Runqlat {
+    fn is_fast(&self) -> bool {
+        true
+    }
+
     fn sample(&mut self) {
         let now = Instant::now();
         let _ = self.refresh_counters(now);

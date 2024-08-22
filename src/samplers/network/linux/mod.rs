@@ -1,7 +1,8 @@
+pub(crate) mod stats;
+
 use crate::common::{Interval, Nop};
 use crate::samplers::hwinfo::hardware_info;
-use crate::samplers::network::stats::*;
-use crate::samplers::network::*;
+use stats::*;
 use metriken::Counter;
 use std::fs::File;
 use std::io::Read;

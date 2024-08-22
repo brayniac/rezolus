@@ -1,4 +1,4 @@
-#[distributed_slice(SYSCALL_SAMPLERS)]
+#[distributed_slice(SAMPLERS)]
 fn init(config: &Config) -> Box<dyn Sampler> {
     if let Ok(s) = Syscall::new(config) {
         Box::new(s)
@@ -17,9 +17,8 @@ use bpf::*;
 
 use crate::common::bpf::*;
 use crate::common::*;
-use crate::samplers::syscall::linux::*;
-use crate::samplers::syscall::stats::*;
-use crate::samplers::syscall::*;
+use super::*;
+use super::stats::*;
 
 impl GetMap for ModSkel<'_> {
     fn map(&self, name: &str) -> &libbpf_rs::Map {
@@ -105,6 +104,10 @@ impl Syscall {
 }
 
 impl Sampler for Syscall {
+    fn is_fast(&self) -> bool {
+        true
+    }
+
     fn sample(&mut self) {
         let now = Instant::now();
         let _ = self.refresh_distributions(now);

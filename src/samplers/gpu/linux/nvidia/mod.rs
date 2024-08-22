@@ -10,7 +10,7 @@ const KB: i64 = 1024;
 const MB: i64 = 1024 * KB;
 const MHZ: i64 = 1_000_000;
 
-#[distributed_slice(GPU_SAMPLERS)]
+#[distributed_slice(SAMPLERS)]
 fn init(config: &Config) -> Box<dyn Sampler> {
     if let Ok(nvidia) = Nvidia::new(config) {
         Box::new(nvidia)

@@ -1,6 +1,7 @@
-use crate::samplers::network::linux::*;
+use super::*;
+use super::stats::*;
 
-#[distributed_slice(NETWORK_SAMPLERS)]
+#[distributed_slice(SAMPLERS)]
 fn init(config: &Config) -> Box<dyn Sampler> {
     let metrics = vec![
         (&NETWORK_CARRIER_CHANGES, "../carrier_changes"),

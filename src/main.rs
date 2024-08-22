@@ -152,8 +152,22 @@ fn main() {
         .build()
         .start();
 
-    // initialize async runtime
+    // initialize default async runtime
     let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(1)
+        .build()
+        .expect("failed to launch async runtime");
+
+    // initialize fast sampler runtime
+    let fast_sampler_rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(1)
+        .build()
+        .expect("failed to launch async runtime");
+
+    // initialize slow sampler runtime
+    let slow_sampler_rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .worker_threads(1)
         .build()
@@ -188,34 +202,61 @@ fn main() {
     rt.spawn(exposition::http(config.clone()));
 
     // initialize and gather the samplers
-    let mut samplers: Vec<Box<dyn Sampler>> = Vec::new();
+    let mut fast_samplers: Vec<Box<dyn Sampler>> = Vec::new();
+    let mut slow_samplers: Vec<Box<dyn Sampler>> = Vec::new();
 
     for sampler in SAMPLERS {
-        samplers.push(sampler(&config));
+        let sampler = sampler(&config);
+
+        if sampler.is_fast() {
+            fast_samplers.push(sampler);
+        } else {
+            slow_samplers.push(sampler);
+        }
     }
+
+    fast_sampler_rt.spawn(async move {
+        loop {
+            // get current time
+            let start = Instant::now();
+
+            // sample each sampler
+            for sampler in &mut fast_samplers {
+                sampler.sample();
+            }
+
+            let delay = Duration::from_millis(1).saturating_sub(start.elapsed());
+            tokio::time::sleep(delay).await;
+        }
+    });
+
+    slow_sampler_rt.spawn(async move {
+        loop {
+            // get current time
+            let start = Instant::now();
+
+            // sample each sampler
+            for sampler in &mut slow_samplers {
+                sampler.sample();
+            }
+
+            let delay = Duration::from_millis(100).saturating_sub(start.elapsed());
+            tokio::time::sleep(delay).await;
+        }
+    });
 
     info!("initialization complete");
 
-    // main loop
     loop {
-        RUNTIME_SAMPLE_LOOP.increment();
-
-        // get current time
-        let start = Instant::now();
-
-        // sample each sampler
-        for sampler in &mut samplers {
-            sampler.sample();
-        }
-
-        // Sleep for the remainder of one millisecond minus the sampling time.
-        // This wakeup period allows a maximum of 1kHz sampling
-        let delay = Duration::from_millis(1).saturating_sub(start.elapsed());
-        std::thread::sleep(delay);
+        std::thread::sleep(Duration::from_secs(1));
     }
 }
 
-pub trait Sampler {
+pub trait Sampler: Send {
     /// Do some sampling and updating of stats
     fn sample(&mut self);
+
+    fn is_fast(&self) -> bool {
+        false
+    }
 }

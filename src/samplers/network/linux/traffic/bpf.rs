@@ -9,8 +9,8 @@ use bpf::*;
 
 use crate::common::bpf::*;
 use crate::common::*;
-use crate::samplers::network::stats::*;
-use crate::samplers::network::*;
+use super::super::*;
+use super::super::stats::*;
 
 impl GetMap for ModSkel<'_> {
     fn map(&self, name: &str) -> &libbpf_rs::Map {

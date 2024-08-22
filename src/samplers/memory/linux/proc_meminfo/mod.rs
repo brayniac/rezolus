@@ -1,13 +1,12 @@
 use crate::common::units::KIBIBYTES;
 use crate::common::{Interval, Nop};
-use crate::samplers::memory::stats::*;
-use crate::samplers::memory::*;
+use super::stats::*;
 use metriken::Gauge;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek};
 
-#[distributed_slice(MEMORY_SAMPLERS)]
+#[distributed_slice(SAMPLERS)]
 fn init(config: &Config) -> Box<dyn Sampler> {
     if let Ok(s) = ProcMeminfo::new(config) {
         Box::new(s)

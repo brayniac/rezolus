@@ -1,4 +1,5 @@
-use crate::samplers::network::linux::*;
+use super::*;
+use super::stats::*;
 
 const NAME: &str = "network_traffic";
 
@@ -9,7 +10,7 @@ mod bpf;
 use bpf::*;
 
 #[cfg(feature = "bpf")]
-#[distributed_slice(NETWORK_SAMPLERS)]
+#[distributed_slice(SAMPLERS)]
 fn init(config: &Config) -> Box<dyn Sampler> {
     // try to initialize the bpf based sampler
     if let Ok(s) = NetworkTraffic::new(config) {

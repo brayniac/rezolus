@@ -3,14 +3,13 @@ mod bpf {
     include!(concat!(env!("OUT_DIR"), "/tcp_traffic.bpf.rs"));
 }
 
-use super::NAME;
-
 use bpf::*;
 
 use crate::common::bpf::*;
 use crate::common::*;
-use crate::samplers::tcp::stats::*;
-use crate::samplers::tcp::*;
+use super::super::stats::*;
+use super::super::*;
+use super::*;
 
 impl GetMap for ModSkel<'_> {
     fn map(&self, name: &str) -> &libbpf_rs::Map {

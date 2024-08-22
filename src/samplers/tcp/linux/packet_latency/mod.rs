@@ -1,4 +1,4 @@
-#[distributed_slice(TCP_SAMPLERS)]
+#[distributed_slice(SAMPLERS)]
 fn init(config: &Config) -> Box<dyn Sampler> {
     if let Ok(s) = PacketLatency::new(config) {
         Box::new(s)
@@ -17,8 +17,8 @@ use bpf::*;
 
 use crate::common::bpf::*;
 use crate::common::*;
-use crate::samplers::tcp::stats::*;
-use crate::samplers::tcp::*;
+use super::stats::*;
+use super::*;
 
 impl GetMap for ModSkel<'_> {
     fn map(&self, name: &str) -> &libbpf_rs::Map {

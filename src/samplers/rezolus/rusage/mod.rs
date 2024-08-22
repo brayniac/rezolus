@@ -3,7 +3,7 @@ use super::*;
 use crate::common::units::{KIBIBYTES, MICROSECONDS, SECONDS};
 use crate::common::{Counter, Interval, Nop};
 
-#[distributed_slice(REZOLUS_SAMPLERS)]
+#[distributed_slice(SAMPLERS)]
 fn init(config: &Config) -> Box<dyn Sampler> {
     if let Ok(rusage) = Rusage::new(config) {
         Box::new(rusage)
@@ -36,6 +36,10 @@ impl Rusage {
 }
 
 impl Sampler for Rusage {
+    fn is_fast(&self) -> bool {
+        true
+    }
+
     fn sample(&mut self) {
         if let Ok(elapsed) = self.interval.try_wait(Instant::now()) {
             self.sample_rusage(elapsed.as_secs_f64());

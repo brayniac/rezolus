@@ -1,4 +1,4 @@
-#[distributed_slice(BLOCK_IO_SAMPLERS)]
+#[distributed_slice(SAMPLERS)]
 fn init(config: &Config) -> Box<dyn Sampler> {
     if let Ok(s) = BlockIORequests::new(config) {
         Box::new(s)

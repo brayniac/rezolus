@@ -1,3 +1,5 @@
+mod stats;
+
 #[cfg(feature = "bpf")]
 mod counts;
 

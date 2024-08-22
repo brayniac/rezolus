@@ -1,10 +1,9 @@
 use crate::common::classic::NestedMap;
 use crate::common::{Counter, Interval};
-use crate::samplers::tcp::stats::*;
-use crate::samplers::tcp::*;
-use std::fs::File;
-
+use super::super::stats::*;
+use super::super::*;
 use super::NAME;
+use std::fs::File;
 
 pub struct ProcNetSnmp {
     interval: Interval,

@@ -1,12 +1,12 @@
 use crate::common::{Interval, Nop};
-use crate::samplers::tcp::stats::*;
-use crate::samplers::tcp::*;
+use super::stats::*;
+use super::*;
 use metriken::Gauge;
 use std::fs::File;
 use std::io::Read;
 use std::io::Seek;
 
-#[distributed_slice(TCP_SAMPLERS)]
+#[distributed_slice(SAMPLERS)]
 fn init(config: &Config) -> Box<dyn Sampler> {
     if let Ok(s) = ConnectionState::new(config) {
         Box::new(s)
