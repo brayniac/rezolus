@@ -42,7 +42,7 @@ impl GetMap for ModSkel<'_> {
 /// * `syscall/socket/latency`
 /// * `syscall/yield/latency`
 pub struct Syscall {
-    bpf: Bpf<ModSkel<'static>>,
+    bpf: Mutex<Bpf<ModSkel<'static>>>,
     distribution_interval: Interval,
 }
 
@@ -90,7 +90,7 @@ impl Syscall {
         let now = Instant::now();
 
         Ok(Self {
-            bpf,
+            bpf: Mutex::new(bpf),
             distribution_interval: Interval::new(now, config.distribution_interval(NAME)),
         })
     }
@@ -98,7 +98,7 @@ impl Syscall {
     pub fn refresh_distributions(&mut self, now: Instant) -> Result<(), ()> {
         self.distribution_interval.try_wait(now)?;
 
-        self.bpf.refresh_distributions();
+        self.bpf.lock().unwrap().refresh_distributions();
 
         Ok(())
     }
