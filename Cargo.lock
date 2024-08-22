@@ -861,7 +861,7 @@ dependencies = [
  "anyhow",
  "cargo_metadata",
  "clap",
- "libbpf-rs",
+ "libbpf-rs 0.21.2",
  "libbpf-sys",
  "memmap2 0.5.10",
  "num_enum",
@@ -889,6 +889,18 @@ dependencies = [
  "num_enum",
  "strum_macros",
  "thiserror",
+ "vsprintf",
+]
+
+[[package]]
+name = "libbpf-rs"
+version = "0.24.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ecc6eb0468f4b691117c49673da2b833bd2fefbf05a4876a86ad93defd088f12"
+dependencies = [
+ "bitflags 2.5.0",
+ "libbpf-sys",
+ "libc",
  "vsprintf",
 ]
 
@@ -1540,7 +1552,7 @@ dependencies = [
  "humantime",
  "lazy_static",
  "libbpf-cargo",
- "libbpf-rs",
+ "libbpf-rs 0.24.2",
  "libbpf-sys",
  "libc",
  "linkme",
@@ -2331,7 +2343,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

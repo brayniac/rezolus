@@ -20,7 +20,6 @@ use crate::common::*;
 use super::*;
 use super::stats::*;
 use crate::*;
-use std::sync::Mutex;
 
 impl GetMap for ModSkel<'_> {
     fn map(&self, name: &str) -> &libbpf_rs::Map {
@@ -43,7 +42,7 @@ impl GetMap for ModSkel<'_> {
 /// * `syscall/socket/latency`
 /// * `syscall/yield/latency`
 pub struct Syscall {
-    bpf: Mutex<Bpf<ModSkel<'static>>>,
+    bpf: Bpf<ModSkel<'static>>,
     distribution_interval: Interval,
 }
 
@@ -91,7 +90,7 @@ impl Syscall {
         let now = Instant::now();
 
         Ok(Self {
-            bpf: Mutex::new(bpf),
+            bpf,
             distribution_interval: Interval::new(now, config.distribution_interval(NAME)),
         })
     }
@@ -99,7 +98,7 @@ impl Syscall {
     pub fn refresh_distributions(&mut self, now: Instant) -> Result<(), ()> {
         self.distribution_interval.try_wait(now)?;
 
-        self.bpf.lock().unwrap().refresh_distributions();
+        self.bpf.refresh_distributions();
 
         Ok(())
     }
