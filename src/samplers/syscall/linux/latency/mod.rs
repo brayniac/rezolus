@@ -20,6 +20,7 @@ use crate::common::*;
 use super::*;
 use super::stats::*;
 use crate::*;
+use std::sync::Mutex;
 
 impl GetMap for ModSkel<'_> {
     fn map(&self, name: &str) -> &libbpf_rs::Map {
