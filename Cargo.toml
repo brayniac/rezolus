@@ -38,8 +38,8 @@ walkdir = "2.5.0"
 warp = { version = "0.3.7", features = ["compression"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-libbpf-rs = { version = "0.21.2", optional = true }
-libbpf-sys = { version = "1.2.1", optional = true }
+libbpf-rs = { version = "0.24.2", optional = true }
+libbpf-sys = { version = "1.4.3", optional = true }
 perf-event2 = "0.7.2"
 nvml-wrapper = "0.9.0"
 
