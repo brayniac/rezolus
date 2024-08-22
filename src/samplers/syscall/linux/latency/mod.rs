@@ -58,6 +58,7 @@ impl Syscall {
         let mut skel = builder
             .open()
             .map_err(|e| error!("failed to open bpf builder: {e}"))?
+            .obj
             .load()
             .map_err(|e| error!("failed to load bpf program: {e}"))?;
 
