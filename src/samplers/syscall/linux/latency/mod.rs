@@ -13,6 +13,7 @@ mod bpf {
 
 const NAME: &str = "syscall_latency";
 
+use libbpf_rs::skel::OpenSkel;
 use bpf::*;
 
 use crate::common::bpf::*;
