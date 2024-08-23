@@ -59,6 +59,18 @@ impl BlockIORequests {
         let initialized = Arc::new(AtomicBool::new(false));
         let notify = Arc::new((Mutex::new(false), Condvar::new()));
 
+        // define userspace metric sets
+        let counters = vec![
+            Counter::new(&BLOCKIO_READ_OPS, Some(&BLOCKIO_READ_OPS_HISTOGRAM)),
+            Counter::new(&BLOCKIO_WRITE_OPS, Some(&BLOCKIO_WRITE_OPS_HISTOGRAM)),
+            Counter::new(&BLOCKIO_FLUSH_OPS, Some(&BLOCKIO_FLUSH_OPS_HISTOGRAM)),
+            Counter::new(&BLOCKIO_DISCARD_OPS, Some(&BLOCKIO_DISCARD_OPS_HISTOGRAM)),
+            Counter::new(&BLOCKIO_READ_BYTES, Some(&BLOCKIO_READ_BYTES_HISTOGRAM)),
+            Counter::new(&BLOCKIO_WRITE_BYTES, Some(&BLOCKIO_WRITE_BYTES_HISTOGRAM)),
+            Counter::new(&BLOCKIO_FLUSH_BYTES, Some(&BLOCKIO_FLUSH_BYTES_HISTOGRAM)),
+            Counter::new(&BLOCKIO_DISCARD_BYTES, Some(&BLOCKIO_DISCARD_BYTES_HISTOGRAM)),
+        ];
+
         // create a child thread which owns the BPF sampler
         let handle = {
             let initialized = initialized.clone();
@@ -98,21 +110,6 @@ impl BlockIORequests {
 
                 // get the time
                 let mut prev = Instant::now();
-
-                // define userspace metric sets
-                let counters = vec![
-                    Counter::new(&BLOCKIO_READ_OPS, Some(&BLOCKIO_READ_OPS_HISTOGRAM)),
-                    Counter::new(&BLOCKIO_WRITE_OPS, Some(&BLOCKIO_WRITE_OPS_HISTOGRAM)),
-                    Counter::new(&BLOCKIO_FLUSH_OPS, Some(&BLOCKIO_FLUSH_OPS_HISTOGRAM)),
-                    Counter::new(&BLOCKIO_DISCARD_OPS, Some(&BLOCKIO_DISCARD_OPS_HISTOGRAM)),
-                    Counter::new(&BLOCKIO_READ_BYTES, Some(&BLOCKIO_READ_BYTES_HISTOGRAM)),
-                    Counter::new(&BLOCKIO_WRITE_BYTES, Some(&BLOCKIO_WRITE_BYTES_HISTOGRAM)),
-                    Counter::new(&BLOCKIO_FLUSH_BYTES, Some(&BLOCKIO_FLUSH_BYTES_HISTOGRAM)),
-                    Counter::new(
-                        &BLOCKIO_DISCARD_BYTES,
-                        Some(&BLOCKIO_DISCARD_BYTES_HISTOGRAM),
-                    ),
-                ];
 
                 // wrap the BPF program and define BPF maps
                 let mut bpf = BpfBuilder::new(skel)
