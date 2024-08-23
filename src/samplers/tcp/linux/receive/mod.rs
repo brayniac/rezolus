@@ -20,6 +20,11 @@ use crate::common::*;
 use crate::samplers::tcp::stats::*;
 use crate::samplers::tcp::*;
 
+use parking_lot::{Condvar, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread::JoinHandle;
+
 impl GetMap for ModSkel<'_> {
     fn map(&self, name: &str) -> &libbpf_rs::Map {
         match name {
@@ -37,9 +42,9 @@ impl GetMap for ModSkel<'_> {
 /// * `tcp/receive/jitter`
 /// * `tcp/receive/srtt`
 pub struct Receive {
-    bpf: Bpf<ModSkel<'static>>,
-    counter_interval: Interval,
-    distribution_interval: Interval,
+    thread: JoinHandle<()>,
+    notify: Arc<(Mutex<bool>, Condvar)>,
+    interval: Interval,
 }
 
 impl Receive {
@@ -49,50 +54,134 @@ impl Receive {
             return Err(());
         }
 
-        let open_object: &'static mut MaybeUninit<OpenObject> =
-            Box::leak(Box::new(MaybeUninit::uninit()));
+        // create vars to communicate with our child thread
+        let initialized = Arc::new(AtomicBool::new(false));
+        let notify = Arc::new((Mutex::new(false), Condvar::new()));
 
-        let builder = ModSkelBuilder::default();
-        let mut skel = builder
-            .open(open_object)
-            .map_err(|e| error!("failed to open bpf builder: {e}"))?
-            .load()
-            .map_err(|e| error!("failed to load bpf program: {e}"))?;
+        // create a child thread which owns the BPF sampler
+        let handle = {
+            let initialized = initialized.clone();
+            let notify = notify.clone();
 
-        debug!(
-            "{NAME} tcp_rcv() BPF instruction count: {}",
-            skel.progs.tcp_rcv_kprobe.insn_cnt()
-        );
+            std::thread::spawn(move || {
+                // storage for the BPF object file
+                let open_object: &'static mut MaybeUninit<OpenObject> =
+                    Box::leak(Box::new(MaybeUninit::uninit()));
 
-        skel.attach()
-            .map_err(|e| error!("failed to attach bpf program: {e}"))?;
+                // open and load the program
+                let mut skel = match ModSkelBuilder::default().open(open_object) {
+                    Ok(s) => match s.load() {
+                        Ok(s) => s,
+                        Err(e) => {
+                            error!("failed to load bpf program: {e}");
+                            return;
+                        }
+                    },
+                    Err(e) => {
+                        error!("failed to open bpf builder: {e}");
+                        return;
+                    }
+                };
 
-        let bpf = BpfBuilder::new(skel)
-            .distribution("srtt", &TCP_SRTT)
-            .distribution("jitter", &TCP_JITTER)
-            .build();
+                // debugging info about BPF instruction counts
+                debug!(
+                    "{NAME} tcp_rcv() BPF instruction count: {}",
+                    skel.progs.tcp_rcv_kprobe.insn_cnt()
+                );
+
+                // attach the BPF program
+                if let Err(e) = skel.attach() {
+                    error!("failed to attach bpf program: {e}");
+                    return;
+                };
+
+                // get the time
+                let mut prev = Instant::now();
+
+                // define userspace metric sets
+
+                // wrap the BPF program and define BPF maps
+                let mut bpf = BpfBuilder::new(skel)
+                    .distribution("srtt", &TCP_SRTT)
+                    .distribution("jitter", &TCP_JITTER)
+                    .build();
+
+                // indicate that we have completed initialization
+                initialized.store(true, Ordering::SeqCst);
+
+                // the sampler loop
+                loop {
+                    // wait until we are notified to start
+                    {
+                        let &(ref lock, ref cvar) = &*notify;
+                        let mut started = lock.lock();
+                        if !*started {
+                            cvar.wait(&mut started);
+                        }
+                    }
+
+                    let now = Instant::now();
+
+                    // refresh userspace metrics
+                    bpf.refresh(now.duration_since(prev));
+
+                    prev = now;
+
+                    // notify that we have finished running
+                    {
+                        let &(ref lock, ref cvar) = &*notify;
+                        let mut running = lock.lock();
+                        *running = false;
+                        cvar.notify_one();
+                    }
+                }
+            })
+        };
+
+        // block waiting for initialization
+        while !handle.is_finished() || !initialized.load(Ordering::SeqCst) {
+            std::thread::sleep(core::time::Duration::from_millis(1));
+        }
+
+        // if the thread has terminated, there was an error loading the sampler
+        if handle.is_finished() {
+            return Err(());
+        }
 
         let now = Instant::now();
 
         Ok(Self {
-            bpf,
-            counter_interval: Interval::new(now, config.interval(NAME)),
-            distribution_interval: Interval::new(now, config.distribution_interval(NAME)),
+            thread: handle,
+            notify,
+            interval: Interval::new(now, config.interval(NAME)),
         })
     }
 
-    pub fn refresh_counters(&mut self, now: Instant) -> Result<(), ()> {
-        let elapsed = self.counter_interval.try_wait(now)?;
+    pub fn refresh(&mut self, now: Instant) -> Result<(), ()> {
+        // early return if it is not time to refresh
+        self.interval.try_wait(now)?;
 
-        self.bpf.refresh_counters(elapsed);
+        // check that the thread has not exited
+        if self.thread.is_finished() {
+            return Err(());
+        }
 
-        Ok(())
-    }
+        // notify the thread to start
+        {
+            let &(ref lock, ref cvar) = &*self.notify;
+            let mut started = lock.lock();
+            *started = true;
+            cvar.notify_one();
+        }
 
-    pub fn refresh_distributions(&mut self, now: Instant) -> Result<(), ()> {
-        self.distribution_interval.try_wait(now)?;
-
-        self.bpf.refresh_distributions();
+        // wait for notification that thread has finished
+        {
+            let &(ref lock, ref cvar) = &*self.notify;
+            let mut running = lock.lock();
+            if *running {
+                cvar.wait(&mut running);
+            }
+        }
 
         Ok(())
     }
@@ -101,7 +190,6 @@ impl Receive {
 impl Sampler for Receive {
     fn sample(&mut self) {
         let now = Instant::now();
-        let _ = self.refresh_counters(now);
-        let _ = self.refresh_distributions(now);
+        let _ = self.refresh(now);
     }
 }
