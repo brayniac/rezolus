@@ -105,9 +105,7 @@ impl NetworkTraffic {
                 let mut prev = Instant::now();
 
                 // wrap the BPF program and define BPF maps
-                let mut bpf = BpfBuilder::new(skel)
-                    .counters("counters", counters)
-                    .build();
+                let mut bpf = BpfBuilder::new(skel).counters("counters", counters).build();
 
                 // indicate that we have completed initialization
                 initialized.store(true, Ordering::SeqCst);
