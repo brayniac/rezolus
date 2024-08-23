@@ -32,8 +32,17 @@ pub fn histogram_pages(buckets: usize) -> usize {
     ((buckets * std::mem::size_of::<u64>()) + PAGE_SIZE - 1) / PAGE_SIZE
 }
 
-/// A type that builds the userspace components of a BPF program including
-/// registering counters, distributions, and intiailizing a map with values.
+/// A trait that must be implemented to assist in getting a reference to a named
+/// BPF map.
+pub trait GetMap {
+    fn map(&self, name: &str) -> &libbpf_rs::Map;
+}
+
+/// This is a builder type that is used to configure and register all BPF maps
+/// during initialization. The `Bpf` type returned will prevent runtime
+/// registration of additional maps.
+///
+/// The 'static lifetime bound is required for ouroboros self-referencing type.
 pub struct BpfBuilder<T: 'static> {
     bpf: _Bpf<T>,
 }
@@ -95,11 +104,20 @@ impl<T: 'static + GetMap> BpfBuilder<T> {
     }
 }
 
+/// This is a wrapper type that is used to trigger refresh of userspace metrics
+/// from the BPF maps.
+///
+/// The 'static lifetime bound is required for ouroboros self-referencing type.
 pub struct Bpf<T: 'static> {
     bpf: _Bpf<T>,
 }
 
 impl<T: 'static + GetMap> Bpf<T> {
+    pub fn refresh(&mut self, elapsed: Duration) {
+        self.bpf.refresh_counters(elapsed.as_secs_f64());
+        self.bpf.refresh_distributions();
+    }
+
     pub fn refresh_counters(&mut self, elapsed: Duration) {
         self.bpf.refresh_counters(elapsed.as_secs_f64())
     }
@@ -109,6 +127,9 @@ impl<T: 'static + GetMap> Bpf<T> {
     }
 }
 
+/// This is an inner type that is self-referencing and owns both the actual BPF
+/// program and the counter sets and distributions that reference maps in that
+/// same BPF program.
 #[self_referencing]
 struct _Bpf<T: 'static> {
     skel: T,
@@ -118,10 +139,6 @@ struct _Bpf<T: 'static> {
     #[borrows(skel)]
     #[covariant]
     distributions: Vec<Distribution<'this>>,
-}
-
-pub trait GetMap {
-    fn map(&self, name: &str) -> &libbpf_rs::Map;
 }
 
 impl<T: 'static + GetMap> _Bpf<T> {
