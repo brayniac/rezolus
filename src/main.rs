@@ -215,7 +215,7 @@ fn main() {
     }
 }
 
-pub trait Sampler {
+pub trait Sampler: Send + Sync {
     /// Do some sampling and updating of stats
     fn sample(&mut self);
 }
