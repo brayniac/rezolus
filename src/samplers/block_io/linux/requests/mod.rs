@@ -20,10 +20,10 @@ use crate::common::*;
 use crate::samplers::block_io::stats::*;
 use crate::samplers::block_io::*;
 
-use parking_lot::{Mutex, Condvar};
-use std::thread::JoinHandle;
-use std::sync::Arc;
+use parking_lot::{Condvar, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread::JoinHandle;
 
 impl GetMap for ModSkel<'_> {
     fn map(&self, name: &str) -> &libbpf_rs::Map {
@@ -77,7 +77,7 @@ impl BlockIORequests {
                             error!("failed to load bpf program: {e}");
                             return;
                         }
-                    }
+                    },
                     Err(e) => {
                         error!("failed to open bpf builder: {e}");
                         return;
@@ -135,7 +135,7 @@ impl BlockIORequests {
                     }
 
                     let now = Instant::now();
-                    
+
                     // refresh userspace metrics
                     bpf.refresh_counters(now.duration_since(prev));
                     bpf.refresh_distributions();
