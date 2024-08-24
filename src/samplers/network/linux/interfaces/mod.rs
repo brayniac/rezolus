@@ -1,7 +1,7 @@
 use crate::samplers::network::linux::*;
 
-#[distributed_slice(NETWORK_SAMPLERS)]
-fn init(config: &Config) -> Box<dyn Sampler> {
+#[distributed_slice(SAMPLERS)]
+fn init(config: &Config) -> Option<Box<dyn Sampler>> {
     let metrics = vec![
         (&NETWORK_CARRIER_CHANGES, "../carrier_changes"),
         (&NETWORK_RX_CRC_ERRORS, "rx_crc_errors"),
@@ -11,9 +11,9 @@ fn init(config: &Config) -> Box<dyn Sampler> {
     ];
 
     if let Ok(s) = SysfsNetSampler::new(config, NAME, metrics) {
-        Box::new(s)
+        Some(Box::new(s))
     } else {
-        Box::new(Nop::new(config))
+        None
     }
 }
 

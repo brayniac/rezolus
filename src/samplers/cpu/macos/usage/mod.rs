@@ -1,5 +1,6 @@
-use crate::common::{Counter, Interval, Nop};
+use crate::common::Interval;
 use crate::samplers::cpu::*;
+use crate::*;
 use crate::{distributed_slice, Config, Sampler};
 use libc::mach_port_t;
 use metriken::{DynBoxedMetric, MetricBuilder};
@@ -8,12 +9,12 @@ use std::time::Instant;
 
 const NAME: &str = "cpu_usage";
 
-#[distributed_slice(CPU_SAMPLERS)]
-fn init(config: &Config) -> Box<dyn Sampler> {
+#[distributed_slice(SAMPLERS)]
+fn init(config: &Config) -> Option<Box<dyn Sampler>> {
     if let Ok(s) = CpuUsage::new(config) {
-        Box::new(s)
+        Some(Box::new(s))
     } else {
-        Box::new(Nop {})
+        None
     }
 }
 
@@ -77,8 +78,9 @@ impl CpuUsage {
     }
 }
 
+#[async_trait]
 impl Sampler for CpuUsage {
-    fn sample(&mut self) {
+    async fn sample(&mut self) {
         if let Ok(elapsed) = self.interval.try_wait(Instant::now()) {
             unsafe {
                 let _ = self.sample_processor_info(elapsed.as_secs_f64());

@@ -1,14 +1,15 @@
-use super::stats::*;
-use super::*;
-use crate::common::units::{KIBIBYTES, MICROSECONDS, SECONDS};
-use crate::common::{Counter, Interval, Nop};
+use crate::*;
 
-#[distributed_slice(REZOLUS_SAMPLERS)]
-fn init(config: &Config) -> Box<dyn Sampler> {
+use super::stats::*;
+use crate::common::units::{KIBIBYTES, MICROSECONDS, SECONDS};
+use crate::common::{Counter, Interval};
+
+#[distributed_slice(SAMPLERS)]
+fn init(config: &Config) -> Option<Box<dyn Sampler>> {
     if let Ok(rusage) = Rusage::new(config) {
-        Box::new(rusage)
+        Some(Box::new(rusage))
     } else {
-        Box::new(Nop {})
+        None
     }
 }
 
@@ -35,8 +36,9 @@ impl Rusage {
     }
 }
 
+#[async_trait]
 impl Sampler for Rusage {
-    fn sample(&mut self) {
+    async fn sample(&mut self) {
         if let Ok(elapsed) = self.interval.try_wait(Instant::now()) {
             self.sample_rusage(elapsed.as_secs_f64());
         }

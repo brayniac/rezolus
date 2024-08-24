@@ -1,16 +1,17 @@
-use crate::common::{Counter, Interval, Nop};
+use crate::*;
+
+use crate::common::{Counter, Interval};
 use crate::samplers::memory::stats::*;
-use crate::samplers::memory::*;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek};
 
-#[distributed_slice(MEMORY_SAMPLERS)]
-fn init(config: &Config) -> Box<dyn Sampler> {
+#[distributed_slice(SAMPLERS)]
+fn init(config: &Config) -> Option<Box<dyn Sampler>> {
     if let Ok(s) = ProcVmstat::new(config) {
-        Box::new(s)
+        Some(Box::new(s))
     } else {
-        Box::new(Nop {})
+        None
     }
 }
 
@@ -50,8 +51,9 @@ impl ProcVmstat {
     }
 }
 
+#[async_trait]
 impl Sampler for ProcVmstat {
-    fn sample(&mut self) {
+    async fn sample(&mut self) {
         if let Ok(elapsed) = self.interval.try_wait(Instant::now()) {
             let _ = self.sample_proc_vmstat(elapsed.as_secs_f64());
         }

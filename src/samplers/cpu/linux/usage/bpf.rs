@@ -1,3 +1,5 @@
+use crate::*;
+
 #[allow(clippy::module_inception)]
 mod bpf {
     include!(concat!(env!("OUT_DIR"), "/cpu_usage.bpf.rs"));
@@ -273,8 +275,9 @@ fn busy() -> u64 {
     .sum()
 }
 
+#[async_trait]
 impl Sampler for CpuUsage {
-    fn sample(&mut self) {
+    async fn sample(&mut self) {
         let now = Instant::now();
         let _ = self.refresh(now);
     }

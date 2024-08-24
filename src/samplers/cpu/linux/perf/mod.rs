@@ -1,5 +1,6 @@
+use crate::*;
+
 use crate::common::Interval;
-use crate::common::Nop;
 use crate::samplers::cpu::*;
 use metriken::{DynBoxedMetric, MetricBuilder};
 use perf_event::events::x86::{Msr, MsrId};
@@ -13,18 +14,18 @@ mod proc_cpuinfo;
 use perf_group::*;
 use proc_cpuinfo::*;
 
-#[distributed_slice(CPU_SAMPLERS)]
-fn init(config: &Config) -> Box<dyn Sampler> {
+#[distributed_slice(SAMPLERS)]
+fn init(config: &Config) -> Option<Box<dyn Sampler>> {
     // try to initialize the perf counter based sampler that provides more info
     // with lower overhead
     if let Ok(perf) = Perf::new(config) {
-        Box::new(perf)
+        Some(Box::new(perf))
     // try to fallback to the /proc/cpuinfo based sampler if perf events are not
     // supported
     } else if let Ok(cpuinfo) = ProcCpuinfo::new(config) {
-        Box::new(cpuinfo)
+        Some(Box::new(cpuinfo))
     } else {
-        Box::new(Nop {})
+        None
     }
 }
 
@@ -112,8 +113,9 @@ impl Perf {
     }
 }
 
+#[async_trait]
 impl Sampler for Perf {
-    fn sample(&mut self) {
+    async fn sample(&mut self) {
         let now = Instant::now();
 
         if self.interval.try_wait(now).is_err() {

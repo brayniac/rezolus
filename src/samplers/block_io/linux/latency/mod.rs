@@ -1,9 +1,11 @@
-#[distributed_slice(BLOCK_IO_SAMPLERS)]
-fn init(config: &Config) -> Box<dyn Sampler> {
+use crate::*;
+
+#[distributed_slice(SAMPLERS)]
+fn init(config: &Config) -> Option<Box<dyn Sampler>> {
     if let Ok(s) = BlockIOLatency::new(config) {
-        Box::new(s)
+        Some(Box::new(s))
     } else {
-        Box::new(Nop {})
+        None
     }
 }
 
@@ -18,7 +20,6 @@ use bpf::*;
 use crate::common::bpf::*;
 use crate::common::*;
 use crate::samplers::block_io::stats::*;
-use crate::samplers::block_io::*;
 
 use parking_lot::{Condvar, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -195,8 +196,9 @@ impl BlockIOLatency {
     }
 }
 
+#[async_trait]
 impl Sampler for BlockIOLatency {
-    fn sample(&mut self) {
+    async fn sample(&mut self) {
         let now = Instant::now();
         let _ = self.refresh(now);
     }

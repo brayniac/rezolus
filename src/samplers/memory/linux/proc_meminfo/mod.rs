@@ -1,18 +1,19 @@
+use crate::*;
+
 use crate::common::units::KIBIBYTES;
-use crate::common::{Interval, Nop};
+use crate::common::Interval;
 use crate::samplers::memory::stats::*;
-use crate::samplers::memory::*;
 use metriken::Gauge;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek};
 
-#[distributed_slice(MEMORY_SAMPLERS)]
-fn init(config: &Config) -> Box<dyn Sampler> {
+#[distributed_slice(SAMPLERS)]
+fn init(config: &Config) -> Option<Box<dyn Sampler>> {
     if let Ok(s) = ProcMeminfo::new(config) {
-        Box::new(s)
+        Some(Box::new(s))
     } else {
-        Box::new(Nop {})
+        None
     }
 }
 
@@ -48,8 +49,9 @@ impl ProcMeminfo {
     }
 }
 
+#[async_trait]
 impl Sampler for ProcMeminfo {
-    fn sample(&mut self) {
+    async fn sample(&mut self) {
         let now = Instant::now();
 
         if self.interval.try_wait(now).is_err() {

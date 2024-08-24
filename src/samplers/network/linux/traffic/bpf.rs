@@ -5,12 +5,13 @@ mod bpf {
 
 use super::NAME;
 
+use crate::*;
+
 use bpf::*;
 
 use crate::common::bpf::*;
 use crate::common::*;
 use crate::samplers::network::stats::*;
-use crate::samplers::network::*;
 
 use parking_lot::{Condvar, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -189,8 +190,9 @@ impl NetworkTraffic {
     }
 }
 
+#[async_trait]
 impl Sampler for NetworkTraffic {
-    fn sample(&mut self) {
+    async fn sample(&mut self) {
         let now = Instant::now();
         let _ = self.refresh(now);
     }

@@ -1,3 +1,5 @@
+use crate::*;
+
 use crate::common::{Counter, Interval};
 use crate::samplers::cpu::*;
 use crate::samplers::hwinfo::hardware_info;
@@ -110,8 +112,9 @@ impl ProcStat {
     }
 }
 
+#[async_trait]
 impl Sampler for ProcStat {
-    fn sample(&mut self) {
+    async fn sample(&mut self) {
         if let Ok(elapsed) = self.interval.try_wait(Instant::now()) {
             let _ = self.sample_proc_stat(elapsed.as_secs_f64());
         }

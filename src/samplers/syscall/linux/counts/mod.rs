@@ -1,9 +1,11 @@
-#[distributed_slice(SYSCALL_SAMPLERS)]
-fn init(config: &Config) -> Box<dyn Sampler> {
+use crate::*;
+
+#[distributed_slice(SAMPLERS)]
+fn init(config: &Config) -> Option<Box<dyn Sampler>> {
     if let Ok(s) = Syscall::new(config) {
-        Box::new(s)
+        Some(Box::new(s))
     } else {
-        Box::new(Nop {})
+        None
     }
 }
 
@@ -19,7 +21,6 @@ use crate::common::bpf::*;
 use crate::common::*;
 use crate::samplers::syscall::linux::*;
 use crate::samplers::syscall::stats::*;
-use crate::samplers::syscall::*;
 
 use parking_lot::{Condvar, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -210,8 +211,9 @@ impl Syscall {
     }
 }
 
+#[async_trait]
 impl Sampler for Syscall {
-    fn sample(&mut self) {
+    async fn sample(&mut self) {
         let now = Instant::now();
         let _ = self.refresh(now);
     }

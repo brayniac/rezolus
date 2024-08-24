@@ -1,5 +1,6 @@
 use crate::common::Interval;
 use crate::samplers::filesystem::*;
+use crate::*;
 use crate::{error, Config, Instant, Sampler};
 use std::fs::File;
 use std::io::{Read, Seek};
@@ -29,8 +30,9 @@ impl Procfs {
     }
 }
 
+#[async_trait]
 impl Sampler for Procfs {
-    fn sample(&mut self) {
+    async fn sample(&mut self) {
         if self.interval.try_wait(Instant::now()).is_err() {
             return;
         }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::*;
 use std::fs::File;
 use std::io::{Read, Seek};
 
@@ -25,8 +26,9 @@ impl ProcCpuinfo {
     }
 }
 
+#[async_trait]
 impl Sampler for ProcCpuinfo {
-    fn sample(&mut self) {
+    async fn sample(&mut self) {
         let now = Instant::now();
 
         if now < self.next {

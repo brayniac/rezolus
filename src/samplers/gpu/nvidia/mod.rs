@@ -1,7 +1,7 @@
+use crate::*;
+
 use super::stats::*;
-use super::*;
 use crate::common::Interval;
-use crate::common::Nop;
 use metriken::{DynBoxedMetric, MetricBuilder};
 use nvml_wrapper::enum_wrappers::device::*;
 use nvml_wrapper::Nvml;
@@ -10,12 +10,12 @@ const KB: i64 = 1024;
 const MB: i64 = 1024 * KB;
 const MHZ: i64 = 1_000_000;
 
-#[distributed_slice(GPU_SAMPLERS)]
-fn init(config: &Config) -> Box<dyn Sampler> {
+#[distributed_slice(SAMPLERS)]
+fn init(config: &Config) -> Option<Box<dyn Sampler>> {
     if let Ok(nvidia) = Nvidia::new(config) {
-        Box::new(nvidia)
+        Some(Box::new(nvidia))
     } else {
-        Box::new(Nop {})
+        None
     }
 }
 
@@ -155,8 +155,9 @@ impl Nvidia {
     }
 }
 
+#[async_trait]
 impl Sampler for Nvidia {
-    fn sample(&mut self) {
+    async fn sample(&mut self) {
         let now = Instant::now();
 
         if self.interval.try_wait(now).is_err() {

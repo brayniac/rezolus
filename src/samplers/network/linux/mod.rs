@@ -1,7 +1,8 @@
-use crate::common::{Interval, Nop};
+use crate::*;
+
+use crate::common::Interval;
 use crate::samplers::hwinfo::hardware_info;
 use crate::samplers::network::stats::*;
-use crate::samplers::network::*;
 use metriken::Counter;
 use std::fs::File;
 use std::io::Read;
@@ -64,8 +65,9 @@ impl SysfsNetSampler {
     }
 }
 
+#[async_trait]
 impl Sampler for SysfsNetSampler {
-    fn sample(&mut self) {
+    async fn sample(&mut self) {
         if self.interval.try_wait(Instant::now()).is_err() {
             return;
         }
