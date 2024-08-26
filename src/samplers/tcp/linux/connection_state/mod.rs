@@ -2,9 +2,14 @@ use crate::common::Interval;
 use crate::samplers::tcp::linux::stats::*;
 use crate::*;
 use metriken::Gauge;
-use std::fs::File;
-use std::io::Read;
-use std::io::Seek;
+// use std::fs::File;
+// use std::io::Read;
+// use std::io::Seek;
+
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
+
+// use tokio::io::*;
 
 #[distributed_slice(SAMPLERS)]
 fn init(config: &Config) -> Option<Box<dyn Sampler>> {
@@ -45,11 +50,11 @@ impl ConnectionState {
             (&TCP_CONN_STATE_NEW_SYN_RECV, 0),
         ];
 
-        let ipv4 = File::open("/proc/net/tcp").map_err(|e| {
+        let ipv4 = std::fs::File::open("/proc/net/tcp").map(|f| File::from_std(f)).map_err(|e| {
             error!("Failed to open /proc/net/tcp: {e}");
         });
 
-        let ipv6 = File::open("/proc/net/tcp6").map_err(|e| {
+        let ipv6 = std::fs::File::open("/proc/net/tcp6").map(|f| File::from_std(f)).map_err(|e| {
             error!("Failed to open /proc/net/tcp6: {e}");
         });
 
@@ -84,9 +89,9 @@ impl Sampler for ConnectionState {
 
         for file in self.files.iter_mut() {
             // seek to start to cause reload of content
-            if file.rewind().is_ok() {
+            if file.rewind().await.is_ok() {
                 let mut data = String::new();
-                if file.read_to_string(&mut data).is_err() {
+                if file.read_to_string(&mut data).await.is_err() {
                     error!("error reading /proc/net/tcp");
                     return;
                 }
