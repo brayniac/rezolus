@@ -62,7 +62,7 @@ impl Runqlat {
         }
 
         // define userspace metric sets
-        let counters = vec![Counter::new(&SCHEDULER_IVCSW, None)];
+        let counters = vec![CounterWithHist::new(&SCHEDULER_IVCSW, &SCHEDULER_IVCSW_HISTOGRAM)];
 
         // create vars to communicate with our child thread
         let initialized = Arc::new(AtomicBool::new(false));
@@ -119,9 +119,9 @@ impl Runqlat {
                 // wrap the BPF program and define BPF maps
                 let mut bpf = BpfBuilder::new(skel)
                     .counters("counters", counters)
-                    .distribution("runqlat", &SCHEDULER_RUNQUEUE_LATENCY)
-                    .distribution("running", &SCHEDULER_RUNNING)
-                    .distribution("offcpu", &SCHEDULER_OFFCPU)
+                    .histogram("runqlat", &SCHEDULER_RUNQUEUE_LATENCY)
+                    .histogram("running", &SCHEDULER_RUNNING)
+                    .histogram("offcpu", &SCHEDULER_OFFCPU)
                     .build();
 
                 // indicate that we have completed initialization
@@ -141,8 +141,7 @@ impl Runqlat {
                     let now = Instant::now();
 
                     // refresh userspace metrics
-                    bpf.refresh_counters(now.duration_since(prev));
-                    bpf.refresh_distributions();
+                    bpf.refresh(now.duration_since(prev));
 
                     prev = now;
 
@@ -167,22 +166,23 @@ impl Runqlat {
             return Err(());
         }
 
-        let now = Instant::now();
-
         Ok(Self {
             thread: handle,
             notify,
-            interval: Interval::new(now, config.interval(NAME)),
+            interval: config.interval(NAME),
         })
     }
+}
 
-    pub fn refresh(&mut self, now: Instant) -> Result<(), ()> {
-        // early return if it is not time to refresh
-        self.interval.try_wait(now)?;
+#[async_trait]
+impl Sampler for Runqlat {
+    async fn sample(&mut self) {
+        // wait until it's time to sample
+        self.interval.tick().await;
 
         // check that the thread has not exited
         if self.thread.is_finished() {
-            return Err(());
+            return;
         }
 
         // notify the thread to start
@@ -201,16 +201,6 @@ impl Runqlat {
                 cvar.wait(&mut running);
             }
         }
-
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Sampler for Runqlat {
-    async fn sample(&mut self) {
-        let now = Instant::now();
-        let _ = self.refresh(now);
     }
 
     fn is_fast(&self) -> bool {

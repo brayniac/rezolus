@@ -1,5 +1,5 @@
 use crate::common::HISTOGRAM_GROUPING_POWER;
-use metriken::{metric, Counter, LazyCounter, RwLockHistogram};
+use metriken::*;
 
 #[metric(
     name = "scheduler/runqueue/latency",
@@ -28,3 +28,11 @@ pub static SCHEDULER_OFFCPU: RwLockHistogram = RwLockHistogram::new(HISTOGRAM_GR
     description = "The number of involuntary context switches"
 )]
 pub static SCHEDULER_IVCSW: LazyCounter = LazyCounter::new(Counter::default);
+
+#[metric(
+    name = "scheduler/context_switch/involuntary",
+    description = "Distribution of the total rate of involuntary context switches from sample to sample",
+    metadata = { unit = "ops/second" }
+)]
+pub static SCHEDULER_IVCSW_HISTOGRAM: AtomicHistogram =
+    AtomicHistogram::new(HISTOGRAM_GROUPING_POWER, 64);

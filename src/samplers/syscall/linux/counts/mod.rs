@@ -65,15 +65,15 @@ impl Syscall {
 
         // define userspace metric sets
         let counters = vec![
-            Counter::new(&SYSCALL_TOTAL, Some(&SYSCALL_TOTAL_HISTOGRAM)),
-            Counter::new(&SYSCALL_READ, Some(&SYSCALL_READ_HISTOGRAM)),
-            Counter::new(&SYSCALL_WRITE, Some(&SYSCALL_WRITE_HISTOGRAM)),
-            Counter::new(&SYSCALL_POLL, Some(&SYSCALL_POLL_HISTOGRAM)),
-            Counter::new(&SYSCALL_LOCK, Some(&SYSCALL_LOCK_HISTOGRAM)),
-            Counter::new(&SYSCALL_TIME, Some(&SYSCALL_TIME_HISTOGRAM)),
-            Counter::new(&SYSCALL_SLEEP, Some(&SYSCALL_SLEEP_HISTOGRAM)),
-            Counter::new(&SYSCALL_SOCKET, Some(&SYSCALL_SOCKET_HISTOGRAM)),
-            Counter::new(&SYSCALL_YIELD, Some(&SYSCALL_YIELD_HISTOGRAM)),
+            CounterWithHist::new(&SYSCALL_TOTAL, &SYSCALL_TOTAL_HISTOGRAM),
+            CounterWithHist::new(&SYSCALL_READ, &SYSCALL_READ_HISTOGRAM),
+            CounterWithHist::new(&SYSCALL_WRITE, &SYSCALL_WRITE_HISTOGRAM),
+            CounterWithHist::new(&SYSCALL_POLL, &SYSCALL_POLL_HISTOGRAM),
+            CounterWithHist::new(&SYSCALL_LOCK, &SYSCALL_LOCK_HISTOGRAM),
+            CounterWithHist::new(&SYSCALL_TIME, &SYSCALL_TIME_HISTOGRAM),
+            CounterWithHist::new(&SYSCALL_SLEEP, &SYSCALL_SLEEP_HISTOGRAM),
+            CounterWithHist::new(&SYSCALL_SOCKET, &SYSCALL_SOCKET_HISTOGRAM),
+            CounterWithHist::new(&SYSCALL_YIELD, &SYSCALL_YIELD_HISTOGRAM),
         ];
 
         // create vars to communicate with our child thread
@@ -146,8 +146,7 @@ impl Syscall {
                     let now = Instant::now();
 
                     // refresh userspace metrics
-                    bpf.refresh_counters(now.duration_since(prev));
-                    bpf.refresh_distributions();
+                    bpf.refresh(now.duration_since(prev));
 
                     prev = now;
 
@@ -172,22 +171,23 @@ impl Syscall {
             return Err(());
         }
 
-        let now = Instant::now();
-
         Ok(Self {
             thread: handle,
             notify,
-            interval: Interval::new(now, config.interval(NAME)),
+            interval: config.interval(NAME),
         })
     }
+}
 
-    pub fn refresh(&mut self, now: Instant) -> Result<(), ()> {
-        // early return if it is not time to refresh
-        self.interval.try_wait(now)?;
+#[async_trait]
+impl Sampler for Syscall {
+    async fn sample(&mut self) {
+        // wait until it's time to sample
+        self.interval.tick().await;
 
         // check that the thread has not exited
         if self.thread.is_finished() {
-            return Err(());
+            return;
         }
 
         // notify the thread to start
@@ -206,16 +206,6 @@ impl Syscall {
                 cvar.wait(&mut running);
             }
         }
-
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Sampler for Syscall {
-    async fn sample(&mut self) {
-        let now = Instant::now();
-        let _ = self.refresh(now);
     }
 
     fn is_fast(&self) -> bool {

@@ -125,15 +125,15 @@ impl Syscall {
 
                 // wrap the BPF program and define BPF maps
                 let mut bpf = BpfBuilder::new(skel)
-                    .distribution("total_latency", &SYSCALL_TOTAL_LATENCY)
-                    .distribution("read_latency", &SYSCALL_READ_LATENCY)
-                    .distribution("write_latency", &SYSCALL_WRITE_LATENCY)
-                    .distribution("poll_latency", &SYSCALL_POLL_LATENCY)
-                    .distribution("lock_latency", &SYSCALL_LOCK_LATENCY)
-                    .distribution("time_latency", &SYSCALL_TIME_LATENCY)
-                    .distribution("sleep_latency", &SYSCALL_SLEEP_LATENCY)
-                    .distribution("socket_latency", &SYSCALL_SOCKET_LATENCY)
-                    .distribution("yield_latency", &SYSCALL_YIELD_LATENCY)
+                    .histogram("total_latency", &SYSCALL_TOTAL_LATENCY)
+                    .histogram("read_latency", &SYSCALL_READ_LATENCY)
+                    .histogram("write_latency", &SYSCALL_WRITE_LATENCY)
+                    .histogram("poll_latency", &SYSCALL_POLL_LATENCY)
+                    .histogram("lock_latency", &SYSCALL_LOCK_LATENCY)
+                    .histogram("time_latency", &SYSCALL_TIME_LATENCY)
+                    .histogram("sleep_latency", &SYSCALL_SLEEP_LATENCY)
+                    .histogram("socket_latency", &SYSCALL_SOCKET_LATENCY)
+                    .histogram("yield_latency", &SYSCALL_YIELD_LATENCY)
                     .map("syscall_lut", &syscall_lut)
                     .build();
 
@@ -154,8 +154,7 @@ impl Syscall {
                     let now = Instant::now();
 
                     // refresh userspace metrics
-                    bpf.refresh_counters(now.duration_since(prev));
-                    bpf.refresh_distributions();
+                    bpf.refresh(now.duration_since(prev));
 
                     prev = now;
 
@@ -180,22 +179,23 @@ impl Syscall {
             return Err(());
         }
 
-        let now = Instant::now();
-
         Ok(Self {
             thread: handle,
             notify,
-            interval: Interval::new(now, config.interval(NAME)),
+            interval: config.interval(NAME),
         })
     }
+}
 
-    pub fn refresh(&mut self, now: Instant) -> Result<(), ()> {
-        // early return if it is not time to refresh
-        self.interval.try_wait(now)?;
+#[async_trait]
+impl Sampler for Syscall {
+    async fn sample(&mut self) {
+        // wait until it's time to sample
+        self.interval.tick().await;
 
         // check that the thread has not exited
         if self.thread.is_finished() {
-            return Err(());
+            return;
         }
 
         // notify the thread to start
@@ -214,16 +214,6 @@ impl Syscall {
                 cvar.wait(&mut running);
             }
         }
-
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Sampler for Syscall {
-    async fn sample(&mut self) {
-        let now = Instant::now();
-        let _ = self.refresh(now);
     }
 
     fn is_fast(&self) -> bool {
