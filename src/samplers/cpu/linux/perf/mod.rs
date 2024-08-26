@@ -33,6 +33,10 @@ const NAME: &str = "cpu_perf";
 
 pub struct Perf {
     interval: Interval,
+    inner: Option<PerfSampler>,
+}
+
+struct PerfSampler {
     groups: Vec<PerfGroup>,
     counters: Vec<Vec<DynBoxedMetric<metriken::Counter>>>,
     gauges: Vec<Vec<DynBoxedMetric<metriken::Gauge>>>,
@@ -45,6 +49,17 @@ impl Perf {
             return Err(());
         }
 
+        let inner = PerfSampler::new()?;
+
+        Ok(Self {
+            interval: Interval::new(Instant::now(), config.interval(NAME)),
+            inner: Some(inner),
+        })
+    }
+}
+
+impl PerfSampler {
+    pub fn new() -> Result<Self, ()> {
         let cpus = match hardware_info() {
             Ok(hwinfo) => hwinfo.get_cpus(),
             Err(_) => return Err(()),
@@ -105,23 +120,14 @@ impl Perf {
         }
 
         Ok(Self {
-            interval: Interval::new(Instant::now(), config.interval(NAME)),
+            
             groups,
             counters,
             gauges,
         })
     }
-}
 
-#[async_trait]
-impl Sampler for Perf {
-    async fn sample(&mut self) {
-        let now = Instant::now();
-
-        if self.interval.try_wait(now).is_err() {
-            return;
-        }
-
+    impl sample(&mut self) {
         let mut nr_active_groups: u64 = 0;
         let mut total_cycles = 0;
         let mut total_instructions = 0;
@@ -174,6 +180,30 @@ impl Sampler for Perf {
             CPU_BASE_FREQUENCY_AVERAGE.set((avg_base_frequency / nr_active_groups) as i64);
             CPU_FREQUENCY_AVERAGE.set((avg_running_frequency / nr_active_groups) as i64);
             CPU_CORES.set(nr_active_groups as _);
+        }
+    }
+}
+
+#[async_trait]
+impl Sampler for Perf {
+    async fn sample(&mut self) {
+        let now = Instant::now();
+
+        if self.interval.try_wait(now).is_err() {
+            return;
+        }
+
+        if let Some(mut s) = self.inner.take() {
+            if Ok(s) = tokio::task::spawn_blocking(move || {
+                if let Err(e) = s.sample(now) {
+                    error!("error sampling: {e}");
+                }
+                Some(s)
+            })
+            .await
+            {
+                self.inner = s;
+            }
         }
     }
 }

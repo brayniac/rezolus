@@ -179,16 +179,16 @@ impl Sampler for Nvidia {
             return;
         }
 
-        if let Some(mut nvml) = self.inner.take() {
-            if let Ok(nvml) = tokio::task::spawn_blocking(move || {
-                if let Err(e) = nvml.sample(now) {
+        if let Some(mut s) = self.inner.take() {
+            if let Ok(s) = tokio::task::spawn_blocking(move || {
+                if let Err(e) = s.sample(now) {
                     error!("error sampling: {e}");
                 }
-                Some(nvml)
+                Some(s)
             })
             .await
             {
-                self.inner = nvml;
+                self.inner = s;
             }
         }
     }
