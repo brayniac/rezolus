@@ -6,10 +6,8 @@ use crate::samplers::network::stats::*;
 use metriken::Counter;
 
 use tokio::fs::File;
-
-// use std::fs::File;
+use tokio::io::{AsyncSeekExt, AsyncReadExt};
 use std::io::Read;
-use std::io::Seek;
 
 mod interfaces;
 mod traffic;
@@ -53,10 +51,8 @@ impl SysfsNetSampler {
 
                     if f.read_to_string(&mut data).is_ok() && data.trim_end().parse::<u64>().is_ok()
                     {
-                        if_stats.insert(interface.name.to_string(), f);
+                        if_stats.insert(interface.name.to_string(), File::from_std(f));
                     }
-
-                    File::from_std(f)
                 }
             }
 
