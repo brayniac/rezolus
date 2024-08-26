@@ -127,7 +127,7 @@ impl PerfSampler {
         })
     }
 
-    impl sample(&mut self) {
+    fn sample(&mut self) {
         let mut nr_active_groups: u64 = 0;
         let mut total_cycles = 0;
         let mut total_instructions = 0;
@@ -194,15 +194,13 @@ impl Sampler for Perf {
         }
 
         if let Some(mut s) = self.inner.take() {
-            if Ok(s) = tokio::task::spawn_blocking(move || {
-                if let Err(e) = s.sample(now) {
-                    error!("error sampling: {e}");
-                }
-                Some(s)
+            if let Ok(s) = tokio::task::spawn_blocking(move || {
+                s.sample();
+                s
             })
             .await
             {
-                self.inner = s;
+                self.inner = Some(s);
             }
         }
     }
