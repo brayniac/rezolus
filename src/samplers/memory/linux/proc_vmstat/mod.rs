@@ -3,8 +3,8 @@ use crate::*;
 use crate::common::{Counter, Interval};
 use crate::samplers::memory::stats::*;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{Read, Seek};
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 #[distributed_slice(SAMPLERS)]
 fn init(config: &Config) -> Option<Box<dyn Sampler>> {
@@ -43,8 +43,12 @@ impl ProcVmstat {
             ("numa_other", Counter::new(&MEMORY_NUMA_OTHER, None)),
         ]);
 
+        let file = std::fs::File::open("/proc/vmstat").map(|f| File::from_std(f)).map_err(|e| {
+            error!("Failed to open /proc/vmstat: {e}");
+        })?;
+
         Ok(Self {
-            file: File::open("/proc/vmstat").expect("file not found"),
+            file,
             counters,
             interval: Interval::new(Instant::now(), config.interval(NAME)),
         })
@@ -55,17 +59,17 @@ impl ProcVmstat {
 impl Sampler for ProcVmstat {
     async fn sample(&mut self) {
         if let Ok(elapsed) = self.interval.try_wait(Instant::now()) {
-            let _ = self.sample_proc_vmstat(elapsed.as_secs_f64());
+            let _ = self.sample_proc_vmstat(elapsed.as_secs_f64()).await;
         }
     }
 }
 
 impl ProcVmstat {
-    fn sample_proc_vmstat(&mut self, elapsed: f64) -> Result<(), std::io::Error> {
-        self.file.rewind()?;
+    async fn sample_proc_vmstat(&mut self, elapsed: f64) -> Result<(), std::io::Error> {
+        self.file.rewind().await?;
 
         let mut data = String::new();
-        self.file.read_to_string(&mut data)?;
+        self.file.read_to_string(&mut data).await?;
 
         let lines = data.lines();
 

@@ -5,8 +5,8 @@ use crate::common::Interval;
 use crate::samplers::memory::stats::*;
 use metriken::Gauge;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{Read, Seek};
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 #[distributed_slice(SAMPLERS)]
 fn init(config: &Config) -> Option<Box<dyn Sampler>> {
@@ -41,8 +41,12 @@ impl ProcMeminfo {
             ("Cached:", &*MEMORY_CACHED),
         ]);
 
+        let file = std::fs::File::open("/proc/meminfo").map(|f| File::from_std(f)).map_err(|e| {
+            error!("Failed to open /proc/meminfo: {e}");
+        })?;
+
         Ok(Self {
-            file: File::open("/proc/meminfo").expect("file not found"),
+            file,
             gauges,
             interval: Interval::new(Instant::now(), config.interval(NAME)),
         })
@@ -58,16 +62,16 @@ impl Sampler for ProcMeminfo {
             return;
         }
 
-        let _ = self.sample_proc_meminfo(now).is_err();
+        let _ = self.sample_proc_meminfo(now).await;
     }
 }
 
 impl ProcMeminfo {
-    fn sample_proc_meminfo(&mut self, _now: Instant) -> Result<(), std::io::Error> {
-        self.file.rewind()?;
+    async fn sample_proc_meminfo(&mut self, _now: Instant) -> Result<(), std::io::Error> {
+        self.file.rewind().await?;
 
         let mut data = String::new();
-        self.file.read_to_string(&mut data)?;
+        self.file.read_to_string(&mut data).await?;
 
         let lines = data.lines();
 
