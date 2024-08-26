@@ -89,7 +89,10 @@ impl Sampler for CpuUsage {
 }
 
 impl CpuUsage {
-    unsafe fn sample_processor_info(&mut self, elapsed: Option<Duration>) -> Result<(), std::io::Error> {
+    unsafe fn sample_processor_info(
+        &mut self,
+        elapsed: Option<Duration>,
+    ) -> Result<(), std::io::Error> {
         let mut num_cpu: u32 = 0;
         let mut cpu_info: *mut i32 = std::ptr::null_mut();
         let mut cpu_info_len: u32 = 0;

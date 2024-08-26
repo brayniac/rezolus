@@ -62,7 +62,10 @@ impl Runqlat {
         }
 
         // define userspace metric sets
-        let counters = vec![CounterWithHist::new(&SCHEDULER_IVCSW, &SCHEDULER_IVCSW_HISTOGRAM)];
+        let counters = vec![CounterWithHist::new(
+            &SCHEDULER_IVCSW,
+            &SCHEDULER_IVCSW_HISTOGRAM,
+        )];
 
         // create vars to communicate with our child thread
         let initialized = Arc::new(AtomicBool::new(false));

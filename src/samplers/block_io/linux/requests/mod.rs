@@ -69,10 +69,7 @@ impl BlockIORequests {
             CounterWithHist::new(&BLOCKIO_READ_BYTES, &BLOCKIO_READ_BYTES_HISTOGRAM),
             CounterWithHist::new(&BLOCKIO_WRITE_BYTES, &BLOCKIO_WRITE_BYTES_HISTOGRAM),
             CounterWithHist::new(&BLOCKIO_FLUSH_BYTES, &BLOCKIO_FLUSH_BYTES_HISTOGRAM),
-            CounterWithHist::new(
-                &BLOCKIO_DISCARD_BYTES,
-                &BLOCKIO_DISCARD_BYTES_HISTOGRAM,
-            ),
+            CounterWithHist::new(&BLOCKIO_DISCARD_BYTES, &BLOCKIO_DISCARD_BYTES_HISTOGRAM),
         ];
 
         // create a child thread which owns the BPF sampler

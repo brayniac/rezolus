@@ -13,9 +13,11 @@ pub struct ProcCpuinfo {
 impl ProcCpuinfo {
     pub fn new(_config: &Config) -> Result<Self, ()> {
         let now = Instant::now();
-        let file = std::fs::File::open("/proc/cpuinfo").map(|f| File::from_std(f)).map_err(|e| {
-            error!("failed to open /proc/cpuinfo: {e}");
-        })?;
+        let file = std::fs::File::open("/proc/cpuinfo")
+            .map(|f| File::from_std(f))
+            .map_err(|e| {
+                error!("failed to open /proc/cpuinfo: {e}");
+            })?;
 
         Ok(Self {
             file,

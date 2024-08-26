@@ -111,7 +111,7 @@ impl PacketLatency {
 
                 // wrap the BPF program and define BPF maps
                 let mut bpf = BpfBuilder::new(skel)
-                    .distribution("latency", &TCP_PACKET_LATENCY)
+                    .histogram("latency", &TCP_PACKET_LATENCY)
                     .build();
 
                 // indicate that we have completed initialization
@@ -156,8 +156,6 @@ impl PacketLatency {
             return Err(());
         }
 
-        let now = Instant::now();
-
         Ok(Self {
             thread: handle,
             notify,
@@ -169,7 +167,7 @@ impl PacketLatency {
 #[async_trait]
 impl Sampler for PacketLatency {
     async fn sample(&mut self) {
-        // early return if it is not time to refresh
+        // wait until it's time to sample
         self.interval.tick().await;
 
         // check that the thread has not exited

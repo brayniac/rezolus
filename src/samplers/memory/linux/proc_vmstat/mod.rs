@@ -34,17 +34,16 @@ impl ProcVmstat {
             ("numa_hit", &MEMORY_NUMA_HIT),
             ("numa_miss", &MEMORY_NUMA_MISS),
             ("numa_foreign", &MEMORY_NUMA_FOREIGN),
-            (
-                "numa_interleave",
-                &MEMORY_NUMA_INTERLEAVE,
-            ),
+            ("numa_interleave", &MEMORY_NUMA_INTERLEAVE),
             ("numa_local", &MEMORY_NUMA_LOCAL),
             ("numa_other", &MEMORY_NUMA_OTHER),
         ]);
 
-        let file = std::fs::File::open("/proc/vmstat").map(|f| File::from_std(f)).map_err(|e| {
-            error!("Failed to open /proc/vmstat: {e}");
-        })?;
+        let file = std::fs::File::open("/proc/vmstat")
+            .map(|f| File::from_std(f))
+            .map_err(|e| {
+                error!("Failed to open /proc/vmstat: {e}");
+            })?;
 
         Ok(Self {
             file,

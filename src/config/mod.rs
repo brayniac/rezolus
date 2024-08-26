@@ -1,5 +1,5 @@
-use crate::Interval;
 use crate::Duration;
+use crate::Interval;
 use ringlog::Level;
 use serde::Deserialize;
 use std::collections::HashMap;

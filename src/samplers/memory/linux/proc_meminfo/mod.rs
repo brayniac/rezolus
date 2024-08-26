@@ -41,9 +41,11 @@ impl ProcMeminfo {
             ("Cached:", &*MEMORY_CACHED),
         ]);
 
-        let file = std::fs::File::open("/proc/meminfo").map(|f| File::from_std(f)).map_err(|e| {
-            error!("Failed to open /proc/meminfo: {e}");
-        })?;
+        let file = std::fs::File::open("/proc/meminfo")
+            .map(|f| File::from_std(f))
+            .map_err(|e| {
+                error!("Failed to open /proc/meminfo: {e}");
+            })?;
 
         Ok(Self {
             file,

@@ -100,9 +100,11 @@ impl ProcStat {
 
         let nanos_per_tick = 1_000_000_000 / (sc_clk_tck as u64);
 
-        let file = std::fs::File::open("/proc/stat").map(|f| File::from_std(f)).map_err(|e| {
-            error!("failed to open /proc/stat: {e}");
-        })?;
+        let file = std::fs::File::open("/proc/stat")
+            .map(|f| File::from_std(f))
+            .map_err(|e| {
+                error!("failed to open /proc/stat: {e}");
+            })?;
 
         Ok(Self {
             file,

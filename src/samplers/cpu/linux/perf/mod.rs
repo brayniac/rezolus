@@ -120,7 +120,6 @@ impl PerfSampler {
         }
 
         Ok(Self {
-            
             groups,
             counters,
             gauges,

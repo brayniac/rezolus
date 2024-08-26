@@ -58,9 +58,9 @@ impl Retransmit {
         let notify = Arc::new((Mutex::new(false), Condvar::new()));
 
         // define userspace metric sets
-        let counters = vec![Counter::new(
+        let counters = vec![CounterWithHist::new(
             &TCP_TX_RETRANSMIT,
-            Some(&TCP_TX_RETRANSMIT_HISTOGRAM),
+            &TCP_TX_RETRANSMIT_HISTOGRAM,
         )];
 
         // create a child thread which owns the BPF sampler
@@ -150,8 +150,6 @@ impl Retransmit {
             return Err(());
         }
 
-        let now = Instant::now();
-
         Ok(Self {
             thread: handle,
             notify,
@@ -163,7 +161,7 @@ impl Retransmit {
 #[async_trait]
 impl Sampler for Retransmit {
     async fn sample(&mut self) {
-        // early return if it is not time to refresh
+        // wait until it's time to sample
         self.interval.tick().await;
 
         // check that the thread has not exited

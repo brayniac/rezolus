@@ -5,9 +5,9 @@ use crate::samplers::hwinfo::hardware_info;
 use crate::samplers::network::stats::*;
 use metriken::Counter;
 
-use tokio::fs::File;
-use tokio::io::{AsyncSeekExt, AsyncReadExt};
 use std::io::Read;
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 mod interfaces;
 mod traffic;

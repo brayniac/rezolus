@@ -44,13 +44,17 @@ impl ConnectionState {
             (&TCP_CONN_STATE_NEW_SYN_RECV, 0),
         ];
 
-        let ipv4 = std::fs::File::open("/proc/net/tcp").map(|f| File::from_std(f)).map_err(|e| {
-            error!("Failed to open /proc/net/tcp: {e}");
-        });
+        let ipv4 = std::fs::File::open("/proc/net/tcp")
+            .map(|f| File::from_std(f))
+            .map_err(|e| {
+                error!("Failed to open /proc/net/tcp: {e}");
+            });
 
-        let ipv6 = std::fs::File::open("/proc/net/tcp6").map(|f| File::from_std(f)).map_err(|e| {
-            error!("Failed to open /proc/net/tcp6: {e}");
-        });
+        let ipv6 = std::fs::File::open("/proc/net/tcp6")
+            .map(|f| File::from_std(f))
+            .map_err(|e| {
+                error!("Failed to open /proc/net/tcp6: {e}");
+            });
 
         let mut files: Vec<Result<File, ()>> = vec![ipv4, ipv6];
 

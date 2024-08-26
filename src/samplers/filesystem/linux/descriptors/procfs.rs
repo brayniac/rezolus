@@ -17,9 +17,11 @@ impl Procfs {
             return Err(());
         }
 
-        let file = std::fs::File::open("/proc/sys/fs/file-nr").map(|f| File::from_std(f)).map_err(|e| {
-            error!("failed to open: {e}");
-        })?;
+        let file = std::fs::File::open("/proc/sys/fs/file-nr")
+            .map(|f| File::from_std(f))
+            .map_err(|e| {
+                error!("failed to open: {e}");
+            })?;
 
         Ok(Self {
             file,
@@ -32,7 +34,7 @@ impl Procfs {
 impl Sampler for Procfs {
     async fn sample(&mut self) {
         self.interval.tick().await;
-        
+
         let _ = self.sample_procfs().await;
     }
 }
