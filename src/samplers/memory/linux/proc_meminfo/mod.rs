@@ -48,7 +48,7 @@ impl ProcMeminfo {
         Ok(Self {
             file,
             gauges,
-            interval: Interval::new(Instant::now(), config.interval(NAME)),
+            interval: config.interval(NAME),
         })
     }
 }
@@ -56,18 +56,14 @@ impl ProcMeminfo {
 #[async_trait]
 impl Sampler for ProcMeminfo {
     async fn sample(&mut self) {
-        let now = Instant::now();
+        self.interval.tick().await;
 
-        if self.interval.try_wait(now).is_err() {
-            return;
-        }
-
-        let _ = self.sample_proc_meminfo(now).await;
+        let _ = self.sample_proc_meminfo().await;
     }
 }
 
 impl ProcMeminfo {
-    async fn sample_proc_meminfo(&mut self, _now: Instant) -> Result<(), std::io::Error> {
+    async fn sample_proc_meminfo(&mut self) -> Result<(), std::io::Error> {
         self.file.rewind().await?;
 
         let mut data = String::new();
