@@ -201,4 +201,8 @@ impl Sampler for PacketLatency {
         let now = Instant::now();
         let _ = self.refresh(now);
     }
+
+    fn is_fast(&self) -> bool {
+        true
+    }
 }

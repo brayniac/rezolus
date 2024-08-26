@@ -220,33 +220,6 @@ fn main() {
             }
         }
     }
-
-    // // initialize and gather the samplers
-    // let mut samplers: Vec<Box<dyn Sampler>> = Vec::new();
-
-    // for sampler in SAMPLERS {
-    //     samplers.push(sampler(&config));
-    // }
-
-    // info!("initialization complete");
-
-    // // main loop
-    // loop {
-    //     RUNTIME_SAMPLE_LOOP.increment();
-
-    //     // get current time
-    //     let start = Instant::now();
-
-    //     // sample each sampler
-    //     for sampler in &mut samplers {
-    //         sampler.sample();
-    //     }
-
-    //     // Sleep for the remainder of one millisecond minus the sampling time.
-    //     // This wakeup period allows a maximum of 1kHz sampling
-    //     let delay = Duration::from_millis(1).saturating_sub(start.elapsed());
-    //     std::thread::sleep(delay);
-    // }
 }
 
 #[async_trait]

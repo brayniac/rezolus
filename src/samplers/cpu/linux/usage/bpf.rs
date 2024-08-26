@@ -281,4 +281,8 @@ impl Sampler for CpuUsage {
         let now = Instant::now();
         let _ = self.refresh(now);
     }
+
+    fn is_fast(&self) -> bool {
+        true
+    }
 }

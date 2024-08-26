@@ -92,4 +92,8 @@ impl Rusage {
             RU_NIVCSW.set(rusage.ru_nivcsw as u64);
         }
     }
+
+    fn is_fast(&self) -> bool {
+        true
+    }
 }
