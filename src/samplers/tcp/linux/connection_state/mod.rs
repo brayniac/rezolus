@@ -64,7 +64,7 @@ impl ConnectionState {
         Ok(Self {
             files,
             gauges,
-            interval: Interval::new(Instant::now(), config.interval(NAME)),
+            interval: config.interval(NAME),
         })
     }
 }
@@ -72,9 +72,7 @@ impl ConnectionState {
 #[async_trait]
 impl Sampler for ConnectionState {
     async fn sample(&mut self) {
-        if self.interval.try_wait(Instant::now()).is_err() {
-            return;
-        }
+        self.interval.tick().await;
 
         // zero the temporary gauges
         for (_, gauge) in self.gauges.iter_mut() {

@@ -1,7 +1,6 @@
 use crate::*;
 
 use crate::common::classic::NestedMap;
-use crate::common::{Counter, Interval};
 use crate::samplers::tcp::linux::stats::*;
 use tokio::fs::File;
 
@@ -9,9 +8,8 @@ use super::NAME;
 
 pub struct ProcNetSnmp {
     interval: Interval,
-    last: Option<Instant>,
     file: File,
-    counters: Vec<(Counter, &'static str, &'static str)>,
+    counters: Vec<(CounterWithHist, &'static str, &'static str)>,
 }
 
 impl ProcNetSnmp {
@@ -23,12 +21,12 @@ impl ProcNetSnmp {
 
         let counters = vec![
             (
-                Counter::new(&TCP_RX_PACKETS, Some(&TCP_RX_PACKETS_HISTOGRAM)),
+                CounterWithHist::new(&TCP_RX_PACKETS, &TCP_RX_PACKETS_HISTOGRAM),
                 "Tcp:",
                 "InSegs",
             ),
             (
-                Counter::new(&TCP_TX_PACKETS, Some(&TCP_TX_PACKETS_HISTOGRAM)),
+                CounterWithHist::new(&TCP_TX_PACKETS, &TCP_TX_PACKETS_HISTOGRAM),
                 "Tcp:",
                 "OutSegs",
             ),
@@ -49,14 +47,12 @@ impl ProcNetSnmp {
 #[async_trait]
 impl Sampler for ProcNetSnmp {
     async fn sample(&mut self) {
-        let now = self.interval.tick().await;
-        let elapsed = self.last.map(|v| { now.duration_since(l) });
-        self.last = now;
+        let elapsed = self.interval.tick().await;
 
         if let Ok(nested_map) = NestedMap::try_from_procfs(&mut self.file).await {
             for (counter, pkey, lkey) in self.counters.iter_mut() {
                 if let Some(curr) = nested_map.get(pkey, lkey) {
-                    counter.set(elapsed.as_secs_f64(), curr);
+                    counter.set(elapsed, curr);
                 }
             }
         }

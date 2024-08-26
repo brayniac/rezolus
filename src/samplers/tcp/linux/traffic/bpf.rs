@@ -59,10 +59,10 @@ impl TcpTraffic {
 
         // define userspace metric sets
         let counters = vec![
-            Counter::new(&TCP_RX_BYTES, Some(&TCP_RX_BYTES_HISTOGRAM)),
-            Counter::new(&TCP_TX_BYTES, Some(&TCP_TX_BYTES_HISTOGRAM)),
-            Counter::new(&TCP_RX_PACKETS, Some(&TCP_RX_PACKETS_HISTOGRAM)),
-            Counter::new(&TCP_TX_PACKETS, Some(&TCP_TX_PACKETS_HISTOGRAM)),
+            CounterWithHist::new(&TCP_RX_BYTES, &TCP_RX_BYTES_HISTOGRAM),
+            CounterWithHist::new(&TCP_TX_BYTES, &TCP_TX_BYTES_HISTOGRAM),
+            CounterWithHist::new(&TCP_RX_PACKETS, &TCP_RX_PACKETS_HISTOGRAM),
+            CounterWithHist::new(&TCP_TX_PACKETS, &TCP_TX_PACKETS_HISTOGRAM),
         ];
 
         // create a child thread which owns the BPF sampler
@@ -114,8 +114,8 @@ impl TcpTraffic {
                 // wrap the BPF program and define BPF maps
                 let mut bpf = BpfBuilder::new(skel)
                     .counters("counters", counters)
-                    .distribution("rx_size", &TCP_RX_SIZE)
-                    .distribution("tx_size", &TCP_TX_SIZE)
+                    .histogram("rx_size", &TCP_RX_SIZE)
+                    .histogram("tx_size", &TCP_TX_SIZE)
                     .build();
 
                 // indicate that we have completed initialization
@@ -160,12 +160,10 @@ impl TcpTraffic {
             return Err(());
         }
 
-        let now = Instant::now();
-
         Ok(Self {
             thread: handle,
             notify,
-            interval: Interval::new(now, config.interval(NAME)),
+            interval: config.interval(NAME),
         })
     }
 }
@@ -173,8 +171,8 @@ impl TcpTraffic {
 #[async_trait]
 impl Sampler for TcpTraffic {
     async fn sample(&mut self) {
-        // early return if it is not time to refresh
-        self.interval.try_wait(now).await;
+        // wait until it's time to sample
+        self.interval.tick().await;
 
         // check that the thread has not exited
         if self.thread.is_finished() {

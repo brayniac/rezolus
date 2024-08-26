@@ -9,4 +9,4 @@ mod network;
 mod rezolus;
 mod scheduler;
 mod syscall;
-// mod tcp;
+mod tcp;
