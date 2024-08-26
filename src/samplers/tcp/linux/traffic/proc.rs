@@ -3,7 +3,7 @@ use crate::*;
 use crate::common::classic::NestedMap;
 use crate::common::{Counter, Interval};
 use crate::samplers::tcp::linux::stats::*;
-use std::fs::File;
+use tokio::fs::File;
 
 use super::NAME;
 
@@ -33,8 +33,12 @@ impl ProcNetSnmp {
             ),
         ];
 
+        let file = std::fs::File::open("/proc/net/snmp").map(|f| File::from_std(f)).map_err(|e| {
+            error!("Failed to open /proc/net/snmp: {e}");
+        })?;
+
         Ok(Self {
-            file: File::open("/proc/net/snmp").expect("file not found"),
+            file,
             counters,
             interval: Interval::new(Instant::now(), config.interval(NAME)),
         })
@@ -45,7 +49,7 @@ impl ProcNetSnmp {
 impl Sampler for ProcNetSnmp {
     async fn sample(&mut self) {
         if let Ok(elapsed) = self.interval.try_wait(Instant::now()) {
-            if let Ok(nested_map) = NestedMap::try_from_procfs(&mut self.file) {
+            if let Ok(nested_map) = NestedMap::try_from_procfs(&mut self.file).await {
                 for (counter, pkey, lkey) in self.counters.iter_mut() {
                     if let Some(curr) = nested_map.get(pkey, lkey) {
                         counter.set(elapsed.as_secs_f64(), curr);

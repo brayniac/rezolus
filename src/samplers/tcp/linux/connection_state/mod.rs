@@ -2,14 +2,8 @@ use crate::common::Interval;
 use crate::samplers::tcp::linux::stats::*;
 use crate::*;
 use metriken::Gauge;
-// use std::fs::File;
-// use std::io::Read;
-// use std::io::Seek;
-
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
-
-// use tokio::io::*;
 
 #[distributed_slice(SAMPLERS)]
 fn init(config: &Config) -> Option<Box<dyn Sampler>> {
