@@ -5,8 +5,8 @@ use crate::samplers::cpu::*;
 use crate::samplers::hwinfo::hardware_info;
 use metriken::DynBoxedMetric;
 use metriken::MetricBuilder;
-use std::fs::File;
-use std::io::{Read, Seek};
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 use super::NAME;
 
@@ -100,8 +100,12 @@ impl ProcStat {
 
         let nanos_per_tick = 1_000_000_000 / (sc_clk_tck as u64);
 
+        let file = std::fs::File::open("/proc/stat").map(|f| File::from_std(f)).map_err(|e| {
+            error!("failed to open /proc/stat: {e}");
+        })?;
+
         Ok(Self {
-            file: File::open("/proc/stat").expect("file not found"),
+            file,
             total_counters,
             total_busy: Counter::new(&CPU_USAGE_BUSY, Some(&CPU_USAGE_BUSY_HISTOGRAM)),
             percpu_counters,
@@ -122,11 +126,11 @@ impl Sampler for ProcStat {
 }
 
 impl ProcStat {
-    fn sample_proc_stat(&mut self, elapsed: f64) -> Result<(), std::io::Error> {
-        self.file.rewind()?;
+    async fn sample_proc_stat(&mut self, elapsed: f64) -> Result<(), std::io::Error> {
+        self.file.rewind().await?;
 
         let mut data = String::new();
-        self.file.read_to_string(&mut data)?;
+        self.file.read_to_string(&mut data).await?;
 
         let lines = data.lines();
 
