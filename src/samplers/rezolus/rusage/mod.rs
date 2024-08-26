@@ -43,6 +43,10 @@ impl Sampler for Rusage {
             self.sample_rusage(elapsed.as_secs_f64());
         }
     }
+
+    fn is_fast(&self) -> bool {
+        true
+    }
 }
 
 impl Rusage {
@@ -91,9 +95,5 @@ impl Rusage {
             RU_NVCSW.set(rusage.ru_nvcsw as u64);
             RU_NIVCSW.set(rusage.ru_nivcsw as u64);
         }
-    }
-
-    fn is_fast(&self) -> bool {
-        true
     }
 }

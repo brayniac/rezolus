@@ -23,6 +23,10 @@ const NAME: &str = "gpu_nvidia";
 
 pub struct Nvidia {
     interval: Interval,
+    inner: Option<NvmlSampler>,
+}
+
+struct NvmlSampler {
     nvml: Nvml,
     pergpu_metrics: Vec<GpuMetrics>,
 }
@@ -68,6 +72,17 @@ impl Nvidia {
             return Err(());
         }
 
+        let inner = NvmlSampler::new()?;
+
+        Ok(Self {
+            interval: Interval::new(Instant::now(), config.interval(NAME)),
+            inner: Some(inner),
+        })
+    }
+}
+
+impl NvmlSampler {
+    pub fn new() -> Result<Self, ()> {
         let nvml = Nvml::init().map_err(|e| {
             error!("error initializing: {e}");
         })?;
@@ -149,7 +164,7 @@ impl Nvidia {
 
         Ok(Self {
             nvml,
-            interval: Interval::new(Instant::now(), config.interval(NAME)),
+
             pergpu_metrics,
         })
     }
@@ -164,14 +179,23 @@ impl Sampler for Nvidia {
             return;
         }
 
-        if let Err(e) = self.sample_nvml(now) {
-            error!("error sampling: {e}");
+        if let Some(mut nvml) = self.inner.take() {
+            if let Ok(nvml) = tokio::task::spawn_blocking(move || {
+                if let Err(e) = nvml.sample(now) {
+                    error!("error sampling: {e}");
+                }
+                Some(nvml)
+            })
+            .await
+            {
+                self.inner = nvml;
+            }
         }
     }
 }
 
-impl Nvidia {
-    fn sample_nvml(&mut self, _now: Instant) -> Result<(), std::io::Error> {
+impl NvmlSampler {
+    fn sample(&mut self, _now: Instant) -> Result<(), std::io::Error> {
         // current power usage in mW
         let mut power_usage = 0;
 

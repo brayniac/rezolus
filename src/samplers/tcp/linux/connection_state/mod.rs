@@ -1,6 +1,6 @@
-use crate::*;
-use crate::common::{Interval};
+use crate::common::Interval;
 use crate::samplers::tcp::linux::stats::*;
+use crate::*;
 use metriken::Gauge;
 use std::fs::File;
 use std::io::Read;
