@@ -1,8 +1,7 @@
-use crate::common::Interval;
 use crate::samplers::filesystem::*;
-use crate::{error, Config, Instant, Sampler};
-use std::fs::File;
-use std::io::{Read, Seek};
+use crate::*;
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 use super::NAME;
 
@@ -18,33 +17,34 @@ impl Procfs {
             return Err(());
         }
 
-        let file = std::fs::File::open("/proc/sys/fs/file-nr").map_err(|e| {
-            error!("failed to open: {e}");
-        })?;
+        let file = std::fs::File::open("/proc/sys/fs/file-nr")
+            .map(|f| File::from_std(f))
+            .map_err(|e| {
+                error!("failed to open: {e}");
+            })?;
 
         Ok(Self {
             file,
-            interval: Interval::new(Instant::now(), config.interval(NAME)),
+            interval: config.interval(NAME),
         })
     }
 }
 
+#[async_trait]
 impl Sampler for Procfs {
-    fn sample(&mut self) {
-        if self.interval.try_wait(Instant::now()).is_err() {
-            return;
-        }
+    async fn sample(&mut self) {
+        self.interval.tick().await;
 
-        let _ = self.sample_procfs();
+        let _ = self.sample_procfs().await;
     }
 }
 
 impl Procfs {
-    fn sample_procfs(&mut self) -> Result<(), std::io::Error> {
-        self.file.rewind()?;
+    async fn sample_procfs(&mut self) -> Result<(), std::io::Error> {
+        self.file.rewind().await?;
 
         let mut data = String::new();
-        self.file.read_to_string(&mut data)?;
+        self.file.read_to_string(&mut data).await?;
 
         let mut lines = data.lines();
 

@@ -1,4 +1,4 @@
-const ONLINE_CORES_REFRESH: Duration = Duration::from_secs(1);
+use crate::*;
 
 #[allow(clippy::module_inception)]
 mod bpf {
@@ -6,8 +6,6 @@ mod bpf {
 }
 
 use super::NAME;
-
-use std::io::{Read, Seek};
 
 use metriken::{DynBoxedMetric, MetricBuilder};
 
@@ -18,7 +16,10 @@ use crate::common::*;
 use crate::samplers::cpu::*;
 use crate::samplers::hwinfo::hardware_info;
 
-const MAX_CPUS: usize = 1024;
+use parking_lot::{Condvar, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread::JoinHandle;
 
 impl GetMap for ModSkel<'_> {
     fn map(&self, name: &str) -> &libbpf_rs::Map {
@@ -36,95 +37,12 @@ impl GetMap for ModSkel<'_> {
 /// * cpu/usage/*
 
 pub struct CpuUsage {
-    bpf: Bpf<ModSkel<'static>>,
+    thread: JoinHandle<()>,
+    notify: Arc<(Mutex<bool>, Condvar)>,
+    interval: Interval,
     percpu_counters: Arc<PercpuCounters>,
-    total_busy: Counter,
-    total_idle: Counter,
+    total_busy: CounterWithHist,
     percpu_busy: Vec<DynBoxedMetric<metriken::Counter>>,
-    percpu_idle: Vec<DynBoxedMetric<metriken::Counter>>,
-    counter_interval: Interval,
-    distribution_interval: Interval,
-    online_cores: OnlineCores,
-    online_cores_interval: Interval,
-}
-
-pub struct OnlineCores {
-    count: usize,
-    cpus: [bool; MAX_CPUS],
-    file: std::fs::File,
-}
-
-impl OnlineCores {
-    pub fn new() -> Result<Self, ()> {
-        let file = std::fs::File::open("/sys/devices/system/cpu/online")
-            .map_err(|e| error!("couldn't open: {e}"))?;
-
-        let mut online_cores = OnlineCores {
-            count: 0,
-            cpus: [false; MAX_CPUS],
-            file,
-        };
-
-        let _ = online_cores.refresh()?;
-
-        Ok(online_cores)
-    }
-
-    pub fn refresh(&mut self) -> Result<(), ()> {
-        self.file
-            .rewind()
-            .map_err(|e| error!("failed to seek to start of file: {e}"))?;
-
-        let mut count = 0;
-        let mut raw = String::new();
-
-        let _ = self
-            .file
-            .read_to_string(&mut raw)
-            .map_err(|e| error!("failed to read file: {e}"))?;
-
-        for cpu in self.cpus.iter_mut() {
-            *cpu = false;
-        }
-
-        for range in raw.trim().split(',') {
-            let mut parts = range.split('-');
-
-            let first: Option<usize> = parts
-                .next()
-                .map(|text| text.parse())
-                .transpose()
-                .map_err(|e| error!("couldn't parse: {e}"))?;
-            let second: Option<usize> = parts
-                .next()
-                .map(|text| text.parse())
-                .transpose()
-                .map_err(|e| error!("couldn't parse: {e}"))?;
-
-            if parts.next().is_some() {
-                // The line is invalid, report error
-                return Err(error!("invalid content in file"));
-            }
-
-            match (first, second) {
-                (Some(value), None) => {
-                    self.cpus[value] = true;
-                    count += 1;
-                }
-                (Some(start), Some(stop)) => {
-                    for value in start..=stop {
-                        self.cpus[value] = true;
-                    }
-                    count += stop + 1 - start;
-                }
-                _ => continue,
-            }
-        }
-
-        self.count = count;
-
-        Ok(())
-    }
 }
 
 impl CpuUsage {
@@ -134,26 +52,7 @@ impl CpuUsage {
             return Err(());
         }
 
-        let open_object: &'static mut MaybeUninit<OpenObject> =
-            Box::leak(Box::new(MaybeUninit::uninit()));
-
-        let builder = ModSkelBuilder::default();
-        let mut skel = builder
-            .open(open_object)
-            .map_err(|e| error!("failed to open bpf builder: {e}"))?
-            .load()
-            .map_err(|e| error!("failed to load bpf program: {e}"))?;
-
-        debug!(
-            "{NAME} cpuacct_account_field() BPF instruction count: {}",
-            skel.progs.cpuacct_account_field_kprobe.insn_cnt()
-        );
-
-        skel.attach()
-            .map_err(|e| error!("failed to attach bpf program: {e}"))?;
-
-        let online_cores =
-            OnlineCores::new().map_err(|_| error!("couldn't determine number of online cores"))?;
+        // define userspace metric sets
 
         let cpus = match hardware_info() {
             Ok(hwinfo) => hwinfo.get_cpus(),
@@ -161,19 +60,18 @@ impl CpuUsage {
         };
 
         let counters = vec![
-            Counter::new(&CPU_USAGE_USER, Some(&CPU_USAGE_USER_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_NICE, Some(&CPU_USAGE_NICE_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_SYSTEM, Some(&CPU_USAGE_SYSTEM_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_SOFTIRQ, Some(&CPU_USAGE_SOFTIRQ_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_IRQ, Some(&CPU_USAGE_IRQ_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_STEAL, Some(&CPU_USAGE_STEAL_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_GUEST, Some(&CPU_USAGE_GUEST_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_GUEST_NICE, Some(&CPU_USAGE_GUEST_NICE_HISTOGRAM)),
+            CounterWithHist::new(&CPU_USAGE_USER, &CPU_USAGE_USER_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_NICE, &CPU_USAGE_NICE_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_SYSTEM, &CPU_USAGE_SYSTEM_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_SOFTIRQ, &CPU_USAGE_SOFTIRQ_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_IRQ, &CPU_USAGE_IRQ_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_STEAL, &CPU_USAGE_STEAL_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_GUEST, &CPU_USAGE_GUEST_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_GUEST_NICE, &CPU_USAGE_GUEST_NICE_HISTOGRAM),
         ];
 
         let mut percpu_counters = PercpuCounters::default();
         let mut percpu_busy = Vec::new();
-        let mut percpu_idle = Vec::new();
 
         let states = [
             "user",
@@ -210,93 +108,113 @@ impl CpuUsage {
                     .formatter(cpu_metric_formatter)
                     .build(metriken::Counter::new()),
             );
-            percpu_idle.push(
-                MetricBuilder::new("cpu/usage")
-                    .metadata("id", format!("{}", cpu.id()))
-                    .metadata("core", format!("{}", cpu.core()))
-                    .metadata("die", format!("{}", cpu.die()))
-                    .metadata("package", format!("{}", cpu.package()))
-                    .metadata("state", "idle")
-                    .formatter(cpu_metric_formatter)
-                    .build(metriken::Counter::new()),
-            );
         }
 
         let percpu_counters = Arc::new(percpu_counters);
 
-        let bpf = BpfBuilder::new(skel)
-            .percpu_counters("counters", counters, percpu_counters.clone())
-            .build();
+        // create vars to communicate with our child thread
+        let initialized = Arc::new(AtomicBool::new(false));
+        let notify = Arc::new((Mutex::new(false), Condvar::new()));
 
-        let now = Instant::now();
+        // create a child thread which owns the BPF sampler
+        let handle = {
+            let initialized = initialized.clone();
+            let notify = notify.clone();
 
-        let total_busy = Counter::new(&CPU_USAGE_BUSY, Some(&CPU_USAGE_BUSY_HISTOGRAM));
-        let total_idle = Counter::new(&CPU_USAGE_IDLE, Some(&CPU_USAGE_IDLE_HISTOGRAM));
+            let percpu_counters = percpu_counters.clone();
 
-        Ok(Self {
-            bpf,
-            counter_interval: Interval::new(now, config.interval(NAME)),
-            distribution_interval: Interval::new(now, config.distribution_interval(NAME)),
-            total_busy,
-            total_idle,
-            percpu_counters,
-            percpu_busy,
-            percpu_idle,
-            online_cores,
-            online_cores_interval: Interval::new(now, ONLINE_CORES_REFRESH),
-        })
-    }
+            std::thread::spawn(move || {
+                // storage for the BPF object file
+                let open_object: &'static mut MaybeUninit<OpenObject> =
+                    Box::leak(Box::new(MaybeUninit::uninit()));
 
-    pub fn refresh_counters(&mut self, now: Instant) -> Result<(), ()> {
-        let elapsed = self.counter_interval.try_wait(now)?;
+                // open and load the program
+                let mut skel = match ModSkelBuilder::default().open(open_object) {
+                    Ok(s) => match s.load() {
+                        Ok(s) => s,
+                        Err(e) => {
+                            error!("failed to load bpf program: {e}");
+                            return;
+                        }
+                    },
+                    Err(e) => {
+                        error!("failed to open bpf builder: {e}");
+                        return;
+                    }
+                };
 
-        // refresh the counters from the kernel-space counters
-        self.bpf.refresh_counters(elapsed);
+                // debugging info about BPF instruction counts
+                debug!(
+                    "{NAME} cpuacct_account_field() BPF instruction count: {}",
+                    skel.progs.cpuacct_account_field_kprobe.insn_cnt()
+                );
 
-        // update busy time metric
-        let busy: u64 = busy();
-        let busy_prev = self.total_busy.set(elapsed.as_secs_f64(), busy);
-        let busy_delta = busy.wrapping_sub(busy_prev);
+                // attach the BPF program
+                if let Err(e) = skel.attach() {
+                    error!("failed to attach bpf program: {e}");
+                    return;
+                };
 
-        // calculate the idle time elapsed since last sample, update metric
-        let idle_delta =
-            (self.online_cores.count as u64 * elapsed.as_nanos() as u64).saturating_sub(busy_delta);
-        self.total_idle.add(elapsed.as_secs_f64(), idle_delta);
+                // get the time
+                let mut prev = Instant::now();
 
-        // do the same for percpu counters
-        for (cpu, (busy_counter, idle_counter)) in self
-            .percpu_busy
-            .iter_mut()
-            .zip(self.percpu_idle.iter_mut())
-            .enumerate()
-        {
-            if !self.online_cores.cpus[cpu] {
-                continue;
-            }
+                // wrap the BPF program and define BPF maps
+                let mut bpf = BpfBuilder::new(skel)
+                    .percpu_counters("counters", counters, percpu_counters)
+                    .build();
 
-            let busy: u64 = self.percpu_counters.sum(cpu).unwrap_or(0);
-            let busy_prev = busy_counter.set(busy);
-            let busy_delta = busy.wrapping_sub(busy_prev);
+                // indicate that we have completed initialization
+                initialized.store(true, Ordering::SeqCst);
 
-            let idle_delta = (elapsed.as_nanos() as u64).saturating_sub(busy_delta);
-            idle_counter.add(idle_delta);
+                // the sampler loop
+                loop {
+                    // wait until we are notified to start
+                    {
+                        let &(ref lock, ref cvar) = &*notify;
+                        let mut started = lock.lock();
+                        if !*started {
+                            cvar.wait(&mut started);
+                        }
+                    }
+
+                    let now = Instant::now();
+
+                    // refresh userspace metrics
+                    bpf.refresh(now.duration_since(prev));
+
+                    prev = now;
+
+                    // notify that we have finished running
+                    {
+                        let &(ref lock, ref cvar) = &*notify;
+                        let mut running = lock.lock();
+                        *running = false;
+                        cvar.notify_one();
+                    }
+                }
+            })
+        };
+
+        // block waiting for initialization
+        while !handle.is_finished() || !initialized.load(Ordering::SeqCst) {
+            std::thread::sleep(core::time::Duration::from_millis(1));
         }
 
-        Ok(())
-    }
+        // if the thread has terminated, there was an error loading the sampler
+        if handle.is_finished() {
+            return Err(());
+        }
 
-    pub fn refresh_distributions(&mut self, now: Instant) -> Result<(), ()> {
-        self.distribution_interval.try_wait(now)?;
-        self.bpf.refresh_distributions();
+        let total_busy = CounterWithHist::new(&CPU_USAGE_BUSY, &CPU_USAGE_BUSY_HISTOGRAM);
 
-        Ok(())
-    }
-
-    pub fn update_online_cores(&mut self, now: Instant) -> Result<(), ()> {
-        self.online_cores_interval.try_wait(now)?;
-        self.online_cores.refresh()?;
-
-        Ok(())
+        Ok(Self {
+            thread: handle,
+            notify,
+            interval: config.interval(NAME),
+            total_busy,
+            percpu_counters,
+            percpu_busy,
+        })
     }
 }
 
@@ -316,11 +234,46 @@ fn busy() -> u64 {
     .sum()
 }
 
+#[async_trait]
 impl Sampler for CpuUsage {
-    fn sample(&mut self) {
-        let now = Instant::now();
-        let _ = self.update_online_cores(now);
-        let _ = self.refresh_counters(now);
-        let _ = self.refresh_distributions(now);
+    async fn sample(&mut self) {
+        // wait until it's time to sample
+        let elapsed = self.interval.tick().await;
+
+        // check that the thread has not exited
+        if self.thread.is_finished() {
+            return;
+        }
+
+        // notify the thread to start
+        {
+            let &(ref lock, ref cvar) = &*self.notify;
+            let mut started = lock.lock();
+            *started = true;
+            cvar.notify_one();
+        }
+
+        // wait for notification that thread has finished
+        {
+            let &(ref lock, ref cvar) = &*self.notify;
+            let mut running = lock.lock();
+            if *running {
+                cvar.wait(&mut running);
+            }
+        }
+
+        // update busy time metric
+        let busy: u64 = busy();
+        let _ = self.total_busy.set(elapsed, busy);
+
+        // do the same for percpu counters
+        for (cpu, busy_counter) in self.percpu_busy.iter().enumerate() {
+            let busy: u64 = self.percpu_counters.sum(cpu).unwrap_or(0);
+            let _ = busy_counter.set(busy);
+        }
+    }
+
+    fn is_fast(&self) -> bool {
+        true
     }
 }

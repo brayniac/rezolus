@@ -20,7 +20,7 @@ use ringlog::*;
 /// 60KB in kernel space and an additional 60KB in user space.
 ///
 /// The distribution should be given some meaningful name in the BPF program.
-pub struct Distribution<'a> {
+pub struct BpfHistogram<'a> {
     _map: &'a libbpf_rs::Map<'a>,
     mmap: memmap2::MmapMut,
     buffer: Vec<u64>,
@@ -29,7 +29,7 @@ pub struct Distribution<'a> {
     histogram: &'static RwLockHistogram,
 }
 
-impl<'a> Distribution<'a> {
+impl<'a> BpfHistogram<'a> {
     pub fn new(map: &'a libbpf_rs::Map, histogram: &'static RwLockHistogram) -> Self {
         let buckets = histogram.config().total_buckets();
 

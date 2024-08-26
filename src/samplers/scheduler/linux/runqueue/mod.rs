@@ -1,9 +1,11 @@
-#[distributed_slice(SCHEDULER_SAMPLERS)]
-fn init(config: &Config) -> Box<dyn Sampler> {
+use crate::*;
+
+#[distributed_slice(SAMPLERS)]
+fn init(config: &Config) -> Option<Box<dyn Sampler>> {
     if let Ok(s) = Runqlat::new(config) {
-        Box::new(s)
+        Some(Box::new(s))
     } else {
-        Box::new(Nop {})
+        None
     }
 }
 
@@ -18,7 +20,11 @@ use bpf::*;
 use crate::common::bpf::*;
 use crate::common::*;
 use crate::samplers::scheduler::stats::*;
-use crate::samplers::scheduler::*;
+
+use parking_lot::{Condvar, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread::JoinHandle;
 
 impl GetMap for ModSkel<'_> {
     fn map(&self, name: &str) -> &libbpf_rs::Map {
@@ -43,9 +49,9 @@ impl GetMap for ModSkel<'_> {
 /// * `scheduler/context_switch/involuntary`
 /// * `scheduler/context_switch/voluntary`
 pub struct Runqlat {
-    bpf: Bpf<ModSkel<'static>>,
-    counter_interval: Interval,
-    distribution_interval: Interval,
+    thread: JoinHandle<()>,
+    notify: Arc<(Mutex<bool>, Condvar)>,
+    interval: Interval,
 }
 
 impl Runqlat {
@@ -55,71 +61,152 @@ impl Runqlat {
             return Err(());
         }
 
-        let open_object: &'static mut MaybeUninit<OpenObject> =
-            Box::leak(Box::new(MaybeUninit::uninit()));
+        // define userspace metric sets
+        let counters = vec![CounterWithHist::new(
+            &SCHEDULER_IVCSW,
+            &SCHEDULER_IVCSW_HISTOGRAM,
+        )];
 
-        let builder = ModSkelBuilder::default();
-        let mut skel = builder
-            .open(open_object)
-            .map_err(|e| error!("failed to open bpf builder: {e}"))?
-            .load()
-            .map_err(|e| error!("failed to load bpf program: {e}"))?;
+        // create vars to communicate with our child thread
+        let initialized = Arc::new(AtomicBool::new(false));
+        let notify = Arc::new((Mutex::new(false), Condvar::new()));
 
-        debug!(
-            "{NAME} handle__sched_wakeup() BPF instruction count: {}",
-            skel.progs.handle__sched_wakeup.insn_cnt()
-        );
-        debug!(
-            "{NAME} handle__sched_wakeup_new() BPF instruction count: {}",
-            skel.progs.handle__sched_wakeup_new.insn_cnt()
-        );
-        debug!(
-            "{NAME} handle__sched_switch() BPF instruction count: {}",
-            skel.progs.handle__sched_switch.insn_cnt()
-        );
+        // create a child thread which owns the BPF sampler
+        let handle = {
+            let initialized = initialized.clone();
+            let notify = notify.clone();
 
-        skel.attach()
-            .map_err(|e| error!("failed to attach bpf program: {e}"))?;
+            std::thread::spawn(move || {
+                // storage for the BPF object file
+                let open_object: &'static mut MaybeUninit<OpenObject> =
+                    Box::leak(Box::new(MaybeUninit::uninit()));
 
-        let counters = vec![Counter::new(&SCHEDULER_IVCSW, None)];
+                // open and load the program
+                let mut skel = match ModSkelBuilder::default().open(open_object) {
+                    Ok(s) => match s.load() {
+                        Ok(s) => s,
+                        Err(e) => {
+                            error!("failed to load bpf program: {e}");
+                            return;
+                        }
+                    },
+                    Err(e) => {
+                        error!("failed to open bpf builder: {e}");
+                        return;
+                    }
+                };
 
-        let bpf = BpfBuilder::new(skel)
-            .counters("counters", counters)
-            .distribution("runqlat", &SCHEDULER_RUNQUEUE_LATENCY)
-            .distribution("running", &SCHEDULER_RUNNING)
-            .distribution("offcpu", &SCHEDULER_OFFCPU)
-            .build();
+                // debugging info about BPF instruction counts
+                debug!(
+                    "{NAME} handle__sched_wakeup() BPF instruction count: {}",
+                    skel.progs.handle__sched_wakeup.insn_cnt()
+                );
+                debug!(
+                    "{NAME} handle__sched_wakeup_new() BPF instruction count: {}",
+                    skel.progs.handle__sched_wakeup_new.insn_cnt()
+                );
+                debug!(
+                    "{NAME} handle__sched_switch() BPF instruction count: {}",
+                    skel.progs.handle__sched_switch.insn_cnt()
+                );
 
-        let now = Instant::now();
+                // attach the BPF program
+                if let Err(e) = skel.attach() {
+                    error!("failed to attach bpf program: {e}");
+                    return;
+                };
+
+                // get the time
+                let mut prev = Instant::now();
+
+                // wrap the BPF program and define BPF maps
+                let mut bpf = BpfBuilder::new(skel)
+                    .counters("counters", counters)
+                    .histogram("runqlat", &SCHEDULER_RUNQUEUE_LATENCY)
+                    .histogram("running", &SCHEDULER_RUNNING)
+                    .histogram("offcpu", &SCHEDULER_OFFCPU)
+                    .build();
+
+                // indicate that we have completed initialization
+                initialized.store(true, Ordering::SeqCst);
+
+                // the sampler loop
+                loop {
+                    // wait until we are notified to start
+                    {
+                        let &(ref lock, ref cvar) = &*notify;
+                        let mut started = lock.lock();
+                        if !*started {
+                            cvar.wait(&mut started);
+                        }
+                    }
+
+                    let now = Instant::now();
+
+                    // refresh userspace metrics
+                    bpf.refresh(now.duration_since(prev));
+
+                    prev = now;
+
+                    // notify that we have finished running
+                    {
+                        let &(ref lock, ref cvar) = &*notify;
+                        let mut running = lock.lock();
+                        *running = false;
+                        cvar.notify_one();
+                    }
+                }
+            })
+        };
+
+        // block waiting for initialization
+        while !handle.is_finished() || !initialized.load(Ordering::SeqCst) {
+            std::thread::sleep(core::time::Duration::from_millis(1));
+        }
+
+        // if the thread has terminated, there was an error loading the sampler
+        if handle.is_finished() {
+            return Err(());
+        }
 
         Ok(Self {
-            bpf,
-            counter_interval: Interval::new(now, config.interval(NAME)),
-            distribution_interval: Interval::new(now, config.distribution_interval(NAME)),
+            thread: handle,
+            notify,
+            interval: config.interval(NAME),
         })
-    }
-
-    pub fn refresh_counters(&mut self, now: Instant) -> Result<(), ()> {
-        let elapsed = self.counter_interval.try_wait(now)?;
-
-        self.bpf.refresh_counters(elapsed);
-
-        Ok(())
-    }
-
-    pub fn refresh_distributions(&mut self, now: Instant) -> Result<(), ()> {
-        self.distribution_interval.try_wait(now)?;
-
-        self.bpf.refresh_distributions();
-
-        Ok(())
     }
 }
 
+#[async_trait]
 impl Sampler for Runqlat {
-    fn sample(&mut self) {
-        let now = Instant::now();
-        let _ = self.refresh_counters(now);
-        let _ = self.refresh_distributions(now);
+    async fn sample(&mut self) {
+        // wait until it's time to sample
+        self.interval.tick().await;
+
+        // check that the thread has not exited
+        if self.thread.is_finished() {
+            return;
+        }
+
+        // notify the thread to start
+        {
+            let &(ref lock, ref cvar) = &*self.notify;
+            let mut started = lock.lock();
+            *started = true;
+            cvar.notify_one();
+        }
+
+        // wait for notification that thread has finished
+        {
+            let &(ref lock, ref cvar) = &*self.notify;
+            let mut running = lock.lock();
+            if *running {
+                cvar.wait(&mut running);
+            }
+        }
+    }
+
+    fn is_fast(&self) -> bool {
+        true
     }
 }

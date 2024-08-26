@@ -1,14 +1,14 @@
-use super::stats::*;
-use super::*;
-use crate::common::units::{KIBIBYTES, MICROSECONDS, SECONDS};
-use crate::common::{Counter, Interval, Nop};
+use crate::*;
 
-#[distributed_slice(REZOLUS_SAMPLERS)]
-fn init(config: &Config) -> Box<dyn Sampler> {
+use super::stats::*;
+use crate::common::units::{KIBIBYTES, MICROSECONDS, SECONDS};
+
+#[distributed_slice(SAMPLERS)]
+fn init(config: &Config) -> Option<Box<dyn Sampler>> {
     if let Ok(rusage) = Rusage::new(config) {
-        Box::new(rusage)
+        Some(Box::new(rusage))
     } else {
-        Box::new(Nop {})
+        None
     }
 }
 
@@ -16,8 +16,8 @@ const NAME: &str = "rezolus_rusage";
 
 pub struct Rusage {
     interval: Interval,
-    ru_utime: Counter,
-    ru_stime: Counter,
+    ru_utime: CounterWithHist,
+    ru_stime: CounterWithHist,
 }
 
 impl Rusage {
@@ -28,23 +28,27 @@ impl Rusage {
         }
 
         Ok(Self {
-            interval: Interval::new(Instant::now(), config.interval(NAME)),
-            ru_utime: Counter::new(&RU_UTIME, Some(&RU_UTIME_HISTOGRAM)),
-            ru_stime: Counter::new(&RU_STIME, Some(&RU_STIME_HISTOGRAM)),
+            interval: config.interval(NAME),
+            ru_utime: CounterWithHist::new(&RU_UTIME, &RU_UTIME_HISTOGRAM),
+            ru_stime: CounterWithHist::new(&RU_STIME, &RU_STIME_HISTOGRAM),
         })
     }
 }
 
+#[async_trait]
 impl Sampler for Rusage {
-    fn sample(&mut self) {
-        if let Ok(elapsed) = self.interval.try_wait(Instant::now()) {
-            self.sample_rusage(elapsed.as_secs_f64());
-        }
+    async fn sample(&mut self) {
+        let elapsed = self.interval.tick().await;
+        self.sample_rusage(elapsed);
+    }
+
+    fn is_fast(&self) -> bool {
+        true
     }
 }
 
 impl Rusage {
-    fn sample_rusage(&mut self, elapsed: f64) {
+    fn sample_rusage(&mut self, elapsed: Option<Duration>) {
         let mut rusage = libc::rusage {
             ru_utime: libc::timeval {
                 tv_sec: 0,

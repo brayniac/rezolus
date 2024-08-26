@@ -21,12 +21,12 @@ use std::sync::Arc;
 ///
 /// The name is also flexible, but it is recommended to pack the counters for
 /// each BPF program into one map, so `counters` is a reasonable name to use.
-pub struct Counters<'a> {
+pub struct BpfCounters<'a> {
     _map: &'a libbpf_rs::Map<'a>,
     mmap: memmap2::MmapMut,
     values: Vec<u64>,
     cachelines: usize,
-    counters: Vec<Counter>,
+    counters: Vec<CounterWithHist>,
     percpu_counters: Arc<PercpuCounters>,
 }
 
@@ -57,10 +57,10 @@ impl PercpuCounters {
     }
 }
 
-impl<'a> Counters<'a> {
+impl<'a> BpfCounters<'a> {
     pub fn new(
         map: &'a libbpf_rs::Map,
-        counters: Vec<Counter>,
+        counters: Vec<CounterWithHist>,
         percpu_counters: Arc<PercpuCounters>,
     ) -> Self {
         let ncounters = counters.len();
@@ -85,7 +85,7 @@ impl<'a> Counters<'a> {
         }
     }
 
-    pub fn refresh(&mut self, elapsed: f64) {
+    pub fn refresh(&mut self, elapsed: Option<Duration>) {
         // reset the values of the combined counters to zero
         self.values.fill(0);
 

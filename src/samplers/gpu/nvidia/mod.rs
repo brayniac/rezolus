@@ -1,7 +1,7 @@
+use crate::*;
+
 use super::stats::*;
-use super::*;
 use crate::common::Interval;
-use crate::common::Nop;
 use metriken::{DynBoxedMetric, MetricBuilder};
 use nvml_wrapper::enum_wrappers::device::*;
 use nvml_wrapper::Nvml;
@@ -10,12 +10,12 @@ const KB: i64 = 1024;
 const MB: i64 = 1024 * KB;
 const MHZ: i64 = 1_000_000;
 
-#[distributed_slice(GPU_SAMPLERS)]
-fn init(config: &Config) -> Box<dyn Sampler> {
+#[distributed_slice(SAMPLERS)]
+fn init(config: &Config) -> Option<Box<dyn Sampler>> {
     if let Ok(nvidia) = Nvidia::new(config) {
-        Box::new(nvidia)
+        Some(Box::new(nvidia))
     } else {
-        Box::new(Nop {})
+        None
     }
 }
 
@@ -23,6 +23,10 @@ const NAME: &str = "gpu_nvidia";
 
 pub struct Nvidia {
     interval: Interval,
+    inner: Option<NvmlSampler>,
+}
+
+struct NvmlSampler {
     nvml: Nvml,
     pergpu_metrics: Vec<GpuMetrics>,
 }
@@ -68,6 +72,17 @@ impl Nvidia {
             return Err(());
         }
 
+        let inner = NvmlSampler::new()?;
+
+        Ok(Self {
+            interval: config.interval(NAME),
+            inner: Some(inner),
+        })
+    }
+}
+
+impl NvmlSampler {
+    pub fn new() -> Result<Self, ()> {
         let nvml = Nvml::init().map_err(|e| {
             error!("error initializing: {e}");
         })?;
@@ -149,28 +164,34 @@ impl Nvidia {
 
         Ok(Self {
             nvml,
-            interval: Interval::new(Instant::now(), config.interval(NAME)),
+
             pergpu_metrics,
         })
     }
 }
 
+#[async_trait]
 impl Sampler for Nvidia {
-    fn sample(&mut self) {
-        let now = Instant::now();
+    async fn sample(&mut self) {
+        self.interval.tick().await;
 
-        if self.interval.try_wait(now).is_err() {
-            return;
-        }
-
-        if let Err(e) = self.sample_nvml(now) {
-            error!("error sampling: {e}");
+        if let Some(mut s) = self.inner.take() {
+            if let Ok(s) = tokio::task::spawn_blocking(move || {
+                if let Err(e) = s.sample() {
+                    error!("error sampling: {e}");
+                }
+                Some(s)
+            })
+            .await
+            {
+                self.inner = s;
+            }
         }
     }
 }
 
-impl Nvidia {
-    fn sample_nvml(&mut self, _now: Instant) -> Result<(), std::io::Error> {
+impl NvmlSampler {
+    fn sample(&mut self) -> Result<(), std::io::Error> {
         // current power usage in mW
         let mut power_usage = 0;
 

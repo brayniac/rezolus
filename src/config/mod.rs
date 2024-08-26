@@ -1,4 +1,5 @@
 use crate::Duration;
+use crate::Interval;
 use ringlog::Level;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -82,7 +83,7 @@ impl Config {
             .unwrap_or(self.defaults.bpf.unwrap_or(enabled()))
     }
 
-    pub fn interval(&self, name: &str) -> Duration {
+    pub fn interval(&self, name: &str) -> Interval {
         let interval = self
             .samplers
             .get(name)
@@ -91,24 +92,7 @@ impl Config {
             .parse::<humantime::Duration>()
             .unwrap();
 
-        Duration::from_nanos(interval.as_nanos() as u64)
-    }
-
-    pub fn distribution_interval(&self, name: &str) -> Duration {
-        let interval = self
-            .samplers
-            .get(name)
-            .and_then(|v| v.distribution_interval.as_ref())
-            .unwrap_or(
-                self.defaults
-                    .distribution_interval
-                    .as_ref()
-                    .unwrap_or(&distribution_interval()),
-            )
-            .parse::<humantime::Duration>()
-            .unwrap();
-
-        Duration::from_nanos(interval.as_nanos() as u64)
+        Interval::new(Duration::from_nanos(interval.as_nanos() as u64))
     }
 }
 
@@ -256,10 +240,6 @@ pub fn interval() -> String {
     "10ms".into()
 }
 
-pub fn distribution_interval() -> String {
-    "50ms".into()
-}
-
 pub fn snapshot_interval() -> String {
     "1s".into()
 }
@@ -272,8 +252,6 @@ pub struct SamplerConfig {
     bpf: Option<bool>,
     #[serde(default)]
     interval: Option<String>,
-    #[serde(default)]
-    distribution_interval: Option<String>,
 }
 
 impl SamplerConfig {
@@ -290,24 +268,6 @@ impl SamplerConfig {
             Some(Ok(interval)) => {
                 if Duration::from_nanos(interval.as_nanos() as u64) < Duration::from_millis(1) {
                     eprintln!("{name} sampler interval is too short. Minimum interval is: 1ms");
-                    std::process::exit(1);
-                }
-            }
-            _ => {}
-        }
-
-        match self
-            .distribution_interval
-            .as_ref()
-            .map(|v| v.parse::<humantime::Duration>())
-        {
-            Some(Err(e)) => {
-                eprintln!("{name} sampler distribution_interval is not valid: {e}");
-                std::process::exit(1);
-            }
-            Some(Ok(interval)) => {
-                if Duration::from_nanos(interval.as_nanos() as u64) < Duration::from_millis(1) {
-                    eprintln!("{name} sampler distribution_interval is too short. Minimum interval is: 1ms");
                     std::process::exit(1);
                 }
             }

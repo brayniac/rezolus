@@ -1,43 +1,23 @@
-use crate::Instant;
-use core::time::Duration;
+use crate::*;
 
 pub struct Interval {
-    prev: Instant,
-    next: Instant,
-    period: Duration,
+    inner: tokio::time::Interval,
+    last: Option<Instant>,
 }
 
 impl Interval {
-    pub fn new(start: Instant, period: Duration) -> Self {
+    pub fn new(period: Duration) -> Self {
         Self {
-            prev: start,
-            next: start,
-            period,
+            inner: tokio::time::interval(period),
+            last: None,
         }
     }
 
-    /// Try to tick the interval forward to the provided instant. Returns true
-    /// if the interval has fired and returns false otherwise.
-    pub fn try_wait(&mut self, now: Instant) -> Result<Duration, ()> {
-        if now < self.next {
-            return Err(());
-        }
+    pub async fn tick(&mut self) -> Option<Duration> {
+        let now = self.inner.tick().await;
+        let elapsed = self.last.map(|v| now.duration_since(v));
+        self.last = Some(now);
 
-        let next = self.next + self.period;
-
-        // check if we have fallen behind
-        if next > now {
-            self.next = next;
-        } else {
-            // if we fell behind, don't sample again until the interval has
-            // elapsed
-            self.next = now + self.period;
-        }
-
-        let elapsed = now - self.prev;
-
-        self.prev = now;
-
-        Ok(elapsed)
+        elapsed
     }
 }

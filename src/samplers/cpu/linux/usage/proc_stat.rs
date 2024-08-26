@@ -1,10 +1,12 @@
-use crate::common::{Counter, Interval};
+use crate::*;
+
+// use crate::common::{Counter, Interval};
 use crate::samplers::cpu::*;
 use crate::samplers::hwinfo::hardware_info;
 use metriken::DynBoxedMetric;
 use metriken::MetricBuilder;
-use std::fs::File;
-use std::io::{Read, Seek};
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 use super::NAME;
 
@@ -15,8 +17,8 @@ pub struct ProcStat {
     interval: Interval,
     nanos_per_tick: u64,
     file: File,
-    total_counters: Vec<Counter>,
-    total_busy: Counter,
+    total_counters: Vec<CounterWithHist>,
+    total_busy: CounterWithHist,
     percpu_counters: Vec<Vec<DynBoxedMetric<metriken::Counter>>>,
     percpu_busy: Vec<DynBoxedMetric<metriken::Counter>>,
 }
@@ -34,16 +36,16 @@ impl ProcStat {
         };
 
         let total_counters = vec![
-            Counter::new(&CPU_USAGE_USER, Some(&CPU_USAGE_USER_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_NICE, Some(&CPU_USAGE_NICE_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_SYSTEM, Some(&CPU_USAGE_SYSTEM_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_IDLE, Some(&CPU_USAGE_IDLE_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_IO_WAIT, Some(&CPU_USAGE_IO_WAIT_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_IRQ, Some(&CPU_USAGE_IRQ_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_SOFTIRQ, Some(&CPU_USAGE_SOFTIRQ_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_STEAL, Some(&CPU_USAGE_STEAL_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_GUEST, Some(&CPU_USAGE_GUEST_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_GUEST_NICE, Some(&CPU_USAGE_GUEST_NICE_HISTOGRAM)),
+            CounterWithHist::new(&CPU_USAGE_USER, &CPU_USAGE_USER_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_NICE, &CPU_USAGE_NICE_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_SYSTEM, &CPU_USAGE_SYSTEM_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_IDLE, &CPU_USAGE_IDLE_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_IO_WAIT, &CPU_USAGE_IO_WAIT_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_IRQ, &CPU_USAGE_IRQ_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_SOFTIRQ, &CPU_USAGE_SOFTIRQ_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_STEAL, &CPU_USAGE_STEAL_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_GUEST, &CPU_USAGE_GUEST_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_GUEST_NICE, &CPU_USAGE_GUEST_NICE_HISTOGRAM),
         ];
 
         let mut percpu_counters = Vec::with_capacity(cpus.len());
@@ -98,32 +100,38 @@ impl ProcStat {
 
         let nanos_per_tick = 1_000_000_000 / (sc_clk_tck as u64);
 
+        let file = std::fs::File::open("/proc/stat")
+            .map(|f| File::from_std(f))
+            .map_err(|e| {
+                error!("failed to open /proc/stat: {e}");
+            })?;
+
         Ok(Self {
-            file: File::open("/proc/stat").expect("file not found"),
+            file,
             total_counters,
-            total_busy: Counter::new(&CPU_USAGE_BUSY, Some(&CPU_USAGE_BUSY_HISTOGRAM)),
+            total_busy: CounterWithHist::new(&CPU_USAGE_BUSY, &CPU_USAGE_BUSY_HISTOGRAM),
             percpu_counters,
             percpu_busy,
             nanos_per_tick,
-            interval: Interval::new(Instant::now(), config.interval(NAME)),
+            interval: config.interval(NAME),
         })
     }
 }
 
+#[async_trait]
 impl Sampler for ProcStat {
-    fn sample(&mut self) {
-        if let Ok(elapsed) = self.interval.try_wait(Instant::now()) {
-            let _ = self.sample_proc_stat(elapsed.as_secs_f64());
-        }
+    async fn sample(&mut self) {
+        let elapsed = self.interval.tick().await;
+        let _ = self.sample_proc_stat(elapsed);
     }
 }
 
 impl ProcStat {
-    fn sample_proc_stat(&mut self, elapsed: f64) -> Result<(), std::io::Error> {
-        self.file.rewind()?;
+    async fn sample_proc_stat(&mut self, elapsed: Option<Duration>) -> Result<(), std::io::Error> {
+        self.file.rewind().await?;
 
         let mut data = String::new();
-        self.file.read_to_string(&mut data)?;
+        self.file.read_to_string(&mut data).await?;
 
         let lines = data.lines();
 
@@ -140,7 +148,7 @@ impl ProcStat {
                 let mut busy: u64 = 0;
 
                 for (field, counter) in self.total_counters.iter_mut().enumerate() {
-                    if let Some(Ok(v)) = parts.get(field + 1).map(|v| v.parse::<u64>()) {
+                    if let Some(Ok(v)) = parts.get(field + 1).map(|v: &&str| v.parse::<u64>()) {
                         if field != CPU_IDLE_FIELD_INDEX && field != CPU_IO_WAIT_FIELD_INDEX {
                             busy = busy.wrapping_add(v);
                         }

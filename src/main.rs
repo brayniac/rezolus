@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use backtrace::Backtrace;
 use clap::{Arg, Command};
 use linkme::distributed_slice;
@@ -6,9 +7,13 @@ use metriken_exposition::Histogram;
 use ringlog::*;
 use tokio::sync::RwLock;
 
+use crate::common::{CounterWithHist, Interval};
+
+use tokio::time::Instant;
+
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -90,7 +95,7 @@ pub static PERCENTILES: &[(&str, f64)] = &[
 ];
 
 #[distributed_slice]
-pub static SAMPLERS: [fn(config: &Config) -> Box<dyn Sampler>] = [..];
+pub static SAMPLERS: [fn(config: &Config) -> Option<Box<dyn Sampler>>] = [..];
 
 #[metric(
     name = "runtime/sample/loop",
@@ -152,7 +157,8 @@ fn main() {
         .build()
         .start();
 
-    // initialize async runtime
+    // initialize main async runtime. This is used for logging, snapshots, and
+    // HTTP exposition.
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .worker_threads(1)
@@ -187,35 +193,45 @@ fn main() {
     // spawn http exposition thread
     rt.spawn(exposition::http(config.clone()));
 
-    // initialize and gather the samplers
-    let mut samplers: Vec<Box<dyn Sampler>> = Vec::new();
+    // initialize fast sampler async runtime
+    let fast_sampler_rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(1)
+        .build()
+        .expect("failed to launch async runtime");
+
+    // initialize normal sampler async runtime
+    let normal_sampler_rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(1)
+        .build()
+        .expect("failed to launch async runtime");
 
     for sampler in SAMPLERS {
-        samplers.push(sampler(&config));
-    }
-
-    info!("initialization complete");
-
-    // main loop
-    loop {
-        RUNTIME_SAMPLE_LOOP.increment();
-
-        // get current time
-        let start = Instant::now();
-
-        // sample each sampler
-        for sampler in &mut samplers {
-            sampler.sample();
+        if let Some(mut sampler) = sampler(&config) {
+            if sampler.is_fast() {
+                fast_sampler_rt.spawn(async move {
+                    loop {
+                        sampler.sample().await;
+                    }
+                });
+            } else {
+                normal_sampler_rt.spawn(async move {
+                    loop {
+                        sampler.sample().await;
+                    }
+                });
+            }
         }
-
-        // Sleep for the remainder of one millisecond minus the sampling time.
-        // This wakeup period allows a maximum of 1kHz sampling
-        let delay = Duration::from_millis(1).saturating_sub(start.elapsed());
-        std::thread::sleep(delay);
     }
 }
 
-pub trait Sampler {
+#[async_trait]
+pub trait Sampler: Send + Sync {
     /// Do some sampling and updating of stats
-    fn sample(&mut self);
+    async fn sample(&mut self);
+
+    fn is_fast(&self) -> bool {
+        false
+    }
 }

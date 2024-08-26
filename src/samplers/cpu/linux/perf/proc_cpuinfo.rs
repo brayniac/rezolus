@@ -1,6 +1,7 @@
 use super::*;
-use std::fs::File;
-use std::io::{Read, Seek};
+
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 pub struct ProcCpuinfo {
     prev: Instant,
@@ -12,9 +13,11 @@ pub struct ProcCpuinfo {
 impl ProcCpuinfo {
     pub fn new(_config: &Config) -> Result<Self, ()> {
         let now = Instant::now();
-        let file = File::open("/proc/cpuinfo").map_err(|e| {
-            error!("failed to open /proc/cpuinfo: {e}");
-        })?;
+        let file = std::fs::File::open("/proc/cpuinfo")
+            .map(|f| File::from_std(f))
+            .map_err(|e| {
+                error!("failed to open /proc/cpuinfo: {e}");
+            })?;
 
         Ok(Self {
             file,
@@ -25,15 +28,16 @@ impl ProcCpuinfo {
     }
 }
 
+#[async_trait]
 impl Sampler for ProcCpuinfo {
-    fn sample(&mut self) {
+    async fn sample(&mut self) {
         let now = Instant::now();
 
         if now < self.next {
             return;
         }
 
-        if self.sample_proc_cpuinfo().is_err() {
+        if self.sample_proc_cpuinfo().await.is_err() {
             return;
         }
 
@@ -55,11 +59,11 @@ impl Sampler for ProcCpuinfo {
 }
 
 impl ProcCpuinfo {
-    fn sample_proc_cpuinfo(&mut self) -> Result<(), std::io::Error> {
-        self.file.rewind()?;
+    async fn sample_proc_cpuinfo(&mut self) -> Result<(), std::io::Error> {
+        self.file.rewind().await?;
 
         let mut data = String::new();
-        self.file.read_to_string(&mut data)?;
+        self.file.read_to_string(&mut data).await?;
 
         let mut online_cores = 0;
 

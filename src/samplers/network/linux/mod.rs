@@ -1,11 +1,13 @@
-use crate::common::{Interval, Nop};
+use crate::*;
+
+use crate::common::Interval;
 use crate::samplers::hwinfo::hardware_info;
 use crate::samplers::network::stats::*;
-use crate::samplers::network::*;
 use metriken::Counter;
-use std::fs::File;
+
 use std::io::Read;
-use std::io::Seek;
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 mod interfaces;
 mod traffic;
@@ -49,7 +51,7 @@ impl SysfsNetSampler {
 
                     if f.read_to_string(&mut data).is_ok() && data.trim_end().parse::<u64>().is_ok()
                     {
-                        if_stats.insert(interface.name.to_string(), f);
+                        if_stats.insert(interface.name.to_string(), File::from_std(f));
                     }
                 }
             }
@@ -59,16 +61,15 @@ impl SysfsNetSampler {
 
         Ok(Self {
             stats,
-            interval: Interval::new(Instant::now(), config.interval(name)),
+            interval: config.interval(name),
         })
     }
 }
 
+#[async_trait]
 impl Sampler for SysfsNetSampler {
-    fn sample(&mut self) {
-        if self.interval.try_wait(Instant::now()).is_err() {
-            return;
-        }
+    async fn sample(&mut self) {
+        self.interval.tick().await;
 
         let mut data = String::new();
 
@@ -76,10 +77,10 @@ impl Sampler for SysfsNetSampler {
             let mut sum = 0;
 
             for file in if_stats.values_mut() {
-                if file.rewind().is_ok() {
+                if file.rewind().await.is_ok() {
                     data.clear();
 
-                    if let Err(e) = file.read_to_string(&mut data) {
+                    if let Err(e) = file.read_to_string(&mut data).await {
                         error!("error reading: {e}");
                         continue 'outer;
                     }
