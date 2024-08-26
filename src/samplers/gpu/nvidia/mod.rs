@@ -75,7 +75,7 @@ impl Nvidia {
         let inner = NvmlSampler::new()?;
 
         Ok(Self {
-            interval: Interval::new(Instant::now(), config.interval(NAME)),
+            interval: config.interval(NAME),
             inner: Some(inner),
         })
     }
@@ -173,15 +173,11 @@ impl NvmlSampler {
 #[async_trait]
 impl Sampler for Nvidia {
     async fn sample(&mut self) {
-        let now = Instant::now();
-
-        if self.interval.try_wait(now).is_err() {
-            return;
-        }
+        self.interval.tick().await;
 
         if let Some(mut s) = self.inner.take() {
             if let Ok(s) = tokio::task::spawn_blocking(move || {
-                if let Err(e) = s.sample(now) {
+                if let Err(e) = s.sample() {
                     error!("error sampling: {e}");
                 }
                 Some(s)
@@ -195,7 +191,7 @@ impl Sampler for Nvidia {
 }
 
 impl NvmlSampler {
-    fn sample(&mut self, _now: Instant) -> Result<(), std::io::Error> {
+    fn sample(&mut self) -> Result<(), std::io::Error> {
         // current power usage in mW
         let mut power_usage = 0;
 
