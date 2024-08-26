@@ -1,17 +1,17 @@
-use crate::common::{Interval, Nop};
-use crate::samplers::tcp::stats::*;
-use crate::samplers::tcp::*;
+use crate::*;
+use crate::common::{Interval};
+use crate::samplers::tcp::linux::stats::*;
 use metriken::Gauge;
 use std::fs::File;
 use std::io::Read;
 use std::io::Seek;
 
-#[distributed_slice(TCP_SAMPLERS)]
-fn init(config: &Config) -> Box<dyn Sampler> {
+#[distributed_slice(SAMPLERS)]
+fn init(config: &Config) -> Option<Box<dyn Sampler>> {
     if let Ok(s) = ConnectionState::new(config) {
-        Box::new(s)
+        Some(Box::new(s))
     } else {
-        Box::new(Nop::new(config))
+        None
     }
 }
 
@@ -70,8 +70,9 @@ impl ConnectionState {
     }
 }
 
+#[async_trait]
 impl Sampler for ConnectionState {
-    fn sample(&mut self) {
+    async fn sample(&mut self) {
         if self.interval.try_wait(Instant::now()).is_err() {
             return;
         }

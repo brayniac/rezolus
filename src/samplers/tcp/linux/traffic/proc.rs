@@ -1,7 +1,8 @@
+use crate::*;
+
 use crate::common::classic::NestedMap;
 use crate::common::{Counter, Interval};
-use crate::samplers::tcp::stats::*;
-use crate::samplers::tcp::*;
+use crate::samplers::tcp::linux::stats::*;
 use std::fs::File;
 
 use super::NAME;
@@ -40,8 +41,9 @@ impl ProcNetSnmp {
     }
 }
 
+#[async_trait]
 impl Sampler for ProcNetSnmp {
-    fn sample(&mut self) {
+    async fn sample(&mut self) {
         if let Ok(elapsed) = self.interval.try_wait(Instant::now()) {
             if let Ok(nested_map) = NestedMap::try_from_procfs(&mut self.file) {
                 for (counter, pkey, lkey) in self.counters.iter_mut() {

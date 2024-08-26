@@ -1,3 +1,5 @@
+use crate::*;
+
 #[allow(clippy::module_inception)]
 mod bpf {
     include!(concat!(env!("OUT_DIR"), "/tcp_traffic.bpf.rs"));
@@ -9,8 +11,7 @@ use bpf::*;
 
 use crate::common::bpf::*;
 use crate::common::*;
-use crate::samplers::tcp::stats::*;
-use crate::samplers::tcp::*;
+use crate::samplers::tcp::linux::stats::*;
 
 use parking_lot::{Condvar, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -198,8 +199,9 @@ impl TcpTraffic {
     }
 }
 
+#[async_trait]
 impl Sampler for TcpTraffic {
-    fn sample(&mut self) {
+    async fn sample(&mut self) {
         let now = Instant::now();
         let _ = self.refresh(now);
     }

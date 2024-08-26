@@ -1,9 +1,11 @@
-#[distributed_slice(SCHEDULER_SAMPLERS)]
-fn init(config: &Config) -> Box<dyn Sampler> {
+use crate::*;
+
+#[distributed_slice(SAMPLERS)]
+fn init(config: &Config) -> Option<Box<dyn Sampler>> {
     if let Ok(s) = Runqlat::new(config) {
-        Box::new(s)
+        Some(Box::new(s))
     } else {
-        Box::new(Nop {})
+        None
     }
 }
 
@@ -18,7 +20,6 @@ use bpf::*;
 use crate::common::bpf::*;
 use crate::common::*;
 use crate::samplers::scheduler::stats::*;
-use crate::samplers::scheduler::*;
 
 use parking_lot::{Condvar, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -205,8 +206,9 @@ impl Runqlat {
     }
 }
 
+#[async_trait]
 impl Sampler for Runqlat {
-    fn sample(&mut self) {
+    async fn sample(&mut self) {
         let now = Instant::now();
         let _ = self.refresh(now);
     }

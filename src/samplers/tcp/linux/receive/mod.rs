@@ -1,9 +1,11 @@
-#[distributed_slice(TCP_SAMPLERS)]
-fn init(config: &Config) -> Box<dyn Sampler> {
+use crate::*;
+
+#[distributed_slice(SAMPLERS)]
+fn init(config: &Config) -> Option<Box<dyn Sampler>> {
     if let Ok(s) = Receive::new(config) {
-        Box::new(s)
+        Some(Box::new(s))
     } else {
-        Box::new(Nop {})
+        None
     }
 }
 
@@ -17,8 +19,7 @@ use bpf::*;
 
 use crate::common::bpf::*;
 use crate::common::*;
-use crate::samplers::tcp::stats::*;
-use crate::samplers::tcp::*;
+use crate::samplers::tcp::linux::stats::*;
 
 use parking_lot::{Condvar, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -187,8 +188,9 @@ impl Receive {
     }
 }
 
+#[async_trait]
 impl Sampler for Receive {
-    fn sample(&mut self) {
+    async fn sample(&mut self) {
         let now = Instant::now();
         let _ = self.refresh(now);
     }
