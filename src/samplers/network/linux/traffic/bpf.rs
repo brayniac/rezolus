@@ -55,10 +55,10 @@ impl NetworkTraffic {
 
         // define userspace metric sets
         let counters = vec![
-            Counter::new(&NETWORK_RX_BYTES, Some(&NETWORK_RX_BYTES_HISTOGRAM)),
-            Counter::new(&NETWORK_TX_BYTES, Some(&NETWORK_TX_BYTES_HISTOGRAM)),
-            Counter::new(&NETWORK_RX_PACKETS, Some(&NETWORK_RX_PACKETS_HISTOGRAM)),
-            Counter::new(&NETWORK_TX_PACKETS, Some(&NETWORK_TX_PACKETS_HISTOGRAM)),
+            CounterWithHist::new(&NETWORK_RX_BYTES, &NETWORK_RX_BYTES_HISTOGRAM),
+            CounterWithHist::new(&NETWORK_TX_BYTES, &NETWORK_TX_BYTES_HISTOGRAM),
+            CounterWithHist::new(&NETWORK_RX_PACKETS, &NETWORK_RX_PACKETS_HISTOGRAM),
+            CounterWithHist::new(&NETWORK_TX_PACKETS, &NETWORK_TX_PACKETS_HISTOGRAM),
         ];
 
         // create a child thread which owns the BPF sampler
@@ -125,8 +125,7 @@ impl NetworkTraffic {
                     let now = Instant::now();
 
                     // refresh userspace metrics
-                    bpf.refresh_counters(now.duration_since(prev));
-                    bpf.refresh_distributions();
+                    bpf.refresh(now.duration_since(prev));
 
                     prev = now;
 
@@ -151,22 +150,23 @@ impl NetworkTraffic {
             return Err(());
         }
 
-        let now = Instant::now();
-
         Ok(Self {
             thread: handle,
             notify,
-            interval: Interval::new(now, config.interval(NAME)),
+            interval: config.interval(NAME),
         })
     }
+}
 
-    pub fn refresh(&mut self, now: Instant) -> Result<(), ()> {
-        // early return if it is not time to refresh
-        self.interval.try_wait(now)?;
+#[async_trait]
+impl Sampler for NetworkTraffic {
+    async fn sample(&mut self) {
+        // wait until it's time to sample
+        self.interval.tick().await;
 
         // check that the thread has not exited
         if self.thread.is_finished() {
-            return Err(());
+            return;
         }
 
         // notify the thread to start
@@ -185,16 +185,6 @@ impl NetworkTraffic {
                 cvar.wait(&mut running);
             }
         }
-
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Sampler for NetworkTraffic {
-    async fn sample(&mut self) {
-        let now = Instant::now();
-        let _ = self.refresh(now);
     }
 
     fn is_fast(&self) -> bool {

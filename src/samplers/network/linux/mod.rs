@@ -61,7 +61,7 @@ impl SysfsNetSampler {
 
         Ok(Self {
             stats,
-            interval: Interval::new(Instant::now(), config.interval(name)),
+            interval: config.interval(name),
         })
     }
 }
@@ -69,9 +69,7 @@ impl SysfsNetSampler {
 #[async_trait]
 impl Sampler for SysfsNetSampler {
     async fn sample(&mut self) {
-        if self.interval.try_wait(Instant::now()).is_err() {
-            return;
-        }
+        self.interval.tick().await;
 
         let mut data = String::new();
 
