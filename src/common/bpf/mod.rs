@@ -1,3 +1,6 @@
+// Allow dead code for now
+#![allow(dead_code)]
+
 use super::*;
 use core::time::Duration;
 use metriken::DynBoxedMetric;
@@ -11,10 +14,10 @@ pub use libbpf_rs::OpenObject;
 pub use std::mem::MaybeUninit;
 
 mod counters;
-mod distribution;
+mod histogram;
 
-use counters::Counters;
-use distribution::Distribution;
+use counters::BpfCounters;
+use histogram::BpfHistogram;
 
 pub use counters::PercpuCounters;
 
@@ -58,7 +61,7 @@ impl<T: 'static + GetMap> BpfBuilder<T> {
         Bpf { bpf: self.bpf }
     }
 
-    pub fn counters(mut self, name: &str, counters: Vec<Counter>) -> Self {
+    pub fn counters(mut self, name: &str, counters: Vec<CounterWithHist>) -> Self {
         self.bpf = self.bpf.add_counters(name, counters);
         self
     }
@@ -66,15 +69,15 @@ impl<T: 'static + GetMap> BpfBuilder<T> {
     pub fn percpu_counters(
         mut self,
         name: &str,
-        counters: Vec<Counter>,
+        counters: Vec<CounterWithHist>,
         percpu: Arc<PercpuCounters>,
     ) -> Self {
         self.bpf = self.bpf.add_counters_with_percpu(name, counters, percpu);
         self
     }
 
-    pub fn distribution(mut self, name: &str, histogram: &'static RwLockHistogram) -> Self {
-        self.bpf = self.bpf.add_distribution(name, histogram);
+    pub fn histogram(mut self, name: &str, histogram: &'static RwLockHistogram) -> Self {
+        self.bpf = self.bpf.add_histogram(name, histogram);
         self
     }
 
@@ -114,31 +117,22 @@ pub struct Bpf<T: 'static> {
 
 impl<T: 'static + GetMap> Bpf<T> {
     pub fn refresh(&mut self, elapsed: Duration) {
-        self.bpf.refresh_counters(elapsed.as_secs_f64());
-        self.bpf.refresh_distributions();
-    }
-
-    pub fn refresh_counters(&mut self, elapsed: Duration) {
-        self.bpf.refresh_counters(elapsed.as_secs_f64())
-    }
-
-    pub fn refresh_distributions(&mut self) {
-        self.bpf.refresh_distributions()
+        self.bpf.refresh(elapsed);
     }
 }
 
 /// This is an inner type that is self-referencing and owns both the actual BPF
-/// program and the counter sets and distributions that reference maps in that
+/// program and the counter sets and histograms that reference maps in that
 /// same BPF program.
 #[self_referencing]
 struct _Bpf<T: 'static> {
     skel: T,
     #[borrows(skel)]
     #[covariant]
-    counters: Vec<Counters<'this>>,
+    counters: Vec<BpfCounters<'this>>,
     #[borrows(skel)]
     #[covariant]
-    distributions: Vec<Distribution<'this>>,
+    histograms: Vec<BpfHistogram<'this>>,
 }
 
 impl<T: 'static + GetMap> _Bpf<T> {
@@ -146,7 +140,7 @@ impl<T: 'static + GetMap> _Bpf<T> {
         _BpfBuilder {
             skel,
             counters_builder: |_| Vec::new(),
-            distributions_builder: |_| Vec::new(),
+            histograms_builder: |_| Vec::new(),
         }
         .build()
     }
@@ -155,9 +149,9 @@ impl<T: 'static + GetMap> _Bpf<T> {
         self.with(|this| this.skel.map(name))
     }
 
-    pub fn add_counters(mut self, name: &str, counters: Vec<Counter>) -> Self {
+    pub fn add_counters(mut self, name: &str, counters: Vec<CounterWithHist>) -> Self {
         self.with_mut(|this| {
-            this.counters.push(Counters::new(
+            this.counters.push(BpfCounters::new(
                 this.skel.map(name),
                 counters,
                 Default::default(),
@@ -169,11 +163,11 @@ impl<T: 'static + GetMap> _Bpf<T> {
     pub fn add_counters_with_percpu(
         mut self,
         name: &str,
-        counters: Vec<Counter>,
+        counters: Vec<CounterWithHist>,
         percpu_counters: Arc<PercpuCounters>,
     ) -> Self {
         self.with_mut(|this| {
-            this.counters.push(Counters::new(
+            this.counters.push(BpfCounters::new(
                 this.skel.map(name),
                 counters,
                 percpu_counters,
@@ -182,26 +176,21 @@ impl<T: 'static + GetMap> _Bpf<T> {
         self
     }
 
-    pub fn add_distribution(mut self, name: &str, histogram: &'static RwLockHistogram) -> Self {
+    pub fn add_histogram(mut self, name: &str, histogram: &'static RwLockHistogram) -> Self {
         self.with_mut(|this| {
-            this.distributions
-                .push(Distribution::new(this.skel.map(name), histogram));
+            this.histograms
+                .push(BpfHistogram::new(this.skel.map(name), histogram));
         });
         self
     }
 
-    pub fn refresh_counters(&mut self, elapsed: f64) {
+    pub fn refresh(&mut self, elapsed: Duration) {
         self.with_mut(|this| {
-            for counters in this.counters.iter_mut() {
-                counters.refresh(elapsed);
+            for c in this.counters.iter_mut() {
+                c.refresh(Some(elapsed));
             }
-        })
-    }
-
-    pub fn refresh_distributions(&mut self) {
-        self.with_mut(|this| {
-            for distribution in this.distributions.iter_mut() {
-                distribution.refresh();
+            for h in this.histograms.iter_mut() {
+                h.refresh();
             }
         })
     }

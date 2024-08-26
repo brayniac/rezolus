@@ -5,7 +5,6 @@ use crate::{distributed_slice, Config, Sampler};
 use libc::mach_port_t;
 use metriken::{DynBoxedMetric, MetricBuilder};
 use ringlog::error;
-use std::time::Instant;
 
 const NAME: &str = "cpu_usage";
 
@@ -22,7 +21,7 @@ struct CpuUsage {
     interval: Interval,
     port: mach_port_t,
     nanos_per_tick: u64,
-    counters_total: Vec<Counter>,
+    counters_total: Vec<CounterWithHist>,
     counters_percpu: Vec<Vec<DynBoxedMetric<metriken::Counter>>>,
 }
 
@@ -36,10 +35,10 @@ impl CpuUsage {
         let cpus = num_cpus::get();
 
         let counters_total = vec![
-            Counter::new(&CPU_USAGE_USER, Some(&CPU_USAGE_USER_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_NICE, Some(&CPU_USAGE_NICE_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_SYSTEM, Some(&CPU_USAGE_SYSTEM_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_IDLE, Some(&CPU_USAGE_IDLE_HISTOGRAM)),
+            CounterWithHist::new(&CPU_USAGE_USER, &CPU_USAGE_USER_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_NICE, &CPU_USAGE_NICE_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_SYSTEM, &CPU_USAGE_SYSTEM_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_IDLE, &CPU_USAGE_IDLE_HISTOGRAM),
         ];
 
         let mut counters_percpu = Vec::with_capacity(cpus);
@@ -69,7 +68,7 @@ impl CpuUsage {
         let nanos_per_tick = 1_000_000_000 / (sc_clk_tck as u64);
 
         Ok(Self {
-            interval: Interval::new(Instant::now(), config.interval(NAME)),
+            interval: config.interval(NAME),
             port: unsafe { libc::mach_host_self() },
             nanos_per_tick,
             counters_total,
@@ -81,16 +80,16 @@ impl CpuUsage {
 #[async_trait]
 impl Sampler for CpuUsage {
     async fn sample(&mut self) {
-        if let Ok(elapsed) = self.interval.try_wait(Instant::now()) {
-            unsafe {
-                let _ = self.sample_processor_info(elapsed.as_secs_f64());
-            }
+        let elapsed = self.interval.tick().await;
+
+        unsafe {
+            let _ = self.sample_processor_info(elapsed);
         }
     }
 }
 
 impl CpuUsage {
-    unsafe fn sample_processor_info(&mut self, elapsed: f64) -> Result<(), std::io::Error> {
+    unsafe fn sample_processor_info(&mut self, elapsed: Option<Duration>) -> Result<(), std::io::Error> {
         let mut num_cpu: u32 = 0;
         let mut cpu_info: *mut i32 = std::ptr::null_mut();
         let mut cpu_info_len: u32 = 0;

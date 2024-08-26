@@ -41,7 +41,7 @@ pub struct CpuUsage {
     notify: Arc<(Mutex<bool>, Condvar)>,
     interval: Interval,
     percpu_counters: Arc<PercpuCounters>,
-    total_busy: Counter,
+    total_busy: CounterWithHist,
     percpu_busy: Vec<DynBoxedMetric<metriken::Counter>>,
 }
 
@@ -60,14 +60,14 @@ impl CpuUsage {
         };
 
         let counters = vec![
-            Counter::new(&CPU_USAGE_USER, Some(&CPU_USAGE_USER_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_NICE, Some(&CPU_USAGE_NICE_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_SYSTEM, Some(&CPU_USAGE_SYSTEM_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_SOFTIRQ, Some(&CPU_USAGE_SOFTIRQ_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_IRQ, Some(&CPU_USAGE_IRQ_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_STEAL, Some(&CPU_USAGE_STEAL_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_GUEST, Some(&CPU_USAGE_GUEST_HISTOGRAM)),
-            Counter::new(&CPU_USAGE_GUEST_NICE, Some(&CPU_USAGE_GUEST_NICE_HISTOGRAM)),
+            CounterWithHist::new(&CPU_USAGE_USER, &CPU_USAGE_USER_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_NICE, &CPU_USAGE_NICE_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_SYSTEM, &CPU_USAGE_SYSTEM_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_SOFTIRQ, &CPU_USAGE_SOFTIRQ_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_IRQ, &CPU_USAGE_IRQ_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_STEAL, &CPU_USAGE_STEAL_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_GUEST, &CPU_USAGE_GUEST_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_GUEST_NICE, &CPU_USAGE_GUEST_NICE_HISTOGRAM),
         ];
 
         let mut percpu_counters = PercpuCounters::default();
@@ -205,57 +205,16 @@ impl CpuUsage {
             return Err(());
         }
 
-        let now = Instant::now();
-
-        let total_busy = Counter::new(&CPU_USAGE_BUSY, Some(&CPU_USAGE_BUSY_HISTOGRAM));
+        let total_busy = CounterWithHist::new(&CPU_USAGE_BUSY, &CPU_USAGE_BUSY_HISTOGRAM);
 
         Ok(Self {
             thread: handle,
             notify,
-            interval: Interval::new(now, config.interval(NAME)),
+            interval: config.interval(NAME),
             total_busy,
             percpu_counters,
             percpu_busy,
         })
-    }
-
-    pub fn refresh(&mut self, now: Instant) -> Result<(), ()> {
-        // early return if it is not time to refresh
-        let elapsed = self.interval.try_wait(now)?;
-
-        // check that the thread has not exited
-        if self.thread.is_finished() {
-            return Err(());
-        }
-
-        // notify the thread to start
-        {
-            let &(ref lock, ref cvar) = &*self.notify;
-            let mut started = lock.lock();
-            *started = true;
-            cvar.notify_one();
-        }
-
-        // wait for notification that thread has finished
-        {
-            let &(ref lock, ref cvar) = &*self.notify;
-            let mut running = lock.lock();
-            if *running {
-                cvar.wait(&mut running);
-            }
-        }
-
-        // update busy time metric
-        let busy: u64 = busy();
-        let _ = self.total_busy.set(elapsed.as_secs_f64(), busy);
-
-        // do the same for percpu counters
-        for (cpu, busy_counter) in self.percpu_busy.iter().enumerate() {
-            let busy: u64 = self.percpu_counters.sum(cpu).unwrap_or(0);
-            let _ = busy_counter.set(busy);
-        }
-
-        Ok(())
     }
 }
 
@@ -278,8 +237,40 @@ fn busy() -> u64 {
 #[async_trait]
 impl Sampler for CpuUsage {
     async fn sample(&mut self) {
-        let now = Instant::now();
-        let _ = self.refresh(now);
+        // wait until it's time to sample
+        let elapsed = self.interval.tick().await;
+
+        // check that the thread has not exited
+        if self.thread.is_finished() {
+            return;
+        }
+
+        // notify the thread to start
+        {
+            let &(ref lock, ref cvar) = &*self.notify;
+            let mut started = lock.lock();
+            *started = true;
+            cvar.notify_one();
+        }
+
+        // wait for notification that thread has finished
+        {
+            let &(ref lock, ref cvar) = &*self.notify;
+            let mut running = lock.lock();
+            if *running {
+                cvar.wait(&mut running);
+            }
+        }
+
+        // update busy time metric
+        let busy: u64 = busy();
+        let _ = self.total_busy.set(elapsed, busy);
+
+        // do the same for percpu counters
+        for (cpu, busy_counter) in self.percpu_busy.iter().enumerate() {
+            let busy: u64 = self.percpu_counters.sum(cpu).unwrap_or(0);
+            let _ = busy_counter.set(busy);
+        }
     }
 
     fn is_fast(&self) -> bool {

@@ -9,6 +9,7 @@ use super::NAME;
 
 pub struct ProcNetSnmp {
     interval: Interval,
+    last: Option<Instant>,
     file: File,
     counters: Vec<(Counter, &'static str, &'static str)>,
 }
@@ -40,7 +41,7 @@ impl ProcNetSnmp {
         Ok(Self {
             file,
             counters,
-            interval: Interval::new(Instant::now(), config.interval(NAME)),
+            interval: config.interval(NAME),
         })
     }
 }
@@ -48,12 +49,14 @@ impl ProcNetSnmp {
 #[async_trait]
 impl Sampler for ProcNetSnmp {
     async fn sample(&mut self) {
-        if let Ok(elapsed) = self.interval.try_wait(Instant::now()) {
-            if let Ok(nested_map) = NestedMap::try_from_procfs(&mut self.file).await {
-                for (counter, pkey, lkey) in self.counters.iter_mut() {
-                    if let Some(curr) = nested_map.get(pkey, lkey) {
-                        counter.set(elapsed.as_secs_f64(), curr);
-                    }
+        let now = self.interval.tick().await;
+        let elapsed = self.last.map(|v| { now.duration_since(l) });
+        self.last = now;
+
+        if let Ok(nested_map) = NestedMap::try_from_procfs(&mut self.file).await {
+            for (counter, pkey, lkey) in self.counters.iter_mut() {
+                if let Some(curr) = nested_map.get(pkey, lkey) {
+                    counter.set(elapsed.as_secs_f64(), curr);
                 }
             }
         }

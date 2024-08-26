@@ -106,13 +106,13 @@ impl BlockIOLatency {
                 };
 
                 // get the time
-                let mut prev = Instant::now();
+                let mut prev = std::time::Instant::now();
 
                 // define userspace metric sets
 
                 // wrap the BPF program and define BPF maps
                 let mut bpf = BpfBuilder::new(skel)
-                    .distribution("latency", &BLOCKIO_LATENCY)
+                    .histogram("latency", &BLOCKIO_LATENCY)
                     .build();
 
                 // indicate that we have completed initialization
@@ -129,7 +129,7 @@ impl BlockIOLatency {
                         }
                     }
 
-                    let now = Instant::now();
+                    let now = std::time::Instant::now();
 
                     // refresh userspace metrics
                     bpf.refresh(now.duration_since(prev));
@@ -157,22 +157,22 @@ impl BlockIOLatency {
             return Err(());
         }
 
-        let now = Instant::now();
-
         Ok(Self {
             thread: handle,
             notify,
-            interval: Interval::new(now, config.interval(NAME)),
+            interval: config.interval(NAME),
         })
     }
+}
 
-    pub fn refresh(&mut self, now: Instant) -> Result<(), ()> {
-        // early return if it is not time to refresh
-        self.interval.try_wait(now)?;
+#[async_trait]
+impl Sampler for BlockIOLatency {
+    async fn sample(&mut self) {
+        self.interval.tick().await;
 
         // check that the thread has not exited
         if self.thread.is_finished() {
-            return Err(());
+            return;
         }
 
         // notify the thread to start
@@ -191,16 +191,6 @@ impl BlockIOLatency {
                 cvar.wait(&mut running);
             }
         }
-
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Sampler for BlockIOLatency {
-    async fn sample(&mut self) {
-        let now = Instant::now();
-        let _ = self.refresh(now);
     }
 
     fn is_fast(&self) -> bool {

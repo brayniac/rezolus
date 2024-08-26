@@ -1,3 +1,4 @@
+use core::time::Duration;
 use metriken::AtomicHistogram;
 use metriken::LazyCounter;
 
@@ -6,29 +7,29 @@ use metriken::LazyCounter;
 ///
 /// To do this, it contains the current reading, previous reading, and
 /// optionally a histogram to store rate observations.
-pub struct Counter {
+pub struct CounterWithHist {
     counter: &'static LazyCounter,
-    histogram: Option<&'static AtomicHistogram>,
+    histogram: &'static AtomicHistogram,
 }
 
-impl Counter {
+impl CounterWithHist {
     /// Construct a new counter that wraps a `metriken` counter and optionally a
     /// `metriken` histogram.
-    pub fn new(counter: &'static LazyCounter, histogram: Option<&'static AtomicHistogram>) -> Self {
+    pub fn new(counter: &'static LazyCounter, histogram: &'static AtomicHistogram) -> Self {
         Self { counter, histogram }
     }
 
     /// Updates the counter by setting it to a new value. If this counter has a
     /// histogram it also calculates a secondly rate since the last reading
     /// and increments the histogram.
-    pub fn set(&mut self, elapsed: f64, value: u64) -> u64 {
-        if let Some(histogram) = self.histogram {
+    pub fn set(&mut self, elapsed: Option<Duration>, value: u64) -> u64 {
+        if let Some(elapsed) = elapsed.map(|e| e.as_secs_f64()) {
             if let Some(previous) =
                 metriken::Lazy::<metriken::Counter>::get(self.counter).map(|c| c.value())
             {
                 let delta = value.wrapping_sub(previous);
 
-                let _ = histogram.increment((delta as f64 / elapsed) as _);
+                let _ = self.histogram.increment((delta as f64 / elapsed) as _);
             }
         }
 
@@ -39,9 +40,9 @@ impl Counter {
     /// has a histogram, it normalizes the increment to a secondly rate and
     /// increments the histogram too.
     #[allow(dead_code)]
-    pub fn add(&mut self, elapsed: f64, delta: u64) -> u64 {
-        if let Some(histogram) = self.histogram {
-            let _ = histogram.increment((delta as f64 / elapsed) as _);
+    pub fn add(&mut self, elapsed: Option<Duration>, delta: u64) -> u64 {
+        if let Some(elapsed) = elapsed.map(|e| e.as_secs_f64()) {
+            let _ = self.histogram.increment((delta as f64 / elapsed) as _);
         }
 
         self.counter.add(delta)

@@ -52,7 +52,7 @@ impl Perf {
         let inner = PerfSampler::new()?;
 
         Ok(Self {
-            interval: Interval::new(Instant::now(), config.interval(NAME)),
+            interval: config.interval(NAME),
             inner: Some(inner),
         })
     }
@@ -187,11 +187,7 @@ impl PerfSampler {
 #[async_trait]
 impl Sampler for Perf {
     async fn sample(&mut self) {
-        let now = Instant::now();
-
-        if self.interval.try_wait(now).is_err() {
-            return;
-        }
+        self.interval.tick().await;
 
         if let Some(mut s) = self.inner.take() {
             if let Ok(s) = tokio::task::spawn_blocking(move || {

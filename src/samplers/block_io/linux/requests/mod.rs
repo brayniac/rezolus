@@ -62,16 +62,16 @@ impl BlockIORequests {
 
         // define userspace metric sets
         let counters = vec![
-            Counter::new(&BLOCKIO_READ_OPS, Some(&BLOCKIO_READ_OPS_HISTOGRAM)),
-            Counter::new(&BLOCKIO_WRITE_OPS, Some(&BLOCKIO_WRITE_OPS_HISTOGRAM)),
-            Counter::new(&BLOCKIO_FLUSH_OPS, Some(&BLOCKIO_FLUSH_OPS_HISTOGRAM)),
-            Counter::new(&BLOCKIO_DISCARD_OPS, Some(&BLOCKIO_DISCARD_OPS_HISTOGRAM)),
-            Counter::new(&BLOCKIO_READ_BYTES, Some(&BLOCKIO_READ_BYTES_HISTOGRAM)),
-            Counter::new(&BLOCKIO_WRITE_BYTES, Some(&BLOCKIO_WRITE_BYTES_HISTOGRAM)),
-            Counter::new(&BLOCKIO_FLUSH_BYTES, Some(&BLOCKIO_FLUSH_BYTES_HISTOGRAM)),
-            Counter::new(
+            CounterWithHist::new(&BLOCKIO_READ_OPS, &BLOCKIO_READ_OPS_HISTOGRAM),
+            CounterWithHist::new(&BLOCKIO_WRITE_OPS, &BLOCKIO_WRITE_OPS_HISTOGRAM),
+            CounterWithHist::new(&BLOCKIO_FLUSH_OPS, &BLOCKIO_FLUSH_OPS_HISTOGRAM),
+            CounterWithHist::new(&BLOCKIO_DISCARD_OPS, &BLOCKIO_DISCARD_OPS_HISTOGRAM),
+            CounterWithHist::new(&BLOCKIO_READ_BYTES, &BLOCKIO_READ_BYTES_HISTOGRAM),
+            CounterWithHist::new(&BLOCKIO_WRITE_BYTES, &BLOCKIO_WRITE_BYTES_HISTOGRAM),
+            CounterWithHist::new(&BLOCKIO_FLUSH_BYTES, &BLOCKIO_FLUSH_BYTES_HISTOGRAM),
+            CounterWithHist::new(
                 &BLOCKIO_DISCARD_BYTES,
-                Some(&BLOCKIO_DISCARD_BYTES_HISTOGRAM),
+                &BLOCKIO_DISCARD_BYTES_HISTOGRAM,
             ),
         ];
 
@@ -118,7 +118,7 @@ impl BlockIORequests {
                 // wrap the BPF program and define BPF maps
                 let mut bpf = BpfBuilder::new(skel)
                     .counters("counters", counters)
-                    .distribution("size", &BLOCKIO_SIZE)
+                    .histogram("size", &BLOCKIO_SIZE)
                     .build();
 
                 // indicate that we have completed initialization
@@ -138,8 +138,7 @@ impl BlockIORequests {
                     let now = Instant::now();
 
                     // refresh userspace metrics
-                    bpf.refresh_counters(now.duration_since(prev));
-                    bpf.refresh_distributions();
+                    bpf.refresh(now.duration_since(prev));
 
                     prev = now;
 
@@ -164,22 +163,22 @@ impl BlockIORequests {
             return Err(());
         }
 
-        let now = Instant::now();
-
         Ok(Self {
             thread: handle,
             notify,
-            interval: Interval::new(now, config.interval(NAME)),
+            interval: config.interval(NAME),
         })
     }
+}
 
-    pub fn refresh(&mut self, now: Instant) -> Result<(), ()> {
-        // early return if it is not time to refresh
-        self.interval.try_wait(now)?;
+#[async_trait]
+impl Sampler for BlockIORequests {
+    async fn sample(&mut self) {
+        self.interval.tick().await;
 
         // check that the thread has not exited
         if self.thread.is_finished() {
-            return Err(());
+            return;
         }
 
         // notify the thread to start
@@ -198,16 +197,6 @@ impl BlockIORequests {
                 cvar.wait(&mut running);
             }
         }
-
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Sampler for BlockIORequests {
-    async fn sample(&mut self) {
-        let now = Instant::now();
-        let _ = self.refresh(now);
     }
 
     fn is_fast(&self) -> bool {

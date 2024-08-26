@@ -8,8 +8,7 @@ mod counter;
 mod interval;
 // mod nop;
 
-pub use counter::Counter;
+pub use counter::CounterWithHist;
 pub use interval::Interval;
-// pub use nop::Nop;
 
 pub const HISTOGRAM_GROUPING_POWER: u8 = 7;

@@ -7,9 +7,13 @@ use metriken_exposition::Histogram;
 use ringlog::*;
 use tokio::sync::RwLock;
 
+use crate::common::{CounterWithHist, Interval};
+
+use tokio::time::Instant;
+
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 

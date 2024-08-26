@@ -168,14 +168,17 @@ impl TcpTraffic {
             interval: Interval::new(now, config.interval(NAME)),
         })
     }
+}
 
-    pub fn refresh(&mut self, now: Instant) -> Result<(), ()> {
+#[async_trait]
+impl Sampler for TcpTraffic {
+    async fn sample(&mut self) {
         // early return if it is not time to refresh
-        self.interval.try_wait(now)?;
+        self.interval.try_wait(now).await;
 
         // check that the thread has not exited
         if self.thread.is_finished() {
-            return Err(());
+            return;
         }
 
         // notify the thread to start
@@ -194,16 +197,6 @@ impl TcpTraffic {
                 cvar.wait(&mut running);
             }
         }
-
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Sampler for TcpTraffic {
-    async fn sample(&mut self) {
-        let now = Instant::now();
-        let _ = self.refresh(now);
     }
 
     fn is_fast(&self) -> bool {
