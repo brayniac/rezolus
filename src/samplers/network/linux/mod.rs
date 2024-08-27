@@ -1,6 +1,5 @@
 use crate::*;
 
-use crate::common::Interval;
 use crate::samplers::hwinfo::hardware_info;
 use crate::samplers::network::stats::*;
 use metriken::Counter;
@@ -13,7 +12,6 @@ mod interfaces;
 mod traffic;
 
 pub struct SysfsNetSampler {
-    interval: Interval,
     stats: Vec<(&'static Lazy<Counter>, &'static str, HashMap<String, File>)>,
 }
 
@@ -61,16 +59,10 @@ impl SysfsNetSampler {
 
         Ok(Self {
             stats,
-            interval: config.interval(name),
         })
     }
-}
 
-#[async_trait]
-impl Sampler for SysfsNetSampler {
-    async fn sample(&mut self) {
-        self.interval.tick().await;
-
+    async fn sample_now(&mut self) {
         let mut data = String::new();
 
         'outer: for (counter, _stat, ref mut if_stats) in &mut self.stats {

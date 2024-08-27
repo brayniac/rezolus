@@ -143,12 +143,6 @@ impl CpuUsage {
                     }
                 };
 
-                // debugging info about BPF instruction counts
-                debug!(
-                    "{NAME} cpuacct_account_field() BPF instruction count: {}",
-                    skel.progs.cpuacct_account_field_kprobe.insn_cnt()
-                );
-
                 // attach the BPF program
                 if let Err(e) = skel.attach() {
                     error!("failed to attach bpf program: {e}");
@@ -179,8 +173,14 @@ impl CpuUsage {
 
                     let now = Instant::now();
 
+                    METADATA_CPU_USAGE_COLLECTED_AT.set(UnixInstant::EPOCH.elapsed().as_nanos());
+
                     // refresh userspace metrics
                     bpf.refresh(now.duration_since(prev));
+
+                    let elapsed = now.elapsed().as_nanos() as u64;
+                    METADATA_CPU_USAGE_RUNTIME.add(elapsed);
+                    let _ = METADATA_CPU_USAGE_RUNTIME_HISTOGRAM.increment(elapsed);
 
                     prev = now;
 

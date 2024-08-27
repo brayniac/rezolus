@@ -2,7 +2,7 @@ use crate::*;
 
 #[distributed_slice(SAMPLERS)]
 fn init(config: &Config) -> Option<Box<dyn Sampler>> {
-    if let Ok(s) = Syscall::new(config) {
+    if let Ok(s) = SyscallLatency::new(config) {
         Some(Box::new(s))
     } else {
         None
@@ -59,13 +59,13 @@ impl GetMap for ModSkel<'_> {
 /// * `syscall/sleep/latency`
 /// * `syscall/socket/latency`
 /// * `syscall/yield/latency`
-pub struct Syscall {
+pub struct SyscallLatency {
     thread: JoinHandle<()>,
     notify: Arc<(Mutex<bool>, Condvar)>,
     interval: Interval,
 }
 
-impl Syscall {
+impl SyscallLatency {
     pub fn new(config: &Config) -> Result<Self, ()> {
         // check if sampler should be enabled
         if !(config.enabled(NAME) && config.bpf(NAME)) {
@@ -153,8 +153,14 @@ impl Syscall {
 
                     let now = Instant::now();
 
+                    METADATA_SYSCALL_LATENCY_COLLECTED_AT.set(UnixInstant::EPOCH.elapsed().as_nanos());
+
                     // refresh userspace metrics
                     bpf.refresh(now.duration_since(prev));
+
+                    let elapsed = now.elapsed().as_nanos() as u64;
+                    METADATA_SYSCALL_LATENCY_RUNTIME.add(elapsed);
+                    let _ = METADATA_SYSCALL_LATENCY_RUNTIME_HISTOGRAM.increment(elapsed);
 
                     prev = now;
 
@@ -188,7 +194,7 @@ impl Syscall {
 }
 
 #[async_trait]
-impl Sampler for Syscall {
+impl Sampler for SyscallLatency {
     async fn sample(&mut self) {
         // wait until it's time to sample
         self.interval.tick().await;

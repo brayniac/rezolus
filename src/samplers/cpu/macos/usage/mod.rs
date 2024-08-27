@@ -82,9 +82,16 @@ impl Sampler for CpuUsage {
     async fn sample(&mut self) {
         let elapsed = self.interval.tick().await;
 
+        let now = Instant::now();
+        METADATA_CPU_USAGE_COLLECTED_AT.set(UnixInstant::EPOCH.elapsed().as_nanos());
+
         unsafe {
             let _ = self.sample_processor_info(elapsed);
         }
+
+        let elapsed = now.elapsed().as_nanos() as u64;
+        METADATA_CPU_USAGE_RUNTIME.add(elapsed);
+        let _ = METADATA_CPU_USAGE_RUNTIME_HISTOGRAM.increment(elapsed);
     }
 }
 

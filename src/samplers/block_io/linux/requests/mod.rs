@@ -134,8 +134,14 @@ impl BlockIORequests {
 
                     let now = Instant::now();
 
+                    METADATA_BLOCKIO_REQUESTS_COLLECTED_AT.set(UnixInstant::EPOCH.elapsed().as_nanos());
+
                     // refresh userspace metrics
                     bpf.refresh(now.duration_since(prev));
+
+                    let elapsed = now.duration_since();
+                    METADATA_BLOCKIO_REQUESTS_RUNTIME.add(elapsed);
+                    let _ = METADATA_BLOCKIO_REQUESTS_RUNTIME_HISTOGRAM.increment(elapsed);
 
                     prev = now;
 

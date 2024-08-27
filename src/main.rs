@@ -6,7 +6,7 @@ use metriken::{metric, Lazy, LazyCounter};
 use metriken_exposition::Histogram;
 use ringlog::*;
 use tokio::sync::RwLock;
-
+use clocksource::precise::UnixInstant;
 use crate::common::{CounterWithHist, Interval};
 
 use tokio::time::Instant;

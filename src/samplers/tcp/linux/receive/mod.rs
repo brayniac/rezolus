@@ -123,8 +123,14 @@ impl Receive {
 
                     let now = Instant::now();
 
+                    METADATA_TCP_RECEIVE_COLLECTED_AT.set(UnixInstant::EPOCH.elapsed().as_nanos());
+
                     // refresh userspace metrics
                     bpf.refresh(now.duration_since(prev));
+
+                    let elapsed = now.elapsed().as_nanos() as u64;
+                    METADATA_TCP_RECEIVE_RUNTIME.add(elapsed);
+                    let _ = METADATA_TCP_RECEIVE_RUNTIME_HISTOGRAM.increment(elapsed);
 
                     prev = now;
 

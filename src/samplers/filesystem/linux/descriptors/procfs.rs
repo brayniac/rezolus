@@ -35,7 +35,14 @@ impl Sampler for Procfs {
     async fn sample(&mut self) {
         self.interval.tick().await;
 
+        let now = Instant::now();
+        METADATA_FILESYSTEM_DESCRIPTORS_COLLECTED_AT.set(UnixInstant::EPOCH.elapsed().as_nanos());
+
         let _ = self.sample_procfs().await;
+
+        let elapsed = now.elapsed().as_nanos() as u64;
+        METADATA_FILESYSTEM_DESCRIPTORS_RUNTIME.add(elapsed);
+        let _ = METADATA_FILESYSTEM_DESCRIPTORS_RUNTIME_HISTOGRAM.increment(elapsed);
     }
 }
 

@@ -39,7 +39,16 @@ impl Rusage {
 impl Sampler for Rusage {
     async fn sample(&mut self) {
         let elapsed = self.interval.tick().await;
+
+        let now = Instant::now();
+        
+        METADATA_REZOLUS_RUSAGE_COLLECTED_AT.set(UnixInstant::EPOCH.elapsed().as_nanos());
+        
         self.sample_rusage(elapsed);
+
+        let elapsed = now.elapsed().as_nanos() as u64;
+        METADATA_REZOLUS_RUSAGE_RUNTIME.add(elapsed);
+        let _ = METADATA_REZOLUS_RUSAGE_RUNTIME_HISTOGRAM.increment(elapsed);
     }
 
     fn is_fast(&self) -> bool {

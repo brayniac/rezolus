@@ -4,15 +4,12 @@ use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 pub struct ProcCpuinfo {
-    prev: Instant,
-    next: Instant,
-    interval: Duration,
     file: File,
+    interval: Interval,
 }
 
 impl ProcCpuinfo {
-    pub fn new(_config: &Config) -> Result<Self, ()> {
-        let now = Instant::now();
+    pub fn new(config: &Config) -> Result<Self, ()> {
         let file = std::fs::File::open("/proc/cpuinfo")
             .map(|f| File::from_std(f))
             .map_err(|e| {
@@ -21,9 +18,7 @@ impl ProcCpuinfo {
 
         Ok(Self {
             file,
-            prev: now,
-            next: now,
-            interval: Duration::from_millis(50),
+            interval: config.interval(NAME),
         })
     }
 }
@@ -31,30 +26,17 @@ impl ProcCpuinfo {
 #[async_trait]
 impl Sampler for ProcCpuinfo {
     async fn sample(&mut self) {
+        self.interval.tick().await;
+
         let now = Instant::now();
+        METADATA_CPU_PERF_COLLECTED_AT.set(UnixInstant::EPOCH.elapsed().as_nanos());
 
-        if now < self.next {
-            return;
-        }
 
-        if self.sample_proc_cpuinfo().await.is_err() {
-            return;
-        }
+        let _ = self.sample_proc_cpuinfo().await;
 
-        // determine when to sample next
-        let next = self.next + self.interval;
-
-        // it's possible we fell behind
-        if next > now {
-            // if we didn't, sample at the next planned time
-            self.next = next;
-        } else {
-            // if we did, sample after the interval has elapsed
-            self.next = now + self.interval;
-        }
-
-        // mark when we last sampled
-        self.prev = now;
+        let elapsed = now.elapsed().as_nanos() as u64;
+        METADATA_CPU_PERF_RUNTIME.add(elapsed);
+        let _ = METADATA_CPU_PERF_RUNTIME_HISTOGRAM.increment(elapsed);
     }
 }
 

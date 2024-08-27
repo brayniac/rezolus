@@ -6,7 +6,6 @@ pub mod units;
 
 mod counter;
 mod interval;
-// mod nop;
 
 pub use counter::CounterWithHist;
 pub use interval::Interval;

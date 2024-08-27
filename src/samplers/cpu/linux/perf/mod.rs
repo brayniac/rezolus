@@ -2,6 +2,7 @@ use crate::*;
 
 use crate::common::Interval;
 use crate::samplers::cpu::*;
+use clocksource::precise::UnixInstant;
 use metriken::{DynBoxedMetric, MetricBuilder};
 use perf_event::events::x86::{Msr, MsrId};
 use perf_event::events::Hardware;
@@ -189,6 +190,9 @@ impl Sampler for Perf {
         self.interval.tick().await;
 
         if let Some(mut s) = self.inner.take() {
+            let now = Instant::now();
+            METADATA_CPU_PERF_COLLECTED_AT.set(UnixInstant::EPOCH.elapsed().as_nanos());
+
             if let Ok(s) = tokio::task::spawn_blocking(move || {
                 s.sample();
                 s
@@ -197,6 +201,10 @@ impl Sampler for Perf {
             {
                 self.inner = Some(s);
             }
+
+            let elapsed = now.elapsed().as_nanos() as u64;
+            METADATA_CPU_PERF_RUNTIME.add(elapsed);
+            let _ = METADATA_CPU_PERF_RUNTIME_HISTOGRAM.increment(elapsed);
         }
     }
 }

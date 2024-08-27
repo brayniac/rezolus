@@ -1,6 +1,7 @@
 use crate::*;
 
-use super::stats::*;
+use crate::samplers::gpu::stats::*;
+
 use crate::common::Interval;
 use metriken::{DynBoxedMetric, MetricBuilder};
 use nvml_wrapper::enum_wrappers::device::*;
@@ -175,6 +176,9 @@ impl Sampler for Nvidia {
     async fn sample(&mut self) {
         self.interval.tick().await;
 
+        let now = Instant::now();
+        METADATA_GPU_NVIDIA_COLLECTED_AT.set(UnixInstant::EPOCH.elapsed().as_nanos());
+
         if let Some(mut s) = self.inner.take() {
             if let Ok(s) = tokio::task::spawn_blocking(move || {
                 if let Err(e) = s.sample() {
@@ -187,6 +191,10 @@ impl Sampler for Nvidia {
                 self.inner = s;
             }
         }
+
+        let elapsed = now.elapsed().as_nanos() as u64;
+        METADATA_GPU_NVIDIA_RUNTIME.add(elapsed);
+        let _ = METADATA_GPU_NVIDIA_RUNTIME_HISTOGRAM.increment(elapsed);
     }
 }
 

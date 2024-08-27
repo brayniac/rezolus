@@ -38,6 +38,7 @@ toml = "0.8.13"
 walkdir = "2.5.0"
 warp = { version = "0.3.7", features = ["compression"] }
 async-trait = "0.1.81"
+clocksource = "0.8.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libbpf-rs = { version = "0.24.2", optional = true }

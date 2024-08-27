@@ -78,6 +78,10 @@ impl Sampler for ConnectionState {
     async fn sample(&mut self) {
         self.interval.tick().await;
 
+        let now = Instant::now();
+
+        METADATA_TCP_CONNECTION_STATE_COLLECTED_AT.set(UnixInstant::EPOCH.elapsed().as_nanos());
+
         // zero the temporary gauges
         for (_, gauge) in self.gauges.iter_mut() {
             *gauge = 0;
@@ -108,5 +112,9 @@ impl Sampler for ConnectionState {
         for (gauge, value) in self.gauges.iter() {
             gauge.set(*value);
         }
+
+        let elapsed = now.elapsed().as_nanos() as u64;
+        METADATA_TCP_CONNECTION_STATE_RUNTIME.add(elapsed);
+        let _ = METADATA_TCP_CONNECTION_STATE_RUNTIME_HISTOGRAM.increment(elapsed);
     }
 }

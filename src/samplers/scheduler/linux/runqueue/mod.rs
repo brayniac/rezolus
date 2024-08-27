@@ -143,8 +143,14 @@ impl Runqlat {
 
                     let now = Instant::now();
 
+                    METADATA_SCHEDULER_RUNQUEUE_COLLECTED_AT.set(UnixInstant::EPOCH.elapsed().as_nanos());
+
                     // refresh userspace metrics
                     bpf.refresh(now.duration_since(prev));
+
+                    let elapsed = now.elapsed().as_nanos() as u64;
+                    METADATA_SCHEDULER_RUNQUEUE_RUNTIME.add(elapsed);
+                    let _ = METADATA_SCHEDULER_RUNQUEUE_RUNTIME_HISTOGRAM.increment(elapsed);
 
                     prev = now;
 

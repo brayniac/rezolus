@@ -60,7 +60,14 @@ impl Sampler for ProcMeminfo {
     async fn sample(&mut self) {
         self.interval.tick().await;
 
+        let now = Instant::now();
+        METADATA_MEMORY_MEMINFO_COLLECTED_AT.set(UnixInstant::EPOCH.elapsed().as_nanos());
+
         let _ = self.sample_proc_meminfo().await;
+
+        let elapsed = now.elapsed().as_nanos() as u64;
+        METADATA_MEMORY_MEMINFO_RUNTIME.add(elapsed);
+        let _ = METADATA_MEMORY_MEMINFO_RUNTIME_HISTOGRAM.increment(elapsed);
     }
 }
 

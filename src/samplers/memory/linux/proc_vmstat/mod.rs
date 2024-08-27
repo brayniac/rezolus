@@ -58,7 +58,14 @@ impl Sampler for ProcVmstat {
     async fn sample(&mut self) {
         self.interval.tick().await;
 
+        let now = Instant::now();
+        METADATA_MEMORY_VMSTAT_COLLECTED_AT.set(UnixInstant::EPOCH.elapsed().as_nanos());
+
         let _ = self.sample_proc_vmstat().await;
+
+        let elapsed = now.elapsed().as_nanos() as u64;
+        METADATA_MEMORY_VMSTAT_RUNTIME.add(elapsed);
+        let _ = METADATA_MEMORY_VMSTAT_RUNTIME_HISTOGRAM.increment(elapsed);
     }
 }
 
