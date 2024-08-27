@@ -10,8 +10,7 @@ use super::NAME;
 use bpf::*;
 
 use crate::common::bpf::*;
-use crate::common::*;
-use crate::samplers::network::stats::*;
+use crate::samplers::network::linux::stats::*;
 
 use parking_lot::{Condvar, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -1,11 +1,15 @@
+mod stats;
+
 #[cfg(feature = "bpf")]
 mod counts;
 
 #[cfg(feature = "bpf")]
 mod latency;
 
+#[cfg(feature = "bpf")]
 pub const MAX_SYSCALL_ID: usize = 1024;
 
+#[cfg(feature = "bpf")]
 pub fn syscall_lut() -> Vec<u64> {
     (0..MAX_SYSCALL_ID)
         .map(|id| {

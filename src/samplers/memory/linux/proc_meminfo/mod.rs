@@ -1,8 +1,7 @@
 use crate::*;
 
 use crate::common::units::KIBIBYTES;
-use crate::common::Interval;
-use crate::samplers::memory::stats::*;
+use crate::samplers::memory::linux::stats::*;
 use metriken::Gauge;
 use std::collections::HashMap;
 use tokio::fs::File;

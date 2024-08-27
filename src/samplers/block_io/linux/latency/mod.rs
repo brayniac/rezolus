@@ -14,8 +14,7 @@ static NAME: &str = "block_io_latency";
 use bpf::*;
 
 use crate::common::bpf::*;
-use crate::common::*;
-use crate::samplers::block_io::stats::*;
+use crate::samplers::block_io::linux::stats::*;
 
 use parking_lot::{Condvar, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};

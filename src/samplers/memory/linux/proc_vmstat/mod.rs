@@ -1,6 +1,6 @@
 use crate::*;
 
-use crate::samplers::memory::stats::*;
+use crate::samplers::memory::linux::stats::*;
 use std::collections::HashMap;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};

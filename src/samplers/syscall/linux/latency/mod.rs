@@ -14,9 +14,8 @@ const NAME: &str = "syscall_latency";
 use bpf::*;
 
 use crate::common::bpf::*;
-use crate::common::*;
 use crate::samplers::syscall::linux::*;
-use crate::samplers::syscall::stats::*;
+use crate::samplers::syscall::linux::stats::*;
 
 use parking_lot::{Condvar, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};

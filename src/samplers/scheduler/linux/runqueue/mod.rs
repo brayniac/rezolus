@@ -14,8 +14,7 @@ const NAME: &str = "scheduler_runqueue";
 use bpf::*;
 
 use crate::common::bpf::*;
-use crate::common::*;
-use crate::samplers::scheduler::stats::*;
+use crate::samplers::scheduler::linux::stats::*;
 
 use parking_lot::{Condvar, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};

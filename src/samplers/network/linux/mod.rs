@@ -1,7 +1,8 @@
 use crate::*;
 
+mod stats;
+
 use crate::samplers::hwinfo::hardware_info;
-use crate::samplers::network::stats::*;
 use metriken::Counter;
 
 use std::io::Read;
@@ -10,6 +11,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 mod interfaces;
 mod traffic;
+
 
 pub struct SysfsNetSampler {
     stats: Vec<(&'static Lazy<Counter>, &'static str, HashMap<String, File>)>,
