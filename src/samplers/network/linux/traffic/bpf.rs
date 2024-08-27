@@ -43,7 +43,7 @@ pub struct NetworkTraffic {
 }
 
 impl NetworkTraffic {
-    pub fn new(config: &Config) -> Result<Self, ()> {
+    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
         // check if sampler should be enabled
         if !(config.enabled(NAME) && config.bpf(NAME)) {
             return Err(());
@@ -156,11 +156,11 @@ impl NetworkTraffic {
             return Err(());
         }
 
-        Ok(Self {
+        Ok(Box::new(Self {
             thread: handle,
             notify,
             interval: config.interval(NAME),
-        })
+        }))
     }
 }
 

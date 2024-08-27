@@ -9,12 +9,13 @@ use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 #[distributed_slice(SAMPLERS)]
-fn init(config: &Config) -> Option<Box<dyn Sampler>> {
-    if let Ok(s) = ProcMeminfo::new(config) {
-        Some(Box::new(s))
-    } else {
-        None
+fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
+    // check if sampler should be enabled
+    if !config.enabled(NAME) {
+        return Err(());
     }
+
+    ProcMeminfo::init(config)
 }
 
 const NAME: &str = "memory_meminfo";
@@ -26,13 +27,7 @@ pub struct ProcMeminfo {
 }
 
 impl ProcMeminfo {
-    #![allow(dead_code)]
-    pub fn new(config: &Config) -> Result<Self, ()> {
-        // check if sampler should be enabled
-        if !config.enabled(NAME) {
-            return Err(());
-        }
-
+    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
         let gauges: HashMap<&str, &Gauge> = HashMap::from([
             ("MemTotal:", &*MEMORY_TOTAL),
             ("MemFree:", &*MEMORY_FREE),
@@ -47,11 +42,11 @@ impl ProcMeminfo {
                 error!("Failed to open /proc/meminfo: {e}");
             })?;
 
-        Ok(Self {
+        Ok(Box::new(Self {
             file,
             gauges,
             interval: config.interval(NAME),
-        })
+        }))
     }
 }
 

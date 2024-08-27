@@ -95,7 +95,7 @@ pub static PERCENTILES: &[(&str, f64)] = &[
 ];
 
 #[distributed_slice]
-pub static SAMPLERS: [fn(config: &Config) -> Option<Box<dyn Sampler>>] = [..];
+pub static SAMPLERS: [fn(config: &Config) -> Result<Box<dyn Sampler>, ()>] = [..];
 
 #[metric(
     name = "runtime/sample/loop",
@@ -208,7 +208,7 @@ fn main() {
         .expect("failed to launch async runtime");
 
     for sampler in SAMPLERS {
-        if let Some(mut sampler) = sampler(&config) {
+        if let Ok(mut sampler) = sampler(&config) {
             if sampler.is_fast() {
                 fast_sampler_rt.spawn(async move {
                     loop {

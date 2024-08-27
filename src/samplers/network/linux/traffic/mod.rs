@@ -8,27 +8,19 @@ mod bpf;
 
 #[cfg(feature = "bpf")]
 #[distributed_slice(SAMPLERS)]
-fn init(config: &Config) -> Option<Box<dyn Sampler>> {
-    // try to initialize the bpf based sampler
-    if let Ok(s) = bpf::NetworkTraffic::new(config) {
-        Some(Box::new(s))
-    } else {
-        if let Ok(s) = NetworkTraffic::new(config) {
-            Some(Box::new(s))
-        } else {
-            None
-        }
+fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
+    // check if sampler should be enabled
+    if !config.enabled(NAME) {
+        return Err(());
     }
+
+    bpf::NetworkTraffic::init(config).or_else(|_| NetworkTraffic::init(config))
 }
 
 #[cfg(not(feature = "bpf"))]
 #[distributed_slice(SAMPLERS)]
-fn init(config: &Config) -> Option<Box<dyn Sampler>> {
-    if let Ok(s) = NetworkTraffic::new(config) {
-        Some(Box::new(s))
-    } else {
-        None
-    }
+fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
+    NetworkTraffic::init(config)
 }
 
 struct NetworkTraffic {
@@ -37,7 +29,7 @@ struct NetworkTraffic {
 }
 
 impl NetworkTraffic {
-    pub fn new(config: &Config) -> Result<Self, ()> {
+    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
         let metrics = vec![
             (&NETWORK_RX_BYTES, "rx_bytes"),
             (&NETWORK_RX_PACKETS, "rx_packets"),
@@ -45,10 +37,10 @@ impl NetworkTraffic {
             (&NETWORK_TX_PACKETS, "tx_packets"),
         ];
 
-        Ok(Self {
+        Ok(Box::new(Self {
             inner: SysfsNetSampler::new(config, NAME, metrics)?,
             interval: config.interval(NAME),
-        })
+        }))
     }
 }
 

@@ -2,12 +2,13 @@ use crate::common::*;
 use crate::samplers::network::linux::*;
 
 #[distributed_slice(SAMPLERS)]
-fn init(config: &Config) -> Option<Box<dyn Sampler>> {
-    if let Ok(s) = NetworkInterfaces::new(config) {
-        Some(Box::new(s))
-    } else {
-        None
+fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
+    // check if sampler should be enabled
+    if !config.enabled(NAME) {
+        return Err(());
     }
+
+    NetworkInterfaces::init(config)
 }
 
 const NAME: &str = "network_interfaces";
@@ -18,7 +19,7 @@ struct NetworkInterfaces {
 }
 
 impl NetworkInterfaces {
-    pub fn new(config: &Config) -> Result<Self, ()> {
+    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
         let metrics = vec![
             (&NETWORK_CARRIER_CHANGES, "../carrier_changes"),
             (&NETWORK_RX_CRC_ERRORS, "rx_crc_errors"),
@@ -27,10 +28,10 @@ impl NetworkInterfaces {
             (&NETWORK_TX_DROPPED, "tx_dropped"),
         ];
 
-        Ok(Self {
+        Ok(Box::new(Self {
             inner: SysfsNetSampler::new(config, NAME, metrics)?,
             interval: config.interval(NAME),
-        })
+        }))
     }
 }
 

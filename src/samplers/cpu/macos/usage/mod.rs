@@ -9,12 +9,8 @@ use ringlog::error;
 const NAME: &str = "cpu_usage";
 
 #[distributed_slice(SAMPLERS)]
-fn init(config: &Config) -> Option<Box<dyn Sampler>> {
-    if let Ok(s) = CpuUsage::new(config) {
-        Some(Box::new(s))
-    } else {
-        None
-    }
+fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
+    CpuUsage::init(config)
 }
 
 struct CpuUsage {
@@ -26,7 +22,7 @@ struct CpuUsage {
 }
 
 impl CpuUsage {
-    pub fn new(config: &Config) -> Result<Self, ()> {
+    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
         // check if sampler should be enabled
         if !config.enabled(NAME) {
             return Err(());
@@ -67,13 +63,13 @@ impl CpuUsage {
 
         let nanos_per_tick = 1_000_000_000 / (sc_clk_tck as u64);
 
-        Ok(Self {
+        Ok(Box::new(Self {
             interval: config.interval(NAME),
             port: unsafe { libc::mach_host_self() },
             nanos_per_tick,
             counters_total,
             counters_percpu,
-        })
+        }))
     }
 }
 

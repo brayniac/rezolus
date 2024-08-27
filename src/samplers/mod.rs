@@ -1,6 +1,6 @@
 pub mod hwinfo;
 
-// mod block_io;
+mod block_io;
 mod cpu;
 mod filesystem;
 mod gpu;

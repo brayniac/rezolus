@@ -1,12 +1,8 @@
 use crate::*;
 
 #[distributed_slice(SAMPLERS)]
-fn init(config: &Config) -> Option<Box<dyn Sampler>> {
-    if let Ok(s) = Retransmit::new(config) {
-        Some(Box::new(s))
-    } else {
-        None
-    }
+fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
+    Retransmit::init(config)
 }
 
 mod bpf {
@@ -47,7 +43,7 @@ pub struct Retransmit {
 }
 
 impl Retransmit {
-    pub fn new(config: &Config) -> Result<Self, ()> {
+    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
         // check if sampler should be enabled
         if !(config.enabled(NAME) && config.bpf(NAME)) {
             return Err(());
@@ -156,11 +152,11 @@ impl Retransmit {
             return Err(());
         }
 
-        Ok(Self {
+        Ok(Box::new(Self {
             thread: handle,
             notify,
             interval: config.interval(NAME),
-        })
+        }))
     }
 }
 

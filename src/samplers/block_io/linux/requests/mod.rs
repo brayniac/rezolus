@@ -1,12 +1,8 @@
 use crate::*;
 
 #[distributed_slice(SAMPLERS)]
-fn init(config: &Config) -> Option<Box<dyn Sampler>> {
-    if let Ok(s) = BlockIORequests::new(config) {
-        Some(Box::new(s))
-    } else {
-        None
-    }
+fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
+    BlockIORequests::init(config)
 }
 
 mod bpf {
@@ -50,7 +46,7 @@ pub struct BlockIORequests {
 }
 
 impl BlockIORequests {
-    pub fn new(config: &Config) -> Result<Self, ()> {
+    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
         // check if sampler should be enabled
         if !(config.enabled(NAME) && config.bpf(NAME)) {
             return Err(());
@@ -139,7 +135,7 @@ impl BlockIORequests {
                     // refresh userspace metrics
                     bpf.refresh(now.duration_since(prev));
 
-                    let elapsed = now.duration_since();
+                    let elapsed = now.elapsed().as_nanos() as u64;
                     METADATA_BLOCKIO_REQUESTS_RUNTIME.add(elapsed);
                     let _ = METADATA_BLOCKIO_REQUESTS_RUNTIME_HISTOGRAM.increment(elapsed);
 
@@ -166,11 +162,11 @@ impl BlockIORequests {
             return Err(());
         }
 
-        Ok(Self {
+        Ok(Box::new(Self {
             thread: handle,
             notify,
             interval: config.interval(NAME),
-        })
+        }))
     }
 }
 

@@ -46,7 +46,7 @@ pub struct CpuUsage {
 }
 
 impl CpuUsage {
-    pub fn new(config: &Config) -> Result<Self, ()> {
+    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
         // check if sampler should be enabled
         if !(config.enabled(NAME) && config.bpf(NAME)) {
             return Err(());
@@ -207,14 +207,14 @@ impl CpuUsage {
 
         let total_busy = CounterWithHist::new(&CPU_USAGE_BUSY, &CPU_USAGE_BUSY_HISTOGRAM);
 
-        Ok(Self {
+        Ok(Box::new(Self {
             thread: handle,
             notify,
             interval: config.interval(NAME),
             total_busy,
             percpu_counters,
             percpu_busy,
-        })
+        }))
     }
 }
 

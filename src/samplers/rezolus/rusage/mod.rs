@@ -4,12 +4,8 @@ use super::stats::*;
 use crate::common::units::{KIBIBYTES, MICROSECONDS, SECONDS};
 
 #[distributed_slice(SAMPLERS)]
-fn init(config: &Config) -> Option<Box<dyn Sampler>> {
-    if let Ok(rusage) = Rusage::new(config) {
-        Some(Box::new(rusage))
-    } else {
-        None
-    }
+fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
+    Rusage::init(config)
 }
 
 const NAME: &str = "rezolus_rusage";
@@ -21,17 +17,17 @@ pub struct Rusage {
 }
 
 impl Rusage {
-    pub fn new(config: &Config) -> Result<Self, ()> {
+    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
         // check if sampler should be enabled
         if !config.enabled(NAME) {
             return Err(());
         }
 
-        Ok(Self {
+        Ok(Box::new(Self {
             interval: config.interval(NAME),
             ru_utime: CounterWithHist::new(&RU_UTIME, &RU_UTIME_HISTOGRAM),
             ru_stime: CounterWithHist::new(&RU_STIME, &RU_STIME_HISTOGRAM),
-        })
+        }))
     }
 }
 

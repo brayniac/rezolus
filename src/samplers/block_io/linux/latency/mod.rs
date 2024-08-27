@@ -1,12 +1,8 @@
 use crate::*;
 
 #[distributed_slice(SAMPLERS)]
-fn init(config: &Config) -> Option<Box<dyn Sampler>> {
-    if let Ok(s) = BlockIOLatency::new(config) {
-        Some(Box::new(s))
-    } else {
-        None
-    }
+fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
+    BlockIOLatency::init(config)
 }
 
 mod bpf {
@@ -50,7 +46,7 @@ pub struct BlockIOLatency {
 }
 
 impl BlockIOLatency {
-    pub fn new(config: &Config) -> Result<Self, ()> {
+    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
         // check if sampler should be enabled
         if !(config.enabled(NAME) && config.bpf(NAME)) {
             return Err(());
@@ -132,12 +128,12 @@ impl BlockIOLatency {
                     let now = std::time::Instant::now();
 
                     METADATA_BLOCKIO_LATENCY_COLLECTED_AT
-                        .set(UnixInstant::EPOCH.elapsed().as_nanos() - elapsed);
+                        .set(UnixInstant::EPOCH.elapsed().as_nanos());
 
                     // refresh userspace metrics
                     bpf.refresh(now.duration_since(prev));
 
-                    let elapsed = now.duration_since();
+                    let elapsed = now.elapsed().as_nanos() as u64;
                     METADATA_BLOCKIO_LATENCY_RUNTIME.add(elapsed);
                     let _ = METADATA_BLOCKIO_LATENCY_RUNTIME_HISTOGRAM.increment(elapsed);
 
@@ -164,11 +160,11 @@ impl BlockIOLatency {
             return Err(());
         }
 
-        Ok(Self {
+        Ok(Box::new(Self {
             thread: handle,
             notify,
             interval: config.interval(NAME),
-        })
+        }))
     }
 }
 

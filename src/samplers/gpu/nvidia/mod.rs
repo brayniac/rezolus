@@ -12,12 +12,8 @@ const MB: i64 = 1024 * KB;
 const MHZ: i64 = 1_000_000;
 
 #[distributed_slice(SAMPLERS)]
-fn init(config: &Config) -> Option<Box<dyn Sampler>> {
-    if let Ok(nvidia) = Nvidia::new(config) {
-        Some(Box::new(nvidia))
-    } else {
-        None
-    }
+fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
+    Nvidia::init(config)
 }
 
 const NAME: &str = "gpu_nvidia";
@@ -67,7 +63,7 @@ struct GpuMetrics {
 }
 
 impl Nvidia {
-    pub fn new(config: &Config) -> Result<Self, ()> {
+    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
         // check if sampler should be enabled
         if !config.enabled(NAME) {
             return Err(());
@@ -75,10 +71,10 @@ impl Nvidia {
 
         let inner = NvmlSampler::new()?;
 
-        Ok(Self {
+        Ok(Box::new(Self {
             interval: config.interval(NAME),
             inner: Some(inner),
-        })
+        }))
     }
 }
 

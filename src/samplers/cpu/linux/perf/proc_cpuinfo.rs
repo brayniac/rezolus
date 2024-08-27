@@ -9,17 +9,17 @@ pub struct ProcCpuinfo {
 }
 
 impl ProcCpuinfo {
-    pub fn new(config: &Config) -> Result<Self, ()> {
+    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
         let file = std::fs::File::open("/proc/cpuinfo")
             .map(|f| File::from_std(f))
             .map_err(|e| {
                 error!("failed to open /proc/cpuinfo: {e}");
             })?;
 
-        Ok(Self {
+        Ok(Box::new(Self {
             file,
             interval: config.interval(NAME),
-        })
+        }))
     }
 }
 

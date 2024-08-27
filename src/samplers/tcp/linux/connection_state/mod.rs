@@ -6,12 +6,8 @@ use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 #[distributed_slice(SAMPLERS)]
-fn init(config: &Config) -> Option<Box<dyn Sampler>> {
-    if let Ok(s) = ConnectionState::new(config) {
-        Some(Box::new(s))
-    } else {
-        None
-    }
+fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
+    ConnectionState::init(config)
 }
 
 const NAME: &str = "tcp_connection_state";
@@ -23,7 +19,7 @@ pub struct ConnectionState {
 }
 
 impl ConnectionState {
-    pub fn new(config: &Config) -> Result<Self, ()> {
+    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
         // check if sampler should be enabled
         if !config.enabled(NAME) {
             return Err(());
@@ -65,11 +61,11 @@ impl ConnectionState {
             return Err(());
         }
 
-        Ok(Self {
+        Ok(Box::new(Self {
             files,
             gauges,
             interval: config.interval(NAME),
-        })
+        }))
     }
 }
 

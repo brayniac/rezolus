@@ -24,7 +24,7 @@ pub struct ProcStat {
 }
 
 impl ProcStat {
-    pub fn new(config: &Config) -> Result<Self, ()> {
+    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
         // check if sampler should be enabled
         if !config.enabled(NAME) {
             return Err(());
@@ -106,7 +106,7 @@ impl ProcStat {
                 error!("failed to open /proc/stat: {e}");
             })?;
 
-        Ok(Self {
+        Ok(Box::new(Self {
             file,
             total_counters,
             total_busy: CounterWithHist::new(&CPU_USAGE_BUSY, &CPU_USAGE_BUSY_HISTOGRAM),
@@ -114,7 +114,7 @@ impl ProcStat {
             percpu_busy,
             nanos_per_tick,
             interval: config.interval(NAME),
-        })
+        }))
     }
 }
 

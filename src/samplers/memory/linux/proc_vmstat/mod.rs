@@ -6,12 +6,13 @@ use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 #[distributed_slice(SAMPLERS)]
-fn init(config: &Config) -> Option<Box<dyn Sampler>> {
-    if let Ok(s) = ProcVmstat::new(config) {
-        Some(Box::new(s))
-    } else {
-        None
+fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
+    // check if sampler should be enabled
+    if !config.enabled(NAME) {
+        return Err(());
     }
+
+    ProcVmstat::init(config)
 }
 
 const NAME: &str = "memory_vmstat";
@@ -24,12 +25,7 @@ pub struct ProcVmstat {
 
 impl ProcVmstat {
     #[allow(dead_code)]
-    pub fn new(config: &Config) -> Result<Self, ()> {
-        // check if sampler should be enabled
-        if !config.enabled(NAME) {
-            return Err(());
-        }
-
+    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
         let counters = HashMap::from([
             ("numa_hit", &MEMORY_NUMA_HIT),
             ("numa_miss", &MEMORY_NUMA_MISS),
@@ -45,11 +41,11 @@ impl ProcVmstat {
                 error!("Failed to open /proc/vmstat: {e}");
             })?;
 
-        Ok(Self {
+        Ok(Box::new(Self {
             file,
             counters,
             interval: config.interval(NAME),
-        })
+        }))
     }
 }
 

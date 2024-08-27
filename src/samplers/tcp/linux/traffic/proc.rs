@@ -13,7 +13,7 @@ pub struct ProcNetSnmp {
 }
 
 impl ProcNetSnmp {
-    pub fn new(config: &Config) -> Result<Self, ()> {
+    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
         // check if sampler should be enabled
         if !config.enabled(NAME) {
             return Err(());
@@ -38,11 +38,11 @@ impl ProcNetSnmp {
                 error!("Failed to open /proc/net/snmp: {e}");
             })?;
 
-        Ok(Self {
+        Ok(Box::new(Self {
             file,
             counters,
             interval: config.interval(NAME),
-        })
+        }))
     }
 }
 

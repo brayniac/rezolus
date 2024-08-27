@@ -11,7 +11,7 @@ pub struct Procfs {
 }
 
 impl Procfs {
-    pub fn new(config: &Config) -> Result<Self, ()> {
+    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
         // check if sampler should be enabled
         if !config.enabled(NAME) {
             return Err(());
@@ -23,10 +23,10 @@ impl Procfs {
                 error!("failed to open: {e}");
             })?;
 
-        Ok(Self {
+        Ok(Box::new(Self {
             file,
             interval: config.interval(NAME),
-        })
+        }))
     }
 }
 

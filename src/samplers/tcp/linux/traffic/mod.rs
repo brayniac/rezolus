@@ -14,26 +14,12 @@ use proc::*;
 
 #[cfg(feature = "bpf")]
 #[distributed_slice(SAMPLERS)]
-fn init(config: &Config) -> Option<Box<dyn Sampler>> {
-    // try to initialize the bpf based sampler
-    if let Ok(s) = TcpTraffic::new(config) {
-        Some(Box::new(s))
-    // try to fallback to the /proc/net/snmp based sampler if there was an error
-    } else if let Ok(s) = ProcNetSnmp::new(config) {
-        Some(Box::new(s))
-    } else {
-        None
-    }
+fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
+    TcpTraffic::init(config).or_else(|_| ProcNetSnmp::init(config))
 }
 
 #[cfg(not(feature = "bpf"))]
 #[distributed_slice(SAMPLERS)]
-fn init(config: &Config) -> Option<Box<dyn Sampler>> {
-    // try to use the /proc/net/snmp based sampler since BPF was not enabled for
-    // this build
-    if let Ok(s) = ProcNetSnmp::new(config) {
-        Some(Box::new(s))
-    } else {
-        None
-    }
+fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
+    ProcNetSnmp::init(config)
 }
