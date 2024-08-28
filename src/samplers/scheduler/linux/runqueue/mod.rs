@@ -1,9 +1,10 @@
 use crate::*;
+use tokio::sync::Notify;
 
 #[derive(Clone)]
 struct SyncPrimitive {
-    initialized: Arc<AtomicBool>,
-    notify: Arc<(Mutex<bool>, Condvar)>,
+    trigger: (Mutex<bool>, Condvar),
+    notify: Notify,
 }
 
 impl SyncPrimitive {
@@ -16,6 +17,30 @@ impl SyncPrimitive {
             notify,
         }
     }
+
+    pub fn trigger(&self) {
+        let &(ref lock, ref cvar) = &*self.trigger;
+        let mut started = lock.lock();
+        *started = true;
+        cvar.notify_one();
+    }
+
+    pub fn wait_for_trigger(&self) {
+        let &(ref lock, ref cvar) = &*sync.trigger;
+        let mut started = lock.lock();
+        if !*started {
+            cvar.wait(&mut started);
+        }
+        *started = false;
+    }
+
+    pub fn notify(&self) {
+        self.notify.notify_waiters();
+    }
+
+    pub async fn wait_for_notify(&self) {
+        sync.notify.notified().await;
+    }
 }
 
 #[distributed_slice(ASYNC_SAMPLERS)]
@@ -25,7 +50,7 @@ fn spawn(config: Arc<Config>, runtime: &Runtime) {
         return;
     }
 
-    let sync = SyncPrimitive::new();
+    let sync = Arc::new(SyncPrimitive::new());
 
     let thread = spawn_bpf(sync.clone());
 
@@ -91,7 +116,7 @@ pub struct Runqlat {
     interval: AsyncInterval,
 }
 
-fn spawn_bpf(sync: SyncPrimitive) -> std::thread::JoinHandle<()> {
+fn spawn_bpf(sync: Arc<SyncPrimitive>) -> std::thread::JoinHandle<()> {
     // define userspace metric sets
     let counters = vec![Counter::new(&SCHEDULER_IVCSW, None)];
 
@@ -151,14 +176,8 @@ fn spawn_bpf(sync: SyncPrimitive) -> std::thread::JoinHandle<()> {
 
         // the sampler loop
         loop {
-            // wait until we are notified to start
-            {
-                let &(ref lock, ref cvar) = &*sync.notify;
-                let mut started = lock.lock();
-                if !*started {
-                    cvar.wait(&mut started);
-                }
-            }
+            // wait until start trigger
+            sync.wait_for_trigger();
 
             let now = Instant::now();
 
@@ -173,13 +192,7 @@ fn spawn_bpf(sync: SyncPrimitive) -> std::thread::JoinHandle<()> {
 
             prev = now;
 
-            // notify that we have finished running
-            {
-                let &(ref lock, ref cvar) = &*sync.notify;
-                let mut running = lock.lock();
-                *running = false;
-                cvar.notify_one();
-            }
+            sync.notify();
         }
     })
 }
@@ -195,21 +208,10 @@ impl AsyncSampler for Runqlat {
             return;
         }
 
-        // notify the thread to start
-        {
-            let &(ref lock, ref cvar) = &*self.sync.notify;
-            let mut started = lock.lock();
-            *started = true;
-            cvar.notify_one();
-        }
+        // trigger bpf refresh
+        self.sync.trigger();
 
-        // wait for notification that thread has finished
-        {
-            let &(ref lock, ref cvar) = &*self.sync.notify;
-            let mut running = lock.lock();
-            if *running {
-                cvar.wait(&mut running);
-            }
-        }
+        // wait for completion
+        self.sync.wait_for_notify().await;
     }
 }
