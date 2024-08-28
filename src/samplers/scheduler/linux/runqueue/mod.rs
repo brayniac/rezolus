@@ -42,8 +42,6 @@ use crate::common::*;
 use crate::samplers::scheduler::stats::*;
 use crate::samplers::scheduler::*;
 
-use parking_lot::{Condvar, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::JoinHandle;
 
 impl GetMap for ModSkel<'_> {
