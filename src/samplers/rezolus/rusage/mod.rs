@@ -1,11 +1,12 @@
+use tokio::runtime::Runtime;
 use crate::*;
 
 use super::stats::*;
 use crate::common::units::{KIBIBYTES, MICROSECONDS, SECONDS};
 
 #[distributed_slice(SAMPLERS)]
-fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
-    Rusage::init(config)
+fn init(config: &Config, runtime: &Runtime) -> Result<Box<dyn Sampler>, ()> {
+    Rusage::init(config, runtime)
 }
 
 const NAME: &str = "rezolus_rusage";
@@ -17,11 +18,13 @@ pub struct Rusage {
 }
 
 impl Rusage {
-    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
+    pub fn init(config: &Config, runtime: &Runtime) -> Result<Box<dyn Sampler>, ()> {
         // check if sampler should be enabled
         if !config.enabled(NAME) {
             return Err(());
         }
+
+        let _ = runtime.enter();
 
         Ok(Box::new(Self {
             interval: config.interval(NAME),

@@ -1,3 +1,4 @@
+use tokio::runtime::Runtime;
 use async_trait::async_trait;
 use backtrace::Backtrace;
 use clap::{Arg, Command};
@@ -95,7 +96,7 @@ pub static PERCENTILES: &[(&str, f64)] = &[
 ];
 
 #[distributed_slice]
-pub static SAMPLERS: [fn(config: &Config) -> Result<Box<dyn Sampler>, ()>] = [..];
+pub static SAMPLERS: [fn(config: &Config, runtime: &Runtime) -> Result<Box<dyn Sampler>, ()>] = [..];
 
 #[metric(
     name = "runtime/sample/loop",
@@ -208,6 +209,10 @@ fn main() {
         .expect("failed to launch async runtime");
 
     for sampler in SAMPLERS {
+        info!("initializing sampler...");
+
+        let _ = rt.enter();
+
         if let Ok(mut sampler) = sampler(&config) {
             if sampler.is_fast() {
                 fast_sampler_rt.spawn(async move {
@@ -223,6 +228,10 @@ fn main() {
                 });
             }
         }
+    }
+
+    loop {
+        std::thread::sleep(core::time::Duration::from_secs(1));
     }
 }
 
