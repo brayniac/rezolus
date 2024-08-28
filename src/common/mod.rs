@@ -30,7 +30,7 @@ use tokio::sync::Notify;
 /// `parking_lot::CondVar` to block and trigger the synchronous thread. The
 /// thread can then provide a notification to the task when it has completed.
 #[derive(Clone)]
-struct SyncPrimitive {
+pub struct SyncPrimitive {
     initialized: Arc<AtomicBool>,
     trigger: Arc<(Mutex<bool>, Condvar)>,
     notify: Arc<Notify>,
