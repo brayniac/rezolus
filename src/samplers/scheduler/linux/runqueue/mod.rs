@@ -1,40 +1,5 @@
 use crate::*;
-use tokio::sync::Notify;
-
-
-#[derive(Clone)]
-struct SyncPrimitive {
-    initialized: Arc<AtomicBool>,
-    trigger: Arc<(Mutex<bool>, Condvar)>,
-    notify: Arc<Notify>,
-}
-
-impl SyncPrimitive {
-    pub fn new() -> Self {
-        let initialized = Arc::new(AtomicBool::new(false));
-        let trigger = Arc::new((Mutex::new(false), Condvar::new()));
-        let notify = Arc::new(Notify::new());
-
-        Self {
-            initialized,
-            trigger,
-            notify,
-        }
-    }
-
-    /// Trigger the remote thread waiting on the condition variable.
-    pub fn trigger(&self) {
-        let &(ref lock, ref cvar) = &*self.trigger;
-        let mut started = lock.lock();
-        *started = true;
-        cvar.notify_one();
-    }
-
-    /// Wait to be notified that the remote thread has completed its task.
-    pub async fn wait_notify(&self) {
-        self.notify.notified().await;
-    }
-}
+use crate::common::SyncPrimitive;
 
 #[distributed_slice(ASYNC_SAMPLERS)]
 fn spawn(config: Arc<Config>, runtime: &Runtime) {
@@ -170,13 +135,7 @@ fn spawn_bpf(sync: SyncPrimitive) -> std::thread::JoinHandle<()> {
         // the sampler loop
         loop {
             // wait until we are notified to start
-            {
-                let &(ref lock, ref cvar) = &*sync.trigger;
-                let mut started = lock.lock();
-                if !*started {
-                    cvar.wait(&mut started);
-                }
-            }
+            sync.wait_trigger();
 
             let now = Instant::now();
 
