@@ -1,4 +1,6 @@
 use crate::*;
+use tokio::sync::Notify;
+
 
 #[derive(Clone)]
 struct SyncPrimitive {
@@ -11,7 +13,7 @@ impl SyncPrimitive {
     pub fn new() -> Self {
         let initialized = Arc::new(AtomicBool::new(false));
         let trigger = Arc::new((Mutex::new(false), Condvar::new()));
-        let notify = Arc::new(tokio::sync::Notify::new());
+        let notify = Arc::new(Notify::new());
 
         Self {
             initialized,
