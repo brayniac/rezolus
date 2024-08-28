@@ -110,7 +110,7 @@ impl GetMap for ModSkel<'_> {
 /// * `scheduler/context_switch/voluntary`
 pub struct Runqlat {
     thread: JoinHandle<()>,
-    sync: SyncPrimitive,
+    sync: Arc<SyncPrimitive>,
     interval: AsyncInterval,
 }
 
