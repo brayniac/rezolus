@@ -9,8 +9,14 @@ use ringlog::error;
 const NAME: &str = "cpu_usage";
 
 #[distributed_slice(SAMPLERS)]
-fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
-    CpuUsage::init(config)
+fn init(config: Arc<Config>, runtime: &Runtime) {
+    runtime.spawn(async {
+        if let Ok(mut s) = CpuUsage::init(config) {
+            loop {
+                s.sample().await;
+            }
+        }
+    });
 }
 
 struct CpuUsage {
@@ -22,7 +28,7 @@ struct CpuUsage {
 }
 
 impl CpuUsage {
-    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
+    pub fn init(config: Arc<Config>) -> Result<Box<dyn Sampler>, ()> {
         // check if sampler should be enabled
         if !config.enabled(NAME) {
             return Err(());
@@ -35,12 +41,13 @@ impl CpuUsage {
             CounterWithHist::new(&CPU_USAGE_NICE, &CPU_USAGE_NICE_HISTOGRAM),
             CounterWithHist::new(&CPU_USAGE_SYSTEM, &CPU_USAGE_SYSTEM_HISTOGRAM),
             CounterWithHist::new(&CPU_USAGE_IDLE, &CPU_USAGE_IDLE_HISTOGRAM),
+            CounterWithHist::new(&CPU_USAGE_BUSY, &CPU_USAGE_BUSY_HISTOGRAM),
         ];
 
         let mut counters_percpu = Vec::with_capacity(cpus);
 
         for cpu in 0..cpus {
-            let states = ["user", "nice", "system", "idle"];
+            let states = ["user", "nice", "system", "idle", "busy"];
 
             let counters: Vec<DynBoxedMetric<metriken::Counter>> = states
                 .iter()

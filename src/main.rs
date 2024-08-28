@@ -96,7 +96,7 @@ pub static PERCENTILES: &[(&str, f64)] = &[
 ];
 
 #[distributed_slice]
-pub static SAMPLERS: [fn(config: &Config, runtime: &Runtime) -> Result<Box<dyn Sampler>, ()>] = [..];
+pub static SAMPLERS: [fn(config: Arc<Config>, runtime: &Runtime)] = [..];
 
 #[metric(
     name = "runtime/sample/loop",
@@ -194,40 +194,15 @@ fn main() {
     // spawn http exposition thread
     rt.spawn(exposition::http(config.clone()));
 
-    // initialize fast sampler async runtime
-    let fast_sampler_rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .worker_threads(1)
-        .build()
-        .expect("failed to launch async runtime");
-
-    // initialize normal sampler async runtime
-    let normal_sampler_rt = tokio::runtime::Builder::new_multi_thread()
+    // initialize sampler async runtime
+    let sampler_rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .worker_threads(1)
         .build()
         .expect("failed to launch async runtime");
 
     for sampler in SAMPLERS {
-        info!("initializing sampler...");
-
-        let _ = rt.enter();
-
-        if let Ok(mut sampler) = sampler(&config) {
-            if sampler.is_fast() {
-                fast_sampler_rt.spawn(async move {
-                    loop {
-                        sampler.sample().await;
-                    }
-                });
-            } else {
-                normal_sampler_rt.spawn(async move {
-                    loop {
-                        sampler.sample().await;
-                    }
-                });
-            }
-        }
+        sampler(config.clone(), &sampler_rt);
     }
 
     loop {
@@ -239,8 +214,4 @@ fn main() {
 pub trait Sampler: Send + Sync {
     /// Do some sampling and updating of stats
     async fn sample(&mut self);
-
-    fn is_fast(&self) -> bool {
-        false
-    }
 }

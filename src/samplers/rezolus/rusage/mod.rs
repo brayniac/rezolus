@@ -5,8 +5,14 @@ use super::stats::*;
 use crate::common::units::{KIBIBYTES, MICROSECONDS, SECONDS};
 
 #[distributed_slice(SAMPLERS)]
-fn init(config: &Config, runtime: &Runtime) -> Result<Box<dyn Sampler>, ()> {
-    Rusage::init(config, runtime)
+fn init(config: Arc<Config>, runtime: &Runtime) {
+    runtime.spawn(async {
+        if let Ok(mut s) = Rusage::init(config) {
+            loop {
+                s.sample().await;
+            }
+        }
+    });
 }
 
 const NAME: &str = "rezolus_rusage";
@@ -18,13 +24,11 @@ pub struct Rusage {
 }
 
 impl Rusage {
-    pub fn init(config: &Config, runtime: &Runtime) -> Result<Box<dyn Sampler>, ()> {
+    pub fn init(config: Arc<Config>) -> Result<Box<dyn Sampler>, ()> {
         // check if sampler should be enabled
         if !config.enabled(NAME) {
             return Err(());
         }
-
-        let _ = runtime.enter();
 
         Ok(Box::new(Self {
             interval: config.interval(NAME),
@@ -48,10 +52,6 @@ impl Sampler for Rusage {
         let elapsed = now.elapsed().as_nanos() as u64;
         METADATA_REZOLUS_RUSAGE_RUNTIME.add(elapsed);
         let _ = METADATA_REZOLUS_RUSAGE_RUNTIME_HISTOGRAM.increment(elapsed);
-    }
-
-    fn is_fast(&self) -> bool {
-        true
     }
 }
 

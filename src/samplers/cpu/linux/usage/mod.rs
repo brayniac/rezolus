@@ -14,12 +14,24 @@ use proc_stat::*;
 
 #[cfg(feature = "bpf")]
 #[distributed_slice(SAMPLERS)]
-fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
-    CpuUsage::init(config).or_else(|_| ProcStat::init(config))
+fn init(config: Arc<Config>, runtime: &Runtime) {
+    runtime.spawn(async {
+        if let Ok(mut s) = CpuUsage::init(config).or_else(|_| ProcStat::init(config)) {
+            loop {
+                s.sample().await;
+            }
+        }
+    });
 }
 
 #[cfg(not(feature = "bpf"))]
 #[distributed_slice(SAMPLERS)]
-fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
-    ProcStat::init(config)
+fn init(config: Arc<Config>, runtime: &Runtime) {
+    runtime.spawn(async {
+        if let Ok(mut s) = ProcStat::init(config) {
+            loop {
+                s.sample().await;
+            }
+        }
+    });
 }
