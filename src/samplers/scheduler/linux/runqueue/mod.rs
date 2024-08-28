@@ -22,12 +22,17 @@ impl SyncPrimitive {
         }
     }
 
-    /// Trigger the thread waiting on the condition variable.
+    /// Trigger the remote thread waiting on the condition variable.
     pub fn trigger(&self) {
-        let &(ref lock, ref cvar) = &*self.sync.trigger;
+        let &(ref lock, ref cvar) = &*self.trigger;
         let mut started = lock.lock();
         *started = true;
         cvar.notify_one();
+    }
+
+    /// Wait to be notified that the remote thread has completed its task.
+    pub async fn wait_notify(&self) {
+        self.notify.notified().await;
     }
 }
 
@@ -212,8 +217,6 @@ impl AsyncSampler for Runqlat {
         self.sync.trigger();
 
         // wait for notification that thread has finished
-        {
-            self.sync.notify.notified().await;
-        }
+        self.sync.wait_notify().await;
     }
 }
