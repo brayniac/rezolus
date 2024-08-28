@@ -1,7 +1,6 @@
 use crate::*;
 use tokio::sync::Notify;
 
-#[derive(Clone)]
 struct SyncPrimitive {
     trigger: (Mutex<bool>, Condvar),
     notify: Notify,
@@ -26,7 +25,7 @@ impl SyncPrimitive {
     }
 
     pub fn wait_for_trigger(&self) {
-        let &(ref lock, ref cvar) = &*sync.trigger;
+        let &(ref lock, ref cvar) = &*self.trigger;
         let mut started = lock.lock();
         if !*started {
             cvar.wait(&mut started);
@@ -170,9 +169,6 @@ fn spawn_bpf(sync: Arc<SyncPrimitive>) -> std::thread::JoinHandle<()> {
             .distribution("running", &SCHEDULER_RUNNING)
             .distribution("offcpu", &SCHEDULER_OFFCPU)
             .build();
-
-        // indicate that we have completed initialization
-        sync.initialized.store(true, Ordering::SeqCst);
 
         // the sampler loop
         loop {
