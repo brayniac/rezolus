@@ -151,12 +151,7 @@ fn spawn_bpf(sync: SyncPrimitive) -> std::thread::JoinHandle<()> {
             prev = now;
 
             // notify that we have finished running
-            {
-                let &(ref lock, ref _cvar) = &*sync.trigger;
-                let mut running = lock.lock();
-                *running = false;
-                sync.notify.notify_one();
-            }
+            sync.notify();
         }
     })
 }
