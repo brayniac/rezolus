@@ -129,9 +129,6 @@ fn spawn_bpf(sync: SyncPrimitive) -> std::thread::JoinHandle<()> {
             .distribution("offcpu", &SCHEDULER_OFFCPU)
             .build();
 
-        // indicate that we have completed initialization
-        sync.initialized.store(true, Ordering::SeqCst);
-
         // the sampler loop
         loop {
             // wait until we are notified to start
