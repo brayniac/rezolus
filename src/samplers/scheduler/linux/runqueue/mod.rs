@@ -21,6 +21,14 @@ impl SyncPrimitive {
             notify,
         }
     }
+
+    /// Trigger the thread waiting on the condition variable.
+    pub fn trigger(&self) {
+        let &(ref lock, ref cvar) = &*self.sync.trigger;
+        let mut started = lock.lock();
+        *started = true;
+        cvar.notify_one();
+    }
 }
 
 #[distributed_slice(ASYNC_SAMPLERS)]
@@ -201,12 +209,7 @@ impl AsyncSampler for Runqlat {
         }
 
         // notify the thread to start
-        {
-            let &(ref lock, ref cvar) = &*self.sync.trigger;
-            let mut started = lock.lock();
-            *started = true;
-            cvar.notify_one();
-        }
+        self.sync.trigger();
 
         // wait for notification that thread has finished
         {
