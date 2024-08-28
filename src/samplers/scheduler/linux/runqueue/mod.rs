@@ -183,7 +183,7 @@ fn spawn_bpf(sync: SyncPrimitive) -> std::thread::JoinHandle<()> {
                 let &(ref lock, ref cvar) = &*sync.trigger;
                 let mut running = lock.lock();
                 *running = false;
-                cvar.notify_one();
+                sync.notify.notify_one();
             }
         }
     })
@@ -210,11 +210,7 @@ impl AsyncSampler for Runqlat {
 
         // wait for notification that thread has finished
         {
-            let &(ref lock, ref cvar) = &*self.sync.trigger;
-            let mut running = lock.lock();
-            if *running {
-                cvar.wait(&mut running);
-            }
+            sync.notified().await;
         }
     }
 }
