@@ -1,45 +1,5 @@
 use crate::*;
-use tokio::sync::Notify;
-
-struct SyncPrimitive {
-    trigger: (Mutex<bool>, Condvar),
-    notify: Notify,
-}
-
-impl SyncPrimitive {
-    pub fn new() -> Self {
-        let trigger = Arc::new((Mutex::new(false), Condvar::new()));
-
-        Self {
-            trigger: (Mutex::new(false), Condvar::new()),
-            notify: Notify::new(),
-        }
-    }
-
-    pub fn trigger(&self) {
-        let &(ref lock, ref cvar) = &*self.trigger;
-        let mut started = lock.lock();
-        *started = true;
-        cvar.notify_one();
-    }
-
-    pub fn wait_for_trigger(&self) {
-        let &(ref lock, ref cvar) = &*self.trigger;
-        let mut started = lock.lock();
-        if !*started {
-            cvar.wait(&mut started);
-        }
-        *started = false;
-    }
-
-    pub fn notify(&self) {
-        self.notify.notify_waiters();
-    }
-
-    pub async fn wait_for_notify(&self) {
-        self.notify.notified().await;
-    }
-}
+use crate::common::SyncPrimitive;
 
 #[distributed_slice(ASYNC_SAMPLERS)]
 fn spawn(config: Arc<Config>, runtime: &Runtime) {
