@@ -3,16 +3,19 @@ use crate::*;
 #[derive(Clone)]
 struct SyncPrimitive {
     initialized: Arc<AtomicBool>,
-    notify: Arc<(Mutex<bool>, Condvar)>,
+    trigger: Arc<(Mutex<bool>, Condvar)>,
+    notify: Arc<Notify>,
 }
 
 impl SyncPrimitive {
     pub fn new() -> Self {
         let initialized = Arc::new(AtomicBool::new(false));
-        let notify = Arc::new((Mutex::new(false), Condvar::new()));
+        let trigger = Arc::new((Mutex::new(false), Condvar::new()));
+        let notify = Arc::new(tokio::sync::Notify::new());
 
         Self {
             initialized,
+            trigger,
             notify,
         }
     }
@@ -153,7 +156,7 @@ fn spawn_bpf(sync: SyncPrimitive) -> std::thread::JoinHandle<()> {
         loop {
             // wait until we are notified to start
             {
-                let &(ref lock, ref cvar) = &*sync.notify;
+                let &(ref lock, ref cvar) = &*sync.trigger;
                 let mut started = lock.lock();
                 if !*started {
                     cvar.wait(&mut started);
@@ -175,7 +178,7 @@ fn spawn_bpf(sync: SyncPrimitive) -> std::thread::JoinHandle<()> {
 
             // notify that we have finished running
             {
-                let &(ref lock, ref cvar) = &*sync.notify;
+                let &(ref lock, ref cvar) = &*sync.trigger;
                 let mut running = lock.lock();
                 *running = false;
                 cvar.notify_one();
@@ -197,7 +200,7 @@ impl AsyncSampler for Runqlat {
 
         // notify the thread to start
         {
-            let &(ref lock, ref cvar) = &*self.sync.notify;
+            let &(ref lock, ref cvar) = &*self.sync.trigger;
             let mut started = lock.lock();
             *started = true;
             cvar.notify_one();
@@ -205,7 +208,7 @@ impl AsyncSampler for Runqlat {
 
         // wait for notification that thread has finished
         {
-            let &(ref lock, ref cvar) = &*self.sync.notify;
+            let &(ref lock, ref cvar) = &*self.sync.trigger;
             let mut running = lock.lock();
             if *running {
                 cvar.wait(&mut running);
