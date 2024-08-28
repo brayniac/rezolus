@@ -24,7 +24,7 @@ pub struct ProcStat {
 }
 
 impl ProcStat {
-    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
+    pub fn init(config: Arc<Config>) -> Result<Box<dyn Sampler>, ()> {
         // check if sampler should be enabled
         if !config.enabled(NAME) {
             return Err(());
@@ -115,14 +115,6 @@ impl ProcStat {
             nanos_per_tick,
             interval: config.interval(NAME),
         }))
-    }
-
-    pub async fn run(config: Arc<Config>) {
-        if let Ok(mut sampler) = Self::init(config) {
-            loop {
-                sampler.sample().await;
-            }
-        }
     }
 }
 

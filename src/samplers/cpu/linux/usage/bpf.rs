@@ -46,7 +46,7 @@ pub struct CpuUsage {
 }
 
 impl CpuUsage {
-    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
+    pub fn init(config: Arc<Config>) -> Result<Box<dyn Sampler>, ()> {
         // check if sampler should be enabled
         if !(config.enabled(NAME) && config.bpf(NAME)) {
             return Err(());
@@ -271,9 +271,5 @@ impl Sampler for CpuUsage {
             let busy: u64 = self.percpu_counters.sum(cpu).unwrap_or(0);
             let _ = busy_counter.set(busy);
         }
-    }
-
-    fn is_fast(&self) -> bool {
-        true
     }
 }

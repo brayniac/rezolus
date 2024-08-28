@@ -15,8 +15,14 @@ use proc_stat::*;
 #[cfg(feature = "bpf")]
 #[distributed_slice(SAMPLERS)]
 fn init(config: Arc<Config>, runtime: &Runtime) {
+    // check if sampler should be enabled
+    if !config.enabled(NAME) {
+        return;
+    }
+
+    // spawn the sampler
     runtime.spawn(async {
-        if let Ok(mut s) = CpuUsage::init(config).or_else(|_| ProcStat::init(config)) {
+        if let Ok(mut s) = CpuUsage::init(config.clone()).or_else(|_| ProcStat::init(config)) {
             loop {
                 s.sample().await;
             }
@@ -27,6 +33,12 @@ fn init(config: Arc<Config>, runtime: &Runtime) {
 #[cfg(not(feature = "bpf"))]
 #[distributed_slice(SAMPLERS)]
 fn init(config: Arc<Config>, runtime: &Runtime) {
+    // check if sampler should be enabled
+    if !config.enabled(NAME) {
+        return;
+    }
+
+    // spawn the sampler
     runtime.spawn(async {
         if let Ok(mut s) = ProcStat::init(config) {
             loop {

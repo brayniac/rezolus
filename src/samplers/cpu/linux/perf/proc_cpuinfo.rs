@@ -9,7 +9,7 @@ pub struct ProcCpuinfo {
 }
 
 impl ProcCpuinfo {
-    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
+    pub fn init(config: Arc<Config>) -> Result<Box<dyn Sampler>, ()> {
         let file = std::fs::File::open("/proc/cpuinfo")
             .map(|f| File::from_std(f))
             .map_err(|e| {

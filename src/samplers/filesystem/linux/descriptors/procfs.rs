@@ -11,7 +11,7 @@ pub struct Procfs {
 }
 
 impl Procfs {
-    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
+    pub fn init(config: Arc<Config>) -> Result<Box<dyn Sampler>, ()> {
         // check if sampler should be enabled
         if !config.enabled(NAME) {
             return Err(());

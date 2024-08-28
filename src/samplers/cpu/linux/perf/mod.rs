@@ -16,8 +16,20 @@ use perf_group::*;
 use proc_cpuinfo::*;
 
 #[distributed_slice(SAMPLERS)]
-fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
-    Perf::init(config).or_else(|_| ProcCpuinfo::init(config))
+fn init(config: Arc<Config>, runtime: &Runtime) {
+    // check if sampler should be enabled
+    if !config.enabled(NAME) {
+        return;
+    }
+
+    // spawn the sampler
+    runtime.spawn(async {
+        if let Ok(mut s) = Perf::init(config.clone()).or_else(|_| ProcCpuinfo::init(config)) {
+            loop {
+                s.sample().await;
+            }
+        }
+    });
 }
 
 const NAME: &str = "cpu_perf";
@@ -34,9 +46,9 @@ struct PerfSampler {
 }
 
 impl Perf {
-    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
+    pub fn init(config: Arc<Config>) -> Result<Box<dyn Sampler>, ()> {
         // check if sampler should be enabled
-        if !(config.enabled(NAME) && config.bpf(NAME)) {
+        if !config.bpf(NAME) {
             return Err(());
         }
 

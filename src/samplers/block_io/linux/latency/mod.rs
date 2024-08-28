@@ -1,8 +1,14 @@
 use crate::*;
 
 #[distributed_slice(SAMPLERS)]
-fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
-    BlockIOLatency::init(config)
+fn init(config: Arc<Config>, runtime: &Runtime) {
+    runtime.spawn(async {
+        if let Ok(mut s) = BlockIOLatency::init(config) {
+            loop {
+                s.sample().await;
+            }
+        }
+    });
 }
 
 mod bpf {
@@ -45,7 +51,7 @@ pub struct BlockIOLatency {
 }
 
 impl BlockIOLatency {
-    pub fn init(config: &Config) -> Result<Box<dyn Sampler>, ()> {
+    pub fn init(config: Arc<Config>) -> Result<Box<dyn Sampler>, ()> {
         // check if sampler should be enabled
         if !(config.enabled(NAME) && config.bpf(NAME)) {
             return Err(());
@@ -193,9 +199,5 @@ impl Sampler for BlockIOLatency {
                 cvar.wait(&mut running);
             }
         }
-    }
-
-    fn is_fast(&self) -> bool {
-        true
     }
 }

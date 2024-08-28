@@ -7,8 +7,11 @@ pub struct Interval {
 
 impl Interval {
     pub fn new(period: Duration) -> Self {
+        let mut inner = tokio::time::interval(period);
+        inner.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
         Self {
-            inner: tokio::time::interval(period),
+            inner,
             last: None,
         }
     }

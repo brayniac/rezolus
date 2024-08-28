@@ -197,7 +197,8 @@ fn main() {
     // initialize sampler async runtime
     let sampler_rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
-        .worker_threads(1)
+        .worker_threads(8)
+        .max_blocking_threads(8)
         .build()
         .expect("failed to launch async runtime");
 

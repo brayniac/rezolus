@@ -56,13 +56,13 @@ bpf = ["libbpf-cargo","libbpf-rs","libbpf-sys"]
 
 [profile.bench]
 debug = true
-lto = true
-codegen-units = 1
+lto = "thin"
+# codegen-units = 1
 
 [profile.release]
 debug = true
-lto = true
-codegen-units = 1
+lto = "thin"
+# codegen-units = 1
 
 [workspace]
 members = [
