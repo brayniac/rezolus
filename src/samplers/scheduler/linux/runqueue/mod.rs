@@ -180,7 +180,7 @@ fn spawn_bpf(sync: SyncPrimitive) -> std::thread::JoinHandle<()> {
 
             // notify that we have finished running
             {
-                let &(ref lock, ref cvar) = &*sync.trigger;
+                let &(ref lock, ref _cvar) = &*sync.trigger;
                 let mut running = lock.lock();
                 *running = false;
                 sync.notify.notify_one();
@@ -210,7 +210,7 @@ impl AsyncSampler for Runqlat {
 
         // wait for notification that thread has finished
         {
-            sync.notified().await;
+            self.sync.notified().await;
         }
     }
 }
