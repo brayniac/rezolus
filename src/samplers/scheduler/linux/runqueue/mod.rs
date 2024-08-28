@@ -210,7 +210,7 @@ impl AsyncSampler for Runqlat {
 
         // wait for notification that thread has finished
         {
-            self.sync.notified().await;
+            self.sync.notify.notified().await;
         }
     }
 }
