@@ -8,12 +8,11 @@ struct SyncPrimitive {
 
 impl SyncPrimitive {
     pub fn new() -> Self {
-        let initialized = Arc::new(AtomicBool::new(false));
-        let notify = Arc::new((Mutex::new(false), Condvar::new()));
+        let trigger = Arc::new((Mutex::new(false), Condvar::new()));
 
         Self {
-            initialized,
-            notify,
+            trigger: (Mutex::new(false), Condvar::new()),
+            notify: Notify::new(),
         }
     }
 
@@ -38,7 +37,7 @@ impl SyncPrimitive {
     }
 
     pub async fn wait_for_notify(&self) {
-        sync.notify.notified().await;
+        self.notify.notified().await;
     }
 }
 
