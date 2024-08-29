@@ -37,7 +37,7 @@ const NAME: &str = "scheduler_runqueue";
 
 use bpf::*;
 
-use crate::common::bpf::*;
+use crate::common::bpf2::*;
 use crate::common::*;
 use crate::samplers::scheduler::stats::*;
 use crate::samplers::scheduler::*;
@@ -53,6 +53,23 @@ impl GetMap for ModSkel<'_> {
             "offcpu" => &self.maps.offcpu,
             _ => unimplemented!(),
         }
+    }
+}
+
+impl OpenSkelExt for ModSkel<'_> {
+    fn log_prog_instructions(&self) {
+        debug!(
+            "{NAME} handle__sched_wakeup() BPF instruction count: {}",
+            self.progs.handle__sched_wakeup.insn_cnt()
+        );
+        debug!(
+            "{NAME} handle__sched_wakeup_new() BPF instruction count: {}",
+            self.progs.handle__sched_wakeup_new.insn_cnt()
+        );
+        debug!(
+            "{NAME} handle__sched_switch() BPF instruction count: {}",
+            self.progs.handle__sched_switch.insn_cnt()
+        );
     }
 }
 
@@ -77,50 +94,15 @@ fn spawn_bpf(sync: SyncPrimitive) -> std::thread::JoinHandle<()> {
     let counters = vec![Counter::new(&SCHEDULER_IVCSW, None)];
 
     std::thread::spawn(move || {
-        // storage for the BPF object file
-        let open_object: &'static mut MaybeUninit<OpenObject> =
-            Box::leak(Box::new(MaybeUninit::uninit()));
-
-        // open and load the program
-        let mut skel = match ModSkelBuilder::default().open(open_object) {
-            Ok(s) => match s.load() {
-                Ok(s) => s,
-                Err(e) => {
-                    error!("failed to load bpf program: {e}");
-                    return;
-                }
-            },
-            Err(e) => {
-                error!("failed to open bpf builder: {e}");
-                return;
-            }
-        };
-
-        // debugging info about BPF instruction counts
-        debug!(
-            "{NAME} handle__sched_wakeup() BPF instruction count: {}",
-            skel.progs.handle__sched_wakeup.insn_cnt()
-        );
-        debug!(
-            "{NAME} handle__sched_wakeup_new() BPF instruction count: {}",
-            skel.progs.handle__sched_wakeup_new.insn_cnt()
-        );
-        debug!(
-            "{NAME} handle__sched_switch() BPF instruction count: {}",
-            skel.progs.handle__sched_switch.insn_cnt()
-        );
-
-        // attach the BPF program
-        if let Err(e) = skel.attach() {
-            error!("failed to attach bpf program: {e}");
-            return;
-        };
-
-        // get the time
         let mut prev = Instant::now();
 
-        // wrap the BPF program and define BPF maps
-        let mut bpf = BpfBuilder::new(skel)
+        let builder = BpfBuilder::new(ModSkelBuilder::default());
+
+        if builder.is_err() {
+            return;
+        }
+
+        let mut bpf = builder.unwrap()
             .counters("counters", counters)
             .distribution("runqlat", &SCHEDULER_RUNQUEUE_LATENCY)
             .distribution("running", &SCHEDULER_RUNNING)
@@ -133,12 +115,12 @@ fn spawn_bpf(sync: SyncPrimitive) -> std::thread::JoinHandle<()> {
             sync.wait_trigger();
 
             let now = Instant::now();
-
             METADATA_SCHEDULER_RUNQUEUE_COLLECTED_AT.set(UnixInstant::EPOCH.elapsed().as_nanos());
 
             // refresh userspace metrics
             bpf.refresh(now.duration_since(prev));
 
+            // update metadata metrics
             let elapsed = now.elapsed().as_nanos() as u64;
             METADATA_SCHEDULER_RUNQUEUE_RUNTIME.add(elapsed);
             let _ = METADATA_SCHEDULER_RUNQUEUE_RUNTIME_HISTOGRAM.increment(elapsed);

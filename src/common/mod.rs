@@ -5,6 +5,9 @@
 #[cfg(all(feature = "bpf", target_os = "linux"))]
 pub mod bpf;
 
+#[cfg(all(feature = "bpf", target_os = "linux"))]
+pub mod bpf2;
+
 pub mod classic;
 pub mod units;
 
