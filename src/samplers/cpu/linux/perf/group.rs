@@ -4,6 +4,8 @@ use perf_event::events::x86::{Msr, MsrId};
 use perf_event::events::Hardware;
 use perf_event::{Builder, ReadFormat};
 
+use std::os::fd::AsRawFd;
+
 #[derive(Copy, Clone, Debug)]
 enum Counter {
     Cycles,
