@@ -185,6 +185,12 @@ impl PerfGroup {
         })
     }
 
+    pub fn get_fd(&self, counter: Counter) -> Option<i32> {
+        if let Some(c) = self.group[counter as usize] {
+            c.as_raw_fd() as i32
+        }
+    }
+
     pub fn get_metrics(&mut self) -> Result<Reading, ()> {
         let current = self.group[self.leader_id]
             .as_mut()

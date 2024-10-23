@@ -12,4 +12,5 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u32);
+	__uint(max_entries, MAX_CPUS * COUNTER_GROUP_WIDTH);
 } counters SEC(".maps");
