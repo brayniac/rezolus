@@ -45,6 +45,8 @@ impl PerfInner {
         let mut counters = ScopedCounters::new();
         let mut gauges = ScopedGauges::new();
 
+        let mut fds = vec![0; 1024 * 8];
+
         for cpu in cpus {
             for counter in &["cpu/cycles", "cpu/instructions"] {
                 counters.push(
@@ -67,7 +69,15 @@ impl PerfInner {
             }
 
             match PerfGroup::new(cpu) {
-                Ok(g) => groups.push(g),
+                Ok(g) => {
+                    fds[cpu * 8 + Counter::Cycles as usize] = g.get_fd().unwrap_or(0);
+                    fds[cpu * 8 + Counter::Instructions as usize] = g.get_fd().unwrap_or(0);
+                    fds[cpu * 8 + Counter::Tsc as usize] = g.get_fd().unwrap_or(0);
+                    fds[cpu * 8 + Counter::Aperf as usize] = g.get_fd().unwrap_or(0);
+                    fds[cpu * 8 + Counter::Mperf as usize] = g.get_fd().unwrap_or(0);
+
+                    groups.push(g)
+                }
                 Err(_) => {
                     warn!("Failed to create the perf group on CPU {}", cpu);
                     // we want to continue because it's possible that this CPU is offline
@@ -75,6 +85,8 @@ impl PerfInner {
                 }
             };
         }
+
+        println!("fds: {:?}", fds);
 
         if groups.is_empty() {
             return Err(std::io::Error::other(

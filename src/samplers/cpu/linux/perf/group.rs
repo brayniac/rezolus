@@ -7,7 +7,7 @@ use perf_event::{Builder, ReadFormat};
 use std::os::fd::AsRawFd;
 
 #[derive(Copy, Clone, Debug)]
-enum Counter {
+pub enum Counter {
     Cycles,
     Instructions,
     Tsc,
