@@ -24,12 +24,12 @@ fn init(config: Arc<Config>) -> SamplerResult {
     let inner = PerfInner::new()?;
 
     Ok(Some(Box::new(Perf {
-        inner: Arc::new(Mutex::new(inner)),
+        inner: Arc::new(inner),
     })))
 }
 
 pub struct Perf {
-    inner: Arc<Mutex<PerfInner>>,
+    inner: Arc<PerfInner>,
 }
 
 struct PerfInner {
@@ -86,7 +86,7 @@ impl PerfInner {
         let mut avg_running_frequency = 0;
 
         let readings = {
-            let perf_groups = PERF_GROUPS.get().lock().await;
+            let perf_groups = PERF_GROUPS.lock().await;
             perf_groups.readings()
         };
 
@@ -140,8 +140,7 @@ impl Sampler for Perf {
         // tens of milliseconds on large systems
 
         let _ = spawn_blocking(move || async {
-            let mut inner = inner.lock();
-            inner.refresh().await;
+            self.inner.refresh().await;
         })
         .await;
     }
