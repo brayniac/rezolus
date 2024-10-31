@@ -40,6 +40,8 @@ impl PerfGroups {
             };
 		}
 
+		info!("PerfGroups created for {} out of {} cpus", groups.len(), cpus.len());
+
 		Self {
 			groups,
 		}
