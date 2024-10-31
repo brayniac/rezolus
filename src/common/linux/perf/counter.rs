@@ -1,9 +1,6 @@
-use crate::*;
-
 use perf_event::events::x86::{Msr, MsrId};
 use perf_event::events::Hardware;
 use perf_event::{Builder, ReadFormat};
-
 
 #[derive(Copy, Clone, Debug)]
 pub enum Counter {

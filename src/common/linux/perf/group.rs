@@ -1,10 +1,5 @@
 use crate::*;
-
 use crate::common::linux::perf::Counter;
-
-use perf_event::events::x86::{Msr, MsrId};
-use perf_event::events::Hardware;
-use perf_event::{Builder, ReadFormat};
 
 struct GroupData {
     inner: perf_event::GroupData,
@@ -19,6 +14,8 @@ impl core::ops::Deref for GroupData {
 }
 
 impl GroupData {
+    /// Returns the amount of time this group has been enabled since the
+    /// previous `GroupData`
     pub fn enabled_since(&self, prev: &Self) -> Option<std::time::Duration> {
         if let (Some(this), Some(prev)) = (self.time_enabled(), prev.time_enabled()) {
             Some(this - prev)
@@ -27,6 +24,8 @@ impl GroupData {
         }
     }
 
+    /// Returns the amount of time this group has been running since the
+    /// previous `GroupData`
     pub fn running_since(&self, prev: &Self) -> Option<std::time::Duration> {
         if let (Some(this), Some(prev)) = (self.time_running(), prev.time_running()) {
             Some(this - prev)
@@ -35,6 +34,7 @@ impl GroupData {
         }
     }
 
+    /// Returns the change for a counter since a previous `GroupData`
     pub fn delta(&self, prev: &Self, counter: &perf_event::Counter) -> Option<u64> {
         if let (Some(this), Some(prev)) = (self.get(counter), prev.get(counter)) {
             Some(this.value() - prev.value())

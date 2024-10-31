@@ -1,18 +1,17 @@
+use crate::*;
+use crate::common;
+
+use tokio::sync::Mutex;
+
+use std::sync::LazyLock;
+
 mod counter;
 mod group;
 
 pub use counter::Counter;
 pub use group::Reading;
 
-use crate::*;
-
 use group::PerfGroup;
-
-use crate::common;
-
-use tokio::sync::Mutex;
-
-use std::sync::LazyLock;
 
 pub static PERF_GROUPS: LazyLock<Mutex<PerfGroups>> = LazyLock::new(|| {
     Mutex::new(PerfGroups::new())
@@ -24,6 +23,7 @@ pub struct PerfGroups {
 }
 
 impl PerfGroups {
+	/// Create a new `PerfGroup`
 	pub fn new() -> Self {
 		let cpus = common::linux::cpus().expect("failed to get inventory of CPUs");
 
@@ -47,6 +47,7 @@ impl PerfGroups {
 		}
 	}
 
+	/// Collect readings from all of the groups.
 	pub fn readings(&mut self) -> Vec<Reading> {
 		let mut result = Vec::new();
 
@@ -57,5 +58,10 @@ impl PerfGroups {
 		}
 
 		result
+	}
+
+	/// Returns the number of groups.
+	pub fn len(&self) -> usize {
+		self.groups.len()
 	}
 }
