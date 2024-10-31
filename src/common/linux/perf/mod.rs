@@ -30,7 +30,7 @@ impl PerfGroups {
 		let mut groups = Vec::with_capacity(cpus.len());
 
 		for cpu in &cpus {
-			match PerfGroup::new(cpu) {
+			match PerfGroup::new(*cpu) {
                 Ok(g) => {
                 	groups.push(g);
                 }
