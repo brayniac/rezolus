@@ -1,9 +1,5 @@
 const NAME: &str = "cpu_perf";
 
-mod group;
-
-use group::*;
-
 use crate::common::*;
 use crate::common::linux::perf::*;
 use crate::samplers::cpu::linux::stats::*;
