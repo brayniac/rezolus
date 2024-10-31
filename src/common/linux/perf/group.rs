@@ -1,5 +1,5 @@
-use crate::*;
 use crate::common::linux::perf::Counter;
+use crate::*;
 
 struct GroupData {
     inner: perf_event::GroupData,

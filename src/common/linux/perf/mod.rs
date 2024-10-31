@@ -1,5 +1,5 @@
-use crate::*;
 use crate::common;
+use crate::*;
 
 use tokio::sync::Mutex;
 
@@ -13,55 +13,56 @@ pub use group::Reading;
 
 use group::PerfGroup;
 
-pub static PERF_GROUPS: LazyLock<Mutex<PerfGroups>> = LazyLock::new(|| {
-    Mutex::new(PerfGroups::new())
-});
+pub static PERF_GROUPS: LazyLock<Mutex<PerfGroups>> =
+    LazyLock::new(|| Mutex::new(PerfGroups::new()));
 
 /// Contains one `PerfGroup` per CPU.
 pub struct PerfGroups {
-	groups: Vec<PerfGroup>,
+    groups: Vec<PerfGroup>,
 }
 
 impl PerfGroups {
-	/// Create a new `PerfGroup`
-	pub fn new() -> Self {
-		let cpus = common::linux::cpus().expect("failed to get inventory of CPUs");
+    /// Create a new `PerfGroup`
+    pub fn new() -> Self {
+        let cpus = common::linux::cpus().expect("failed to get inventory of CPUs");
 
-		let mut groups = Vec::with_capacity(cpus.len());
+        let mut groups = Vec::with_capacity(cpus.len());
 
-		for cpu in &cpus {
-			match PerfGroup::new(*cpu) {
+        for cpu in &cpus {
+            match PerfGroup::new(*cpu) {
                 Ok(g) => {
-                	groups.push(g);
+                    groups.push(g);
                 }
                 Err(_) => {
                     warn!("Failed to create the perf group on CPU {}", cpu);
                 }
             };
-		}
+        }
 
-		info!("PerfGroups created for {} out of {} cpus", groups.len(), cpus.len());
+        info!(
+            "PerfGroups created for {} out of {} cpus",
+            groups.len(),
+            cpus.len()
+        );
 
-		Self {
-			groups,
-		}
-	}
+        Self { groups }
+    }
 
-	/// Collect readings from all of the groups.
-	pub fn readings(&mut self) -> Vec<Reading> {
-		let mut result = Vec::new();
+    /// Collect readings from all of the groups.
+    pub fn readings(&mut self) -> Vec<Reading> {
+        let mut result = Vec::new();
 
-		for group in &mut self.groups {
-			if let Ok(reading) = group.get_metrics() {
-				result.push(reading);
-			}
-		}
+        for group in &mut self.groups {
+            if let Ok(reading) = group.get_metrics() {
+                result.push(reading);
+            }
+        }
 
-		result
-	}
+        result
+    }
 
-	/// Returns the number of groups.
-	pub fn len(&self) -> usize {
-		self.groups.len()
-	}
+    /// Returns the number of groups.
+    pub fn len(&self) -> usize {
+        self.groups.len()
+    }
 }
