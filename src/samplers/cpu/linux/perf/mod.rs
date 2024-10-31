@@ -84,6 +84,8 @@ impl PerfInner {
 
         let readings = {
             let mut perf_groups = PERF_GROUPS.lock().await;
+
+            info!("sampling perf groups");
             perf_groups.readings()
         };
 
