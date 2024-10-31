@@ -48,7 +48,7 @@ impl PerfGroups {
 	pub fn readings(&mut self) -> Vec<Reading> {
 		let mut result = Vec::new();
 
-		for group in self.groups {
+		for group in &mut self.groups {
 			if let Ok(reading) = group.get_metrics() {
 				result.push(reading);
 			}

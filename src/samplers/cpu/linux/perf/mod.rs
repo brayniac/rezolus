@@ -24,7 +24,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
     let inner = PerfInner::new()?;
 
     Ok(Some(Box::new(Perf {
-        inner: Arc::new(Mutes::new(inner)),
+        inner: Arc::new(Mutex::new(inner)),
     })))
 }
 
@@ -86,7 +86,7 @@ impl PerfInner {
         let mut avg_running_frequency = 0;
 
         let readings = {
-            let perf_groups = PERF_GROUPS.get().lock().await?;
+            let perf_groups = PERF_GROUPS.get().lock().await;
             perf_groups.readings()
         };
 
@@ -139,7 +139,7 @@ impl Sampler for Perf {
         // we spawn onto a blocking thread because this can take on the order of
         // tens of milliseconds on large systems
 
-        let _ = spawn_blocking(move || {
+        let _ = spawn_blocking(move || async {
             let mut inner = inner.lock();
             inner.refresh().await;
         })
