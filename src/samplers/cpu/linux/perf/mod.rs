@@ -64,7 +64,7 @@ impl PerfInner {
         }
 
         {
-            let groups = PERF_GROUPS.lock().await;
+            let groups = PERF_GROUPS.blocking_lock();
 
             if groups.readings().is_empty() {
                 error!("No perf event groups have been initialized");
