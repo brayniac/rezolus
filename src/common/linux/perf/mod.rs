@@ -1,6 +1,8 @@
 pub mod counter;
 pub mod group;
 
+pub use counter::Counter;
+
 use group::PerfGroup;
 
 use crate::common;
@@ -19,17 +21,14 @@ pub struct PerfGroups {
 }
 
 impl PerfGroups {
-	pub fn new() -> Result<Self, std::io::Error> {
+	pub fn new() -> Self {
 		let cpus = common::linux::cpus()?;
 
 		let mut groups = Vec::with_capacity(cpus.len());
 
-		let mut empty = true;
-
 		for cpu in cpus {
 			match PerfGroup::new(cpu) {
                 Ok(g) => {
-                	empty = fasle;
                 	groups.push(Some(g));
                 }
                 Err(_) => {
@@ -39,14 +38,8 @@ impl PerfGroups {
             };
 		}
 
-		if empty {
-			Err(std::io::Error::other(
-                "Failed to create perf group on any CPU",
-            ))
-		} else {
-			Ok(Self {
-				groups,
-			})
+		Self {
+			groups,
 		}
 	}
 }
