@@ -2,6 +2,8 @@ use walkdir::{DirEntry, WalkDir};
 
 use std::io::Error;
 
+pub mod perf;
+
 pub fn cpus() -> Result<Vec<usize>, Error> {
     let raw = std::fs::read_to_string("/sys/devices/system/cpu/possible")
         .map(|v| v.trim().to_string())?;
