@@ -28,6 +28,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
     })))
 }
 
+#[derive(Clone)]
 pub struct Perf {
     inner: Arc<PerfInner>,
 }
@@ -134,13 +135,13 @@ impl PerfInner {
 #[async_trait]
 impl Sampler for Perf {
     async fn refresh(&self) {
-        let inner = self.inner.clone();
+        let s = self.clone();
 
         // we spawn onto a blocking thread because this can take on the order of
         // tens of milliseconds on large systems
 
         let _ = spawn_blocking(move || async {
-            self.inner.refresh().await;
+            s.refresh().await;
         })
         .await;
     }
