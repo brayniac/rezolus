@@ -32,7 +32,6 @@ pub struct Perf {
 }
 
 struct PerfInner {
-    groups: Vec<PerfGroup>,
     counters: ScopedCounters,
     gauges: ScopedGauges,
 }
@@ -91,44 +90,42 @@ impl PerfInner {
         };
 
         for reading in readings {
-            if let Ok(reading) = group.get_metrics() {
-                nr_active_groups += 1;
+            nr_active_groups += 1;
 
-                avg_ipkc += reading.ipkc.unwrap_or(0);
-                avg_ipus += reading.ipus.unwrap_or(0);
-                avg_base_frequency += reading.base_frequency_mhz.unwrap_or(0);
-                avg_running_frequency += reading.running_frequency_mhz.unwrap_or(0);
+            avg_ipkc += reading.ipkc.unwrap_or(0);
+            avg_ipus += reading.ipus.unwrap_or(0);
+            avg_base_frequency += reading.base_frequency_mhz.unwrap_or(0);
+            avg_running_frequency += reading.running_frequency_mhz.unwrap_or(0);
 
-                // note: add counters, these are deltas
-                if let Some(c) = reading.cycles {
-                    let _ = self.counters.add(reading.cpu, 0, c);
-                    CPU_CYCLES.add(c);
-                }
-                if let Some(c) = reading.instructions {
-                    let _ = self.counters.add(reading.cpu, 1, c);
-                    CPU_INSTRUCTIONS.add(c);
-                }
-
-                if let Some(g) = reading.ipkc {
-                    let _ = self.gauges.set(reading.cpu, 0, g as _);
-                }
-                if let Some(g) = reading.ipus {
-                    let _ = self.gauges.set(reading.cpu, 1, g as _);
-                }
-                if let Some(g) = reading.running_frequency_mhz {
-                    let _ = self.gauges.set(reading.cpu, 2, g as _);
-                }
+            // note: add counters, these are deltas
+            if let Some(c) = reading.cycles {
+                let _ = self.counters.add(reading.cpu, 0, c);
+                CPU_CYCLES.add(c);
+            }
+            if let Some(c) = reading.instructions {
+                let _ = self.counters.add(reading.cpu, 1, c);
+                CPU_INSTRUCTIONS.add(c);
             }
 
-            // we can only update averages if at least one group of perf
-            // counters was active in the period
-            if nr_active_groups > 0 {
-                CPU_PERF_GROUPS_ACTIVE.set(nr_active_groups as i64);
-                CPU_IPKC_AVERAGE.set((avg_ipkc / nr_active_groups) as i64);
-                CPU_IPUS_AVERAGE.set((avg_ipus / nr_active_groups) as i64);
-                CPU_BASE_FREQUENCY_AVERAGE.set((avg_base_frequency / nr_active_groups) as i64);
-                CPU_FREQUENCY_AVERAGE.set((avg_running_frequency / nr_active_groups) as i64);
+            if let Some(g) = reading.ipkc {
+                let _ = self.gauges.set(reading.cpu, 0, g as _);
             }
+            if let Some(g) = reading.ipus {
+                let _ = self.gauges.set(reading.cpu, 1, g as _);
+            }
+            if let Some(g) = reading.running_frequency_mhz {
+                let _ = self.gauges.set(reading.cpu, 2, g as _);
+            }
+        }
+
+        // we can only update averages if at least one group of perf
+        // counters was active in the period
+        if nr_active_groups > 0 {
+            CPU_PERF_GROUPS_ACTIVE.set(nr_active_groups as i64);
+            CPU_IPKC_AVERAGE.set((avg_ipkc / nr_active_groups) as i64);
+            CPU_IPUS_AVERAGE.set((avg_ipus / nr_active_groups) as i64);
+            CPU_BASE_FREQUENCY_AVERAGE.set((avg_base_frequency / nr_active_groups) as i64);
+            CPU_FREQUENCY_AVERAGE.set((avg_running_frequency / nr_active_groups) as i64);
         }
     }
 }
