@@ -63,6 +63,13 @@ impl PerfInner {
             }
         }
 
+        {
+            let groups = PERF_GROUPS.lock().await;
+
+            if groups.readings().is_empty() {
+                error!("No perf event groups have been initialized");
+            }
+        }
 
         Ok(Self {
             counters,
@@ -139,7 +146,7 @@ impl Sampler for Perf {
         // tens of milliseconds on large systems
 
         let _ = spawn_blocking(move || async move {
-            s.refresh().await;
+            s.inner.refresh().await;
         })
         .await;
     }
