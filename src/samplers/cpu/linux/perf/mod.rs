@@ -23,7 +23,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
     let inner = PerfInner::new()?;
 
     Ok(Some(Box::new(Perf {
-        inner: Arc::new(Mutex::new(inner)),
+        inner: Arc::new(inner),
     })))
 }
 
@@ -76,7 +76,7 @@ impl PerfInner {
     ///
     /// *Note:* the reading returned by `get_metrics()` returns delta'd counters
     /// so instead of setting our counters, we will add the delta to them.
-    pub fn refresh(&mut self) {
+    pub async fn refresh(&mut self) {
         let mut nr_active_groups: u64 = 0;
 
         let mut avg_ipkc = 0;
@@ -140,7 +140,7 @@ impl Sampler for Perf {
 
         let _ = spawn_blocking(move || {
             let mut inner = inner.lock();
-            inner.refresh();
+            inner.refresh().await;
         })
         .await;
     }
