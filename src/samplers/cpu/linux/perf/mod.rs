@@ -140,7 +140,7 @@ impl Sampler for Perf {
         // we spawn onto a blocking thread because this can take on the order of
         // tens of milliseconds on large systems
 
-        let _ = spawn_blocking(move || async {
+        let _ = spawn_blocking(move || async move {
             s.refresh().await;
         })
         .await;
