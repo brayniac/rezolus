@@ -83,7 +83,7 @@ impl PerfInner {
         let mut avg_running_frequency = 0;
 
         let readings = {
-            let mut perf_groups = PERF_GROUPS.lock().await;
+            let mut perf_groups = std::sync::LazyLock::force(PERF_GROUPS).lock().await;
             perf_groups.readings()
         };
 
