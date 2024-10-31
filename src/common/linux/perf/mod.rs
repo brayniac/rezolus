@@ -1,6 +1,14 @@
 pub mod counter;
 pub mod group;
 
+use group::PerfGroup;
+
+use crate::common;
+
+use tokio::sync::Mutex;
+
+use std::sync::LazyLock;
+
 pub static PERF_GROUPS: LazyLock<Mutex<PerfGroups>> = LazyLock::new(|| {
     Mutex::new(PerfGroups::new())
 });
