@@ -7,8 +7,6 @@ use crate::samplers::cpu::stats::*;
 use crate::samplers::Sampler;
 use crate::*;
 
-use parking_lot::Mutex;
-
 use tokio::task::spawn_blocking;
 
 #[distributed_slice(SAMPLERS)]
