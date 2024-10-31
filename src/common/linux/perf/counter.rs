@@ -6,7 +6,7 @@ use perf_event::{Builder, ReadFormat};
 
 
 #[derive(Copy, Clone, Debug)]
-enum Counter {
+pub enum Counter {
     Cycles,
     Instructions,
     Tsc,

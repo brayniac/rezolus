@@ -3,6 +3,8 @@ pub mod group;
 
 pub use counter::Counter;
 
+use crate::*;
+
 use group::PerfGroup;
 
 use crate::common;
@@ -22,7 +24,7 @@ pub struct PerfGroups {
 
 impl PerfGroups {
 	pub fn new() -> Self {
-		let cpus = common::linux::cpus()?;
+		let cpus = common::linux::cpus().expect("failed to get inventory of CPUs");
 
 		let mut groups = Vec::with_capacity(cpus.len());
 
