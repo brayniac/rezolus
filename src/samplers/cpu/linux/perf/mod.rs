@@ -41,7 +41,6 @@ impl PerfInner {
     pub fn new() -> Result<Self, std::io::Error> {
         let cpus = common::linux::cpus()?;
 
-        let mut groups = Vec::with_capacity(cpus.len());
         let mut counters = ScopedCounters::new();
         let mut gauges = ScopedGauges::new();
 
@@ -65,25 +64,10 @@ impl PerfInner {
                         .build(),
                 );
             }
-
-            match PerfGroup::new(cpu) {
-                Ok(g) => groups.push(g),
-                Err(_) => {
-                    warn!("Failed to create the perf group on CPU {}", cpu);
-                    // we want to continue because it's possible that this CPU is offline
-                    continue;
-                }
-            };
         }
 
-        if groups.is_empty() {
-            return Err(std::io::Error::other(
-                "Failed to create perf group on any CPU",
-            ));
-        }
 
         Ok(Self {
-            groups,
             counters,
             gauges,
         })
@@ -101,7 +85,12 @@ impl PerfInner {
         let mut avg_base_frequency = 0;
         let mut avg_running_frequency = 0;
 
-        for group in &mut self.groups {
+        let readings = {
+            let perf_groups = PERF_GROUPS.get().lock().await?;
+            perf_groups.readings()
+        };
+
+        for reading in readings {
             if let Ok(reading) = group.get_metrics() {
                 nr_active_groups += 1;
 
