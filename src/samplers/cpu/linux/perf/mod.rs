@@ -5,6 +5,7 @@ mod group;
 use group::*;
 
 use crate::common::*;
+use crate::common::linux::perf::*;
 use crate::samplers::cpu::linux::stats::*;
 use crate::samplers::cpu::stats::*;
 use crate::samplers::Sampler;
@@ -23,7 +24,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
     let inner = PerfInner::new()?;
 
     Ok(Some(Box::new(Perf {
-        inner: Arc::new(inner),
+        inner: Arc::new(Mutes::new(inner)),
     })))
 }
 

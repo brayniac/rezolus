@@ -1,7 +1,8 @@
-pub mod counter;
-pub mod group;
+mod counter;
+mod group;
 
 pub use counter::Counter;
+pub use group::Reading;
 
 use crate::*;
 
