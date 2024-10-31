@@ -77,7 +77,7 @@ impl PerfInner {
     ///
     /// *Note:* the reading returned by `get_metrics()` returns delta'd counters
     /// so instead of setting our counters, we will add the delta to them.
-    pub async fn refresh(&mut self) {
+    pub async fn refresh(&self) {
         let mut nr_active_groups: u64 = 0;
 
         let mut avg_ipkc = 0;
@@ -86,7 +86,7 @@ impl PerfInner {
         let mut avg_running_frequency = 0;
 
         let readings = {
-            let perf_groups = PERF_GROUPS.lock().await;
+            let mut perf_groups = PERF_GROUPS.lock().await;
             perf_groups.readings()
         };
 
