@@ -1,12 +1,15 @@
+use crate::samplers::Sampler;
+use crate::*;
+use crate::common::*;
+
 mod builder;
 mod counters;
 mod histogram;
-mod sync_primitive;
+
+use counters::{Counters, CpuCounters};
+use histogram::Histogram;
 
 pub use builder::Builder as BpfBuilder;
-
-use crate::samplers::Sampler;
-use crate::*;
 
 pub trait OpenSkelExt {
     /// When called, the SkelBuilder should log instruction counts for each of
@@ -36,9 +39,7 @@ fn whole_pages<T>(count: usize) -> usize {
     ((count * std::mem::size_of::<T>()) + PAGE_SIZE - 1) / PAGE_SIZE
 }
 
-use counters::{Counters, CpuCounters};
-use histogram::Histogram;
-use sync_primitive::SyncPrimitive;
+
 
 pub struct AsyncBpf {
     thread: std::thread::JoinHandle<Result<(), libbpf_rs::Error>>,
