@@ -15,24 +15,18 @@ fn init(config: Arc<Config>) -> SamplerResult {
         return Ok(None);
     }
 
-    let inner = PerfInner::new()?;
+    let s = Perf::new()?;
 
-    Ok(Some(Box::new(Perf {
-        inner: Arc::new(inner),
-    })))
+    Ok(Some(Box::new(s)))
 }
 
 #[derive(Clone)]
 pub struct Perf {
-    inner: Arc<PerfInner>,
-}
-
-struct PerfInner {
     counters: ScopedCounters,
     gauges: ScopedGauges,
 }
 
-impl PerfInner {
+impl Perf {
     pub fn new() -> Result<Self, std::io::Error> {
         let cpus = common::linux::cpus()?;
 
@@ -71,12 +65,11 @@ impl PerfInner {
 
         Ok(Self { counters, gauges })
     }
+}
 
-    /// Refreshes the metrics from the underlying perf counter groups.
-    ///
-    /// *Note:* the reading returned by `get_metrics()` returns delta'd counters
-    /// so instead of setting our counters, we will add the delta to them.
-    pub async fn refresh(&self) {
+#[async_trait]
+impl Sampler for Perf {
+    async fn refresh(&self) {
         let mut nr_active_groups: u64 = 0;
 
         let mut avg_ipkc = 0;
@@ -84,12 +77,7 @@ impl PerfInner {
         let mut avg_base_frequency = 0;
         let mut avg_running_frequency = 0;
 
-        let readings = {
-            let mut perf_groups = PERF_GROUPS.lock().await;
-
-            info!("sampling perf groups");
-            perf_groups.readings()
-        };
+        let readings = PERF_EVENTS.lock().await.read().await;
 
         for reading in readings {
             nr_active_groups += 1;
@@ -129,20 +117,5 @@ impl PerfInner {
             CPU_BASE_FREQUENCY_AVERAGE.set((avg_base_frequency / nr_active_groups) as i64);
             CPU_FREQUENCY_AVERAGE.set((avg_running_frequency / nr_active_groups) as i64);
         }
-    }
-}
-
-#[async_trait]
-impl Sampler for Perf {
-    async fn refresh(&self) {
-        let s = self.clone();
-
-        // we spawn onto a blocking thread because this can take on the order of
-        // tens of milliseconds on large systems
-
-        let _ = spawn_blocking(move || async move {
-            s.inner.refresh().await;
-        })
-        .await;
     }
 }

@@ -1,9 +1,7 @@
 use crate::common;
 use crate::*;
 
-use tokio::sync::Mutex as AsyncMutex;
-
-use parking_lot::Mutex as Mutex;
+use tokio::sync::Mutex;
 
 use std::sync::LazyLock;
 
@@ -18,7 +16,8 @@ use group::PerfGroup;
 pub struct PerfEvents {
     thread: std::thread::JoinHandle<Result<(), libbpf_rs::Error>>,
     sync: SyncPrimitive,
-    fds: Arc<PerfEventFds>,
+    rx: Receiver<Vec<Reading>>,
+    // fds: Arc<PerfEventFds>,
 }
 
 pub struct PerfEventFds {
@@ -41,7 +40,9 @@ impl PerfEvents {
 
         let groups = PerfGroups::new();
 
-        let fds = groups.get_fds();
+        let (tx, rx) = mpsc::channel(100);
+
+        // let fds = groups.get_fds();
 
         let thread = std::thread::spawn(move || {
             // the sampling loop
@@ -49,21 +50,9 @@ impl PerfEvents {
                 // blocking wait until we are notified to start, no cpu consumed
                 sync.wait_trigger();
 
-                readings.lock();
-
-                // refresh all the metrics
-
-                for v in &mut counters {
-                    v.refresh();
-                }
-
-                for v in &mut histograms {
-                    v.refresh();
-                }
-
-                for v in &mut cpu_counters {
-                    v.refresh();
-                }
+                // get the readings and send them on the queue
+                let readings = groups.readings();
+                let _ = tx.try_send(readings);
 
                 // notify that we have finished running
                 sync.notify();
@@ -89,7 +78,24 @@ impl PerfEvents {
         Ok(Self {
             thread,
             sync: sync2,
+            rx,
         })
+    }
+
+    pub async fn read(&mut self) -> Vec<Reading> {
+        // check that the thread has not exited
+        if self.thread.is_finished() {
+            panic!("thread exited early");
+        }
+
+        // notify the thread to start
+        self.sync.trigger();
+
+        // wait for notification that thread has finished
+        self.sync.wait_notify().await;
+
+        // get the readings from the queue
+        self.readings.recv().await
     }
 }
 
@@ -148,16 +154,4 @@ impl PerfGroups {
 
         result
     }
-
-    // fn get_fds(&self) -> PerfEventFds {
-    //     let mut result = Vec::new();
-
-    //     for group in &mut self.groups {
-    //         if let Ok(fds) = group.fds() {
-    //             result.push(fds);
-    //         }
-    //     }
-
-    //     result
-    // }
 }
