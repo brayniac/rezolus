@@ -20,7 +20,6 @@ fn init(config: Arc<Config>) -> SamplerResult {
     Ok(Some(Box::new(s)))
 }
 
-#[derive(Clone)]
 pub struct Perf {
     counters: ScopedCounters,
     gauges: ScopedGauges,
