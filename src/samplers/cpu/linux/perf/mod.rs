@@ -54,14 +54,6 @@ impl Perf {
             }
         }
 
-        {
-            let groups = PERF_GROUPS.blocking_lock();
-
-            if groups.len() == 0 {
-                error!("No perf event groups have been initialized");
-            }
-        }
-
         Ok(Self { counters, gauges })
     }
 }
