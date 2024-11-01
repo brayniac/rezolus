@@ -70,7 +70,7 @@ impl PerfEvents {
         loop {
             if thread.is_finished() {
                 if let Err(e) = thread.join().unwrap() {
-                    return Err(e);
+                    panic!("perf_events thread failed to initialize");
                 } else {
                     // the thread can't terminate without an error
                     unreachable!();

@@ -2,7 +2,7 @@ use perf_event::events::x86::{Msr, MsrId};
 use perf_event::events::Hardware;
 use perf_event::{Builder, ReadFormat};
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Counter {
     Cycles,
     Instructions,
