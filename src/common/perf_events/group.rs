@@ -132,7 +132,7 @@ impl PerfGroup {
     }
 
     pub fn get_metrics(&mut self) -> Result<Reading, ()> {
-        let current = self.group[self.leader_id]
+        let current = self.group[self.leader as usize]
             .as_mut()
             .unwrap()
             .read_group()
