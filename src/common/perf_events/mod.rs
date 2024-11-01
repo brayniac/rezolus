@@ -17,6 +17,9 @@ pub use group::Reading;
 
 use group::PerfGroup;
 
+pub static PERF_EVENTS: LazyLock<Mutex<PerfGroups>> =
+    LazyLock::new(|| Mutex::new(PerfEvents::new()));
+
 pub struct PerfEvents {
     thread: std::thread::JoinHandle<Result<(), libbpf_rs::Error>>,
     sync: SyncPrimitive,
@@ -103,8 +106,7 @@ impl PerfEvents {
     }
 }
 
-pub static PERF_GROUPS: LazyLock<Mutex<PerfGroups>> =
-    LazyLock::new(|| Mutex::new(PerfGroups::new()));
+
 
 /// Contains one `PerfGroup` per CPU.
 pub struct PerfGroups {
