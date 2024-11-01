@@ -1,9 +1,13 @@
 use crate::common;
+use crate::common::SyncPrimitive;
 use crate::*;
 
 use tokio::sync::Mutex;
+use tokio::sync::mpsc;
 
 use std::sync::LazyLock;
+use std::sync::atomic::Ordering;
+use std::sync::atomic::AtomicBool;
 
 mod counter;
 mod group;
@@ -20,15 +24,15 @@ pub struct PerfEvents {
     // fds: Arc<PerfEventFds>,
 }
 
-pub struct PerfEventFds {
-    inner: Vec<Option<PerfGroupFds>>,
-}
+// pub struct PerfEventFds {
+//     inner: Vec<Option<PerfGroupFds>>,
+// }
 
-impl PerfEventFds {
-    pub fn cpu(cpu: usize) -> Option<PerfGroupFds> {
-        self.get(cpu)
-    }
-}
+// impl PerfEventFds {
+//     pub fn cpu(&self, cpu: usize) -> Option<PerfGroupFds> {
+//         self.get(cpu)
+//     }
+// }
 
 impl PerfEvents {
     pub fn new() -> Self {
