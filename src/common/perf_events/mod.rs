@@ -99,10 +99,6 @@ impl PerfEvents {
     }
 }
 
-
-
-pub struct P
-
 pub static PERF_GROUPS: LazyLock<Mutex<PerfGroups>> =
     LazyLock::new(|| Mutex::new(PerfGroups::new()));
 
