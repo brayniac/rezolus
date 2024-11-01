@@ -82,11 +82,11 @@ impl PerfEvents {
             }
         }
 
-        Ok(Self {
+        Self {
             thread,
             sync: sync2,
             rx,
-        })
+        }
     }
 
     pub async fn read(&mut self) -> Vec<Reading> {
@@ -102,7 +102,7 @@ impl PerfEvents {
         self.sync.wait_notify().await;
 
         // get the readings from the queue
-        self.rx.recv().await
+        self.rx.recv().await.expect("failed to get perf readings")
     }
 }
 
