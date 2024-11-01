@@ -95,7 +95,7 @@ impl PerfEvents {
         self.sync.wait_notify().await;
 
         // get the readings from the queue
-        self.readings.recv().await
+        self.rx.recv().await
     }
 }
 
@@ -143,8 +143,10 @@ impl PerfGroups {
         let mut result = Vec::new();
 
         for group in &mut self.groups {
-            if let Ok(reading) = group.get_metrics() {
-                result.push(reading);
+            if let Some(group) = group {
+                if let Ok(reading) = group.get_metrics() {
+                    result.push(reading);
+                }
             }
         }
 
