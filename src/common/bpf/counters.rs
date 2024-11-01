@@ -1,6 +1,4 @@
 use crate::common::bpf::*;
-use crate::common::*;
-use crate::*;
 
 use libbpf_rs::Map;
 use memmap2::{MmapMut, MmapOptions};

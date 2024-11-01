@@ -1,5 +1,4 @@
 use crate::common::bpf::*;
-use crate::common::*;
 
 use libbpf_rs::skel::{OpenSkel, Skel, SkelBuilder};
 use libbpf_rs::OpenObject;

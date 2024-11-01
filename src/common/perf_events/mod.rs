@@ -42,9 +42,6 @@ impl PerfEvents {
         let sync = SyncPrimitive::new();
         let sync2 = sync.clone();
 
-        let initialized = Arc::new(AtomicBool::new(false));
-        let initialized2 = initialized.clone();
-
         let mut groups = PerfGroups::new();
 
         let (tx, rx) = channel(100);
@@ -65,22 +62,6 @@ impl PerfEvents {
                 sync.notify();
             }
         });
-
-        // wait for the sampler thread to either error out or finish initializing
-        loop {
-            if thread.is_finished() {
-                if let Err(e) = thread.join().unwrap() {
-                    panic!("perf_events thread failed to initialize");
-                } else {
-                    // the thread can't terminate without an error
-                    unreachable!();
-                }
-            }
-
-            if initialized2.load(Ordering::Relaxed) {
-                break;
-            }
-        }
 
         Self {
             thread,

@@ -1,5 +1,4 @@
 use crate::common::bpf::*;
-use crate::*;
 
 use metriken::RwLockHistogram;
 
