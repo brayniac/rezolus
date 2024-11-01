@@ -1,4 +1,4 @@
-use crate::common::linux::perf::Counter;
+use crate::common::perf::Counter;
 use crate::*;
 
 struct GroupData {

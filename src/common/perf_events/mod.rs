@@ -3,7 +3,7 @@ use crate::common::SyncPrimitive;
 use crate::*;
 
 use tokio::sync::Mutex;
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::*;
 
 use std::sync::LazyLock;
 use std::sync::atomic::Ordering;
@@ -17,7 +17,7 @@ pub use group::Reading;
 
 use group::PerfGroup;
 
-pub static PERF_EVENTS: LazyLock<Mutex<PerfGroups>> =
+pub static PERF_EVENTS: LazyLock<Mutex<PerfEvents>> =
     LazyLock::new(|| Mutex::new(PerfEvents::new()));
 
 pub struct PerfEvents {
@@ -47,7 +47,7 @@ impl PerfEvents {
 
         let groups = PerfGroups::new();
 
-        let (tx, rx) = mpsc::channel(100);
+        let (tx, rx) = channel(100);
 
         // let fds = groups.get_fds();
 
