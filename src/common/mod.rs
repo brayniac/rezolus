@@ -1,8 +1,14 @@
 mod counters;
 mod gauges;
 
+#[cfg(target_os = "linux")]
+mod sync_primitive;
+
 pub use counters::*;
 pub use gauges::*;
+
+#[cfg(target_os = "linux")]
+pub use sync_primitive::SyncPrimitive;
 
 #[cfg(target_os = "linux")]
 pub mod bpf;
@@ -12,6 +18,9 @@ pub use bpf::*;
 
 #[cfg(target_os = "linux")]
 pub mod linux;
+
+#[cfg(target_os = "linux")]
+pub mod perf_events;
 
 pub static HISTOGRAM_GROUPING_POWER: u8 = 3;
 

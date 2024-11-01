@@ -59,8 +59,8 @@ pub struct Reading {
 pub struct PerfGroup {
     /// The CPU this group measures
     cpu: usize,
-    /// The group member that is the leader
-    leader_id: usize,
+    /// The counter that is the leader
+    leader: Counter,
     /// The counters in this group
     group: Vec<Option<perf_event::Counter>>,
     /// prev holds the previous readings
@@ -72,18 +72,18 @@ impl PerfGroup {
     pub fn new(cpu: usize) -> Result<Self, ()> {
         let mut group = Vec::new();
 
-        let leader_id;
+        let leader;
 
         if let Ok(c) = Counter::Cycles.as_leader(cpu) {
-            leader_id = Counter::Cycles as usize;
+            leader = Counter::Cycles;
 
-            group.resize_with(Counter::Cycles as usize + 1, || None);
-            group[Counter::Cycles as usize] = Some(c);
+            group.resize_with(leader as usize + 1, || None);
+            group[leader as usize] = Some(c);
         } else if let Ok(c) = Counter::Tsc.as_leader(cpu) {
-            leader_id = Counter::Tsc as usize;
+            leader = Counter::Tsc;
 
-            group.resize_with(Counter::Tsc as usize + 1, || None);
-            group[Counter::Tsc as usize] = Some(c);
+            group.resize_with(leader as usize + 1, || None);
+            group[leader as usize] = Some(c);
         } else {
             error!("failed to initialize a group leader on CPU{cpu}");
             return Err(());
@@ -95,17 +95,17 @@ impl PerfGroup {
             Counter::Aperf,
             Counter::Mperf,
         ] {
-            if leader_id == *counter as usize {
+            if leader == *counter {
                 continue;
             }
 
-            if let Ok(c) = counter.as_follower(cpu, group[leader_id].as_mut().unwrap()) {
+            if let Ok(c) = counter.as_follower(cpu, group[leader as usize].as_mut().unwrap()) {
                 group.resize_with(*counter as usize + 1, || None);
                 group[*counter as usize] = Some(c);
             }
         }
 
-        group[leader_id]
+        group[leader as usize]
             .as_mut()
             .unwrap()
             .enable_group()
@@ -113,7 +113,7 @@ impl PerfGroup {
                 error!("failed to enable the perf group on CPU{cpu}: {e}");
             })?;
 
-        let prev = group[leader_id]
+        let prev = group[leader as usize]
             .as_mut()
             .unwrap()
             .read_group()
@@ -125,7 +125,7 @@ impl PerfGroup {
 
         Ok(Self {
             cpu,
-            leader_id,
+            leader,
             group,
             prev,
         })
@@ -149,7 +149,7 @@ impl PerfGroup {
 
         let prev = self.prev.as_ref().unwrap();
 
-        // When the CPU is offline, this.len() becomes 1
+        // When the CPU is offline, current.len() becomes 1
         if current.len() == 1 || current.len() != prev.len() {
             self.prev = Some(current);
             return Err(());
