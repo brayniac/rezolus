@@ -45,7 +45,7 @@ impl PerfEvents {
         let initialized = Arc::new(AtomicBool::new(false));
         let initialized2 = initialized.clone();
 
-        let groups = PerfGroups::new();
+        let mut groups = PerfGroups::new();
 
         let (tx, rx) = channel(100);
 
