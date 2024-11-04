@@ -134,7 +134,17 @@ impl PerfGroup {
     }
 
     pub fn file_descriptors(&self) -> Vec<Option<RawFd>> {
-        self.group.iter().map(|c| c.as_ref().as_raw_fd()).collect()
+        let mut result = Vec::new();
+
+        for c in self.group.iter() {
+            if let Some(c) = c {
+                result.push(Some(c.as_raw_fd()))
+            } else {
+                result.push(None)
+            }
+        }
+
+        result
     }
 
     pub fn get_metrics(&mut self) -> Result<Reading, ()> {
