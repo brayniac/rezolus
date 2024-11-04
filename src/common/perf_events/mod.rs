@@ -91,7 +91,7 @@ impl PerfEvents {
         self.rx.recv().await.expect("failed to get perf readings")
     }
 
-    pub fn file_descriptors(&self) -> PerfEventFds {
+    pub fn file_descriptors(&self) -> Arc<PerfEventFds> {
         self.fds.clone()
     }
 }
@@ -147,5 +147,22 @@ impl PerfGroups {
         }
 
         result
+    }
+
+    /// Collect readings from all of the groups.
+    pub fn file_descriptors(&mut self) -> PerfEventFds {
+        let mut result = Vec::new();
+
+        for group in &mut self.groups {
+            if let Some(group) = group {
+                result.push(group.file_descriptors())
+            } else {
+                result.push(None)
+            }
+        }
+
+        PerfEventFds {
+            inner: result
+        }
     }
 }

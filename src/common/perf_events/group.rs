@@ -131,7 +131,7 @@ impl PerfGroup {
         })
     }
 
-    pub fn get_fds(&self) -> Vec<Option<RawFd>> {
+    pub fn file_descriptors(&self) -> Vec<Option<RawFd>> {
         self.group.iter().map(|c| c.as_raw_fd()).collect()
     }
 
