@@ -3,6 +3,7 @@ use crate::*;
 
 use std::os::fd::RawFd;
 use std::os::fd::AsRawFd;
+use std::collections::HashMap;
 
 struct GroupData {
     inner: perf_event::GroupData,
