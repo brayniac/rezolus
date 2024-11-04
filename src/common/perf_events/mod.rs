@@ -30,13 +30,13 @@ pub struct PerfEvents {
 }
 
 pub struct PerfEventFds {
-    inner: HashMap<usize, HashMap<Counter, RawFd>>,
+    inner: HashMap<usize, HashMap<usize, RawFd>>,
 }
 
 impl PerfEventFds {
     pub fn get(&self, cpu: usize, counter: Counter) -> Option<RawFd> {
-        if let Some(g) = self.inner.get(cpu) {
-            g.get(counter as usize)
+        if let Some(g) = self.inner.get(&cpu) {
+            g.get(&(counter as usize))
         } else {
             None
         }
