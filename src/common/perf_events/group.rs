@@ -140,7 +140,7 @@ impl PerfGroup {
 
         for (id, c) in self.group.iter().enumerate() {
             if let Some(c) = c {
-                result.insert(id, c.as_raw_fd())
+                result.insert(id, c.as_raw_fd());
             }
         }
 

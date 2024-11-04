@@ -7,8 +7,6 @@ use tokio::sync::mpsc::*;
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
-use std::sync::atomic::Ordering;
-use std::sync::atomic::AtomicBool;
 use std::os::fd::RawFd;
 
 mod counter;
