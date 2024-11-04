@@ -8,6 +8,7 @@ use tokio::sync::mpsc::*;
 use std::sync::LazyLock;
 use std::sync::atomic::Ordering;
 use std::sync::atomic::AtomicBool;
+use std::os::fd::RawFd;
 
 mod counter;
 mod group;
@@ -28,11 +29,11 @@ pub struct PerfEvents {
 }
 
 pub struct PerfEventFds {
-    inner: Vec<Option<Vec<RawFd>>>,
+    inner: Vec<Option<Vec<Option<RawFd>>>>,
 }
 
 impl PerfEventFds {
-    pub fn get(&self, cpu: usize, counter: Counter) -> Option<PerfGroupFds> {
+    pub fn get(&self, cpu: usize, counter: Counter) -> Option<RawFd> {
         if let Some(g) = self.get(cpu) {
             g.get(counter as usize)
         } else {

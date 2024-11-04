@@ -1,6 +1,8 @@
 use crate::common::perf_events::Counter;
 use crate::*;
 
+use std::os::fd::RawFd;
+
 struct GroupData {
     inner: perf_event::GroupData,
 }
@@ -132,7 +134,7 @@ impl PerfGroup {
     }
 
     pub fn file_descriptors(&self) -> Vec<Option<RawFd>> {
-        self.group.iter().map(|c| c.as_raw_fd()).collect()
+        self.group.iter().map(|c| c.as_ref().as_raw_fd()).collect()
     }
 
     pub fn get_metrics(&mut self) -> Result<Reading, ()> {
