@@ -35,8 +35,8 @@ pub struct PerfEventFds {
 
 impl PerfEventFds {
     pub fn get(&self, cpu: usize, counter: Counter) -> Option<RawFd> {
-        if let Some(g) = inner.get(cpu) {
-            g.get(counter)
+        if let Some(g) = self.inner.get(cpu) {
+            g.get(counter as usize)
         } else {
             None
         }

@@ -134,14 +134,12 @@ impl PerfGroup {
         })
     }
 
-    pub fn file_descriptors(&self) -> Vec<Option<RawFd>> {
-        let mut result = Vec::new();
+    pub fn file_descriptors(&self) -> HashMap<usize, RawFd> {
+        let mut result = HashMap::new();
 
-        for c in self.group.iter() {
+        for (id, c) in self.group.iter().enumerate() {
             if let Some(c) = c {
-                result.push(Some(c.as_raw_fd()))
-            } else {
-                result.push(None)
+                result.insert(id, c.as_raw_fd())
             }
         }
 
