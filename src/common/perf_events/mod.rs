@@ -24,18 +24,22 @@ pub struct PerfEvents {
     thread: std::thread::JoinHandle<Result<(), libbpf_rs::Error>>,
     sync: SyncPrimitive,
     rx: Receiver<Vec<Reading>>,
-    // fds: Arc<PerfEventFds>,
+    fds: Arc<PerfEventFds>,
 }
 
-// pub struct PerfEventFds {
-//     inner: Vec<Option<PerfGroupFds>>,
-// }
+pub struct PerfEventFds {
+    inner: Vec<Option<Vec<RawFd>>>,
+}
 
-// impl PerfEventFds {
-//     pub fn cpu(&self, cpu: usize) -> Option<PerfGroupFds> {
-//         self.get(cpu)
-//     }
-// }
+impl PerfEventFds {
+    pub fn get(&self, cpu: usize, counter: Counter) -> Option<PerfGroupFds> {
+        if let Some(g) = self.get(cpu) {
+            g.get(counter as usize)
+        } else {
+            None
+        }
+    }
+}
 
 impl PerfEvents {
     pub fn new() -> Self {
@@ -46,7 +50,7 @@ impl PerfEvents {
 
         let (tx, rx) = channel(100);
 
-        // let fds = groups.get_fds();
+        let fds = groups.get_fds();
 
         let thread = std::thread::spawn(move || {
             // the sampling loop
@@ -67,6 +71,7 @@ impl PerfEvents {
             thread,
             sync: sync2,
             rx,
+            fds,
         }
     }
 
@@ -84,6 +89,10 @@ impl PerfEvents {
 
         // get the readings from the queue
         self.rx.recv().await.expect("failed to get perf readings")
+    }
+
+    pub fn file_descriptors(&self) -> PerfEventFds {
+        self.fds.clone()
     }
 }
 

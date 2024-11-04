@@ -131,6 +131,10 @@ impl PerfGroup {
         })
     }
 
+    pub fn get_fds(&self) -> Vec<Option<RawFd>> {
+        self.group.iter().map(|c| c.as_raw_fd()).collect()
+    }
+
     pub fn get_metrics(&mut self) -> Result<Reading, ()> {
         let current = self.group[self.leader as usize]
             .as_mut()
