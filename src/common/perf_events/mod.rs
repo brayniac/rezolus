@@ -34,7 +34,7 @@ pub struct PerfEventFds {
 
 impl PerfEventFds {
     pub fn get(&self, cpu: usize, counter: Counter) -> Option<RawFd> {
-        if let Some(g) = self.inner.get(cpu) {
+        if let Some(Some(g)) = self.inner.get(cpu) {
             g.get(counter as usize)
         } else {
             None
@@ -72,7 +72,7 @@ impl PerfEvents {
             thread,
             sync: sync2,
             rx,
-            fds,
+            fds: fds.into(),
         }
     }
 
@@ -156,7 +156,7 @@ impl PerfGroups {
 
         for group in &mut self.groups {
             if let Some(group) = group {
-                result.push(group.file_descriptors())
+                result.push(Some(group.file_descriptors()))
             } else {
                 result.push(None)
             }
