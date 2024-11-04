@@ -5,6 +5,7 @@ use crate::*;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::*;
 
+use std::collections::HashMap;
 use std::sync::LazyLock;
 use std::sync::atomic::Ordering;
 use std::sync::atomic::AtomicBool;
@@ -29,13 +30,13 @@ pub struct PerfEvents {
 }
 
 pub struct PerfEventFds {
-    inner: Vec<Option<Vec<Option<RawFd>>>>,
+    inner: HashMap<usize, HashMap<Counter, RawFd>>,
 }
 
 impl PerfEventFds {
     pub fn get(&self, cpu: usize, counter: Counter) -> Option<RawFd> {
-        if let Some(Some(g)) = self.inner.get(cpu) {
-            g.get(counter as usize)
+        if let Some(g) = inner.get(cpu) {
+            g.get(counter)
         } else {
             None
         }
@@ -152,18 +153,16 @@ impl PerfGroups {
 
     /// Collect readings from all of the groups.
     pub fn file_descriptors(&mut self) -> PerfEventFds {
-        let mut result = Vec::new();
+        let mut inner = HashMap::new();
 
-        for group in &mut self.groups {
+        for (cpu, group) in self.groups.iter_mut().enumerate() {
             if let Some(group) = group {
-                result.push(Some(group.file_descriptors()))
-            } else {
-                result.push(None)
+                inner.insert(cpu, group.file_descriptors());
             }
         }
 
         PerfEventFds {
-            inner: result
+            inner,
         }
     }
 }
