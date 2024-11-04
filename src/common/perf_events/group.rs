@@ -2,6 +2,7 @@ use crate::common::perf_events::Counter;
 use crate::*;
 
 use std::os::fd::RawFd;
+use std::os::fd::AsRawFd;
 
 struct GroupData {
     inner: perf_event::GroupData,

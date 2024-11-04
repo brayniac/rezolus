@@ -34,7 +34,7 @@ pub struct PerfEventFds {
 
 impl PerfEventFds {
     pub fn get(&self, cpu: usize, counter: Counter) -> Option<RawFd> {
-        if let Some(g) = self.get(cpu) {
+        if let Some(g) = self.inner.get(cpu) {
             g.get(counter as usize)
         } else {
             None
@@ -51,7 +51,7 @@ impl PerfEvents {
 
         let (tx, rx) = channel(100);
 
-        let fds = groups.get_fds();
+        let fds = groups.file_descriptors();
 
         let thread = std::thread::spawn(move || {
             // the sampling loop
