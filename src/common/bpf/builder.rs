@@ -1,7 +1,7 @@
 use crate::common::bpf::*;
 
 use libbpf_rs::skel::{OpenSkel, Skel, SkelBuilder};
-use libbpf_rs::{MapCore, OpenObject};
+use libbpf_rs::{MapCore, MapFlags, OpenObject};
 use metriken::{LazyCounter, RwLockHistogram};
 
 use std::mem::MaybeUninit;
@@ -117,7 +117,7 @@ where
                         continue;
                     }
 
-                    map.update(&(key as u64).to_ne_bytes(), &(fd as u32).to_ne_bytes());
+                    map.update(&(key as u64).to_ne_bytes(), &(fd as u32).to_ne_bytes(), MapFlags::ANY);
                 }
             }
 
