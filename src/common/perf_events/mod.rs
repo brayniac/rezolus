@@ -112,10 +112,8 @@ impl PerfGroups {
 
         let mut initialized = 0;
 
-        let cpus = num_cpus::get_physical();
-
-        for cpu in 0..cpus {
-            match PerfGroup::new(cpu) {
+        for cpu in &cpus {
+            match PerfGroup::new(*cpu) {
                 Ok(g) => {
                     groups.push(Some(g));
                     initialized += 1;
@@ -130,7 +128,7 @@ impl PerfGroups {
         info!(
             "PerfGroups created for {} out of {} cpus",
             initialized,
-            cpus
+            cpus.len()
         );
 
         Self { groups }
