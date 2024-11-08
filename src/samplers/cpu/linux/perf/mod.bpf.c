@@ -120,8 +120,7 @@ int handle__sched_switch(u64 *ctx)
 
 		if (cnt) {
 			u64 delta_c = c - *cnt;
-
-			__atomic_store(cnt, &c, __ATOMIC_RELAXED);
+			*cnt = c;
 
 			idx = tgid + CYCLES;
 			cnt = bpf_map_lookup_elem(&counters, &idx);
@@ -136,8 +135,7 @@ int handle__sched_switch(u64 *ctx)
 
 		if (cnt) {
 			u64 delta_i = i - *cnt;
-
-			__atomic_store(cnt, &i, __ATOMIC_RELAXED);
+			*cnt = i;
 
 			idx = tgid + INSTRUCTIONS;
 			cnt = bpf_map_lookup_elem(&counters, &idx);
