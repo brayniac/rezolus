@@ -45,9 +45,20 @@ fn init(config: Arc<Config>) -> SamplerResult {
     //     &SYSCALL_YIELD,
     // ];
 
+    let fds = {
+        let perf_events = PERF_EVENTS.blocking_lock();
+
+        perf_events.file_descriptors();
+    };
+
+    let cpus = common::linux::cpus()?;
+
+    let mut cycles: Vec<Option<RawFd>> = cpus.iter().map(|v| fds.get(cpu, Counter::Cycles)).collect();
+
     let bpf = BpfBuilder::new(ModSkelBuilder::default)
         // .counters("counters", counters)
         // .map("syscall_lut", syscall_lut())
+        .perf_events("cycles", cycles)
         .build()?;
 
     Ok(Some(Box::new(bpf)))
