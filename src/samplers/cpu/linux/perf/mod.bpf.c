@@ -111,7 +111,6 @@ int handle__sched_switch(u64 *ctx)
 // 	// - update cgroup counters
 	if (get_task_state(prev) == TASK_RUNNING) {
 		u32 tgid = BPF_CORE_READ(prev, tgid);
-		u32 idx;
 
 		c = bpf_perf_event_read(&cycles, processor_id);
 		i = bpf_perf_event_read(&instructions, processor_id);
@@ -125,7 +124,7 @@ int handle__sched_switch(u64 *ctx)
 			__atomic_store(cnt, &c, __ATOMIC_RELAXED);
 
 			idx = tgid + CYCLES;
-			cnt = bpf_map_lookup_elem(&counters, idx);
+			cnt = bpf_map_lookup_elem(&counters, &idx);
 
 			if (cnt) {
 				__atomic_fetch_add(cnt, delta_c, __ATOMIC_RELAXED);
@@ -141,7 +140,7 @@ int handle__sched_switch(u64 *ctx)
 			__atomic_store(cnt, &i, __ATOMIC_RELAXED);
 
 			idx = tgid + INSTRUCTIONS;
-			cnt = bpf_map_lookup_elem(&counters, idx);
+			cnt = bpf_map_lookup_elem(&counters, &idx);
 
 			if (cnt) {
 				__atomic_fetch_add(cnt, delta_i, __ATOMIC_RELAXED);
