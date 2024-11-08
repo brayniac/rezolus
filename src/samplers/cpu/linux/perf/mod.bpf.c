@@ -21,6 +21,8 @@
 #define MAX_CPUS 1024
 #define MAX_CGROUP 4194304
 
+#define TASK_RUNNING 0
+
 // perf counters
 #define CYCLES 0
 #define INSTRUCTIONS 1
@@ -73,7 +75,7 @@ int handle__sched_switch(u64 *ctx)
 // 	u64 *tsp, delta_ns, *cnt, offcpu_ns;
 
 	u32 idx;
-	u64 *cnt;
+	u64 *cnt, c, i;
 
 	u32 processor_id = bpf_get_smp_processor_id();
 // 	u64 ts = bpf_ktime_get_ns();
@@ -83,12 +85,15 @@ int handle__sched_switch(u64 *ctx)
 // 	// - lookup previous values
 // 	// - update cgroup counters
 	if (get_task_state(prev) == TASK_RUNNING) {
-		u64 c = cycles.perf_read(processor_id);
+		c = cycles.perf_read(processor_id);
+		i = instructions.perf_read(processor_id);
 
 		idx = COUNTER_GROUP_WIDTH * processor_id + CYCLES;
 		cnt = bpf_map_lookup_elem(&perf_counters, &idx);
 
 		if (cnt) {
+			c = c - cnt;
+
 
 		}
 	}
