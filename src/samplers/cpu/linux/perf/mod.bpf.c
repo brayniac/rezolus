@@ -50,15 +50,21 @@ struct {
 
 struct {
 	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
-	// __uint(map_flags, BPF_F_MMAPABLE);
-	// __uint(max_entries, MAX_CPUS);
+	__uint(key_size, sizeof(u32));
+	__uint(value_size, sizeof(u32));
 } cycles SEC(".maps");
 
-struct {
-	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
-	// __uint(map_flags, BPF_F_MMAPABLE);
-	// __uint(max_entries, MAX_CPUS);
-} instructions SEC(".maps");
+// struct {
+// 	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
+// 	// __uint(map_flags, BPF_F_MMAPABLE);
+// 	// __uint(max_entries, MAX_CPUS);
+// } cycles SEC(".maps");
+
+// struct {
+// 	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
+// 	// __uint(map_flags, BPF_F_MMAPABLE);
+// 	// __uint(max_entries, MAX_CPUS);
+// } instructions SEC(".maps");
 
 SEC("tp_btf/sched_switch")
 int handle__sched_switch(u64 *ctx)
