@@ -17,7 +17,7 @@ struct CounterMap<'a> {
 impl<'a> CounterMap<'a> {
     /// Create a new `CounterMap` from the provided BPF map that holds the
     /// provided number of counters.
-    pub fn new(map: &'a Map, counters: usize) -> Result<Self, ()> {
+    pub fn new(map: &'a Map, counters: usize, width: usize) -> Result<Self, ()> {
         // each CPU has its own bank of counters, this bank is the next nearest
         // whole number of cachelines wide
         let bank_cachelines = whole_cachelines::<u64>(counters);
@@ -26,7 +26,7 @@ impl<'a> CounterMap<'a> {
         let bank_width = bank_cachelines * COUNTERS_PER_CACHELINE;
 
         // our total mapped region size in bytes
-        let total_bytes = bank_cachelines * CACHELINE_SIZE * MAX_CPUS;
+        let total_bytes = bank_cachelines * CACHELINE_SIZE * width;
 
         let fd = map.as_fd().as_raw_fd();
         let file = unsafe { std::fs::File::from_raw_fd(fd as _) };
@@ -39,7 +39,7 @@ impl<'a> CounterMap<'a> {
 
         let (_prefix, values, _suffix) = unsafe { mmap.align_to::<u64>() };
 
-        if values.len() != MAX_CPUS * bank_width {
+        if values.len() != width * bank_width {
             error!("mmap region not aligned or width doesn't match");
             return Err(());
         }
@@ -82,7 +82,7 @@ impl<'a> Counters<'a> {
         let values = vec![0; counters.len()];
 
         // load the BPF counter map
-        let counter_map = CounterMap::new(map, counters.len()).expect("failed to initialize");
+        let counter_map = CounterMap::new(map, counters.len(), MAX_CPUS).expect("failed to initialize");
 
         Self {
             counter_map,
@@ -142,7 +142,7 @@ impl<'a> CpuCounters<'a> {
         let values = vec![0; totals.len()];
 
         // load the BPF counter map
-        let counter_map = CounterMap::new(map, totals.len()).expect("failed to initialize");
+        let counter_map = CounterMap::new(map, totals.len(), MAX_CPUS).expect("failed to initialize");
 
         Self {
             counter_map,
@@ -199,7 +199,7 @@ impl<'a> ProcessCounters<'a> {
         width: usize,
     ) -> Self {
         // load the BPF counter map
-        let counter_map = CounterMap::new(map, width).expect("failed to initialize");
+        let counter_map = CounterMap::new(map, counters.len(), MAX_PID).expect("failed to initialize");
 
         Self {
             counter_map,
