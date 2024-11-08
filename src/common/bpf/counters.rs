@@ -199,7 +199,7 @@ impl<'a> ProcessCounters<'a> {
         width: usize,
     ) -> Self {
         // load the BPF counter map
-        let counter_map = CounterMap::new(map, counters.len(), MAX_PID).expect("failed to initialize");
+        let counter_map = CounterMap::new(map, width, MAX_PID).expect("failed to initialize");
 
         Self {
             counter_map,
