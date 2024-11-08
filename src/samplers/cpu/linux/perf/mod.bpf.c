@@ -53,15 +53,6 @@ static __always_inline __s64 get_task_state(void *task)
 	return BPF_CORE_READ((struct task_struct___o *)task, state);
 }
 
-static __always_inline __s64 get_task_tgid(void *task)
-{
-	struct task_struct___x *t = task;
-
-	if (bpf_core_field_exists(t->__state))
-		return BPF_CORE_READ(t, tgid);
-	return BPF_CORE_READ((struct task_struct___o *)task, tgid);
-}
-
 // perf counters by cgroup
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
@@ -119,7 +110,7 @@ int handle__sched_switch(u64 *ctx)
 // 	// - lookup previous values
 // 	// - update cgroup counters
 	if (get_task_state(prev) == TASK_RUNNING) {
-		u32 tgid = get_task_tgid(prev);
+		u32 tgid = BPF_CORE_READ(prev, tgid);
 
 		c = bpf_perf_event_read(&cycles, processor_id);
 		i = bpf_perf_event_read(&instructions, processor_id);
