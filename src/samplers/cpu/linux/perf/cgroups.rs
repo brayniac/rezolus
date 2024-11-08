@@ -21,8 +21,8 @@ mod bpf {
 use bpf::*;
 
 use crate::common::*;
-use crate::samplers::syscall::linux::stats::*;
-use crate::samplers::syscall::linux::syscall_lut;
+// use crate::samplers::syscall::linux::stats::*;
+// use crate::samplers::syscall::linux::syscall_lut;
 use crate::*;
 
 use std::sync::Arc;
@@ -33,20 +33,20 @@ fn init(config: Arc<Config>) -> SamplerResult {
         return Ok(None);
     }
 
-    let counters = vec![
-        &SYSCALL_TOTAL,
-        &SYSCALL_READ,
-        &SYSCALL_WRITE,
-        &SYSCALL_POLL,
-        &SYSCALL_LOCK,
-        &SYSCALL_TIME,
-        &SYSCALL_SLEEP,
-        &SYSCALL_SOCKET,
-        &SYSCALL_YIELD,
-    ];
+    // let counters = vec![
+    //     &SYSCALL_TOTAL,
+    //     &SYSCALL_READ,
+    //     &SYSCALL_WRITE,
+    //     &SYSCALL_POLL,
+    //     &SYSCALL_LOCK,
+    //     &SYSCALL_TIME,
+    //     &SYSCALL_SLEEP,
+    //     &SYSCALL_SOCKET,
+    //     &SYSCALL_YIELD,
+    // ];
 
     let bpf = BpfBuilder::new(ModSkelBuilder::default)
-        .counters("counters", counters)
+        // .counters("counters", counters)
         // .map("syscall_lut", syscall_lut())
         .build()?;
 
@@ -56,7 +56,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
 impl SkelExt for ModSkel<'_> {
     fn map(&self, name: &str) -> &libbpf_rs::Map {
         match name {
-            "counters" => &self.maps.counters,
+            // "counters" => &self.maps.counters,
             // "syscall_lut" => &self.maps.syscall_lut,
             _ => unimplemented!(),
         }
