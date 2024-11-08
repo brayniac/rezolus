@@ -55,7 +55,11 @@ static __always_inline __s64 get_task_state(void *task)
 
 static __always_inline __s64 get_task_tgid(void *task)
 {
-	return BPF_CORE_READ(task, pid);
+	struct task_struct___x *t = task;
+
+	if (bpf_core_field_exists(t->__state))
+		return BPF_CORE_READ(t, tgid);
+	return BPF_CORE_READ((struct task_struct___o *)task, tgid);
 }
 
 // perf counters by cgroup
@@ -126,7 +130,7 @@ int handle__sched_switch(u64 *ctx)
 		if (cnt) {
 			u64 delta_c = c - *cnt;
 
-			__atomic_store(cnt, c, __ATOMIC_RELAXED);
+			__atomic_store(cnt, &c, __ATOMIC_RELAXED);
 
 			idx = tgid + CYCLES;
 			cnt = bpf_map_lookup_elem(&counters, idx);
@@ -140,15 +144,15 @@ int handle__sched_switch(u64 *ctx)
 		cnt = bpf_map_lookup_elem(&perf_counters, &idx);
 
 		if (cnt) {
-			u64 delta_c = c - *cnt;
+			u64 delta_i = i - *cnt;
 
-			__atomic_store(cnt, c, __ATOMIC_RELAXED);
+			__atomic_store(cnt, &i, __ATOMIC_RELAXED);
 
 			idx = tgid + INSTRUCTIONS;
 			cnt = bpf_map_lookup_elem(&counters, idx);
 
 			if (cnt) {
-				__atomic_fetch_add(cnt, delta_c, __ATOMIC_RELAXED);
+				__atomic_fetch_add(cnt, delta_i, __ATOMIC_RELAXED);
 			}
 		}
 	}
