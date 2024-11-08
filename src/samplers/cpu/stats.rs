@@ -92,3 +92,41 @@ pub fn cpu_metric_formatter(metric: &MetricEntry, format: Format) -> String {
         _ => metriken::default_formatter(metric, format),
     }
 }
+
+pub fn cpu_pid_metric_formatter(metric: &MetricEntry, format: Format) -> String {
+    match format {
+        Format::Simple => {
+            let name = metric.name().to_string();
+
+            if metric.metadata().contains_key("pid") {
+                format!(
+                    "process/{}/cpu/{name}",
+                    metric.metadata().get("pid").unwrap_or("unknown"),
+                )
+            } else {
+                format!("{name}/total",)
+            }
+        }
+        Format::Prometheus => {
+            let metadata: Vec<String> = metric
+                .metadata()
+                .iter()
+                .map(|(key, value)| format!("{key}=\"{value}\""))
+                .collect();
+            let metadata = metadata.join(", ");
+
+            let name = if metric.metadata().contains_key("pid") {
+                format!("process/{}", metric.name())
+            } else {
+                format!("{}/total", metric.name())
+            };
+
+            if metadata.is_empty() {
+                name
+            } else {
+                format!("{}{{{metadata}}}", name)
+            }
+        }
+        _ => metriken::default_formatter(metric, format),
+    }
+}

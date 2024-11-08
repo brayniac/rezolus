@@ -58,11 +58,12 @@ fn init(config: Arc<Config>) -> SamplerResult {
     let mut counters = ScopedCounters::new();
 
     for pid in 0..MAX_PID {
-        for counter in &["process/cpu/cycles", "process/cpu/instructions"] {
+        for counter in &["cpu/cycles", "cpu/instructions"] {
             counters.push(
                 pid,
                 DynamicCounterBuilder::new(*counter)
                     .metadata("pid", format!("{}", pid))
+                    .formatter(cpu_pid_metric_formatter)
                     .build(),
             );
         }
