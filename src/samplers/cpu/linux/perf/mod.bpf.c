@@ -111,6 +111,7 @@ int handle__sched_switch(u64 *ctx)
 // 	// - update cgroup counters
 	if (get_task_state(prev) == TASK_RUNNING) {
 		u32 tgid = BPF_CORE_READ(prev, tgid);
+		u32 idx;
 
 		c = bpf_perf_event_read(&cycles, processor_id);
 		i = bpf_perf_event_read(&instructions, processor_id);
