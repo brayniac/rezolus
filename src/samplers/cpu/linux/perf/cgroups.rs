@@ -55,7 +55,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
 
     let cpus = common::linux::cpus()?;
 
-    let mut cycles: Vec<Option<RawFd>> = cpus.iter().map(|c| fds.get(c, Counter::Cycles)).collect();
+    let mut cycles: Vec<Option<RawFd>> = cpus.iter().map(|cpu| fds.get(*cpu, Counter::Cycles)).collect();
 
     let bpf = BpfBuilder::new(ModSkelBuilder::default)
         // .counters("counters", counters)
