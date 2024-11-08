@@ -50,7 +50,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
     let fds = {
         let perf_events = PERF_EVENTS.blocking_lock();
 
-        perf_events.file_descriptors();
+        perf_events.file_descriptors()
     };
 
     let cpus = common::linux::cpus()?;
