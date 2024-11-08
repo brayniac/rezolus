@@ -7,6 +7,8 @@ use crate::samplers::cpu::stats::*;
 use crate::samplers::Sampler;
 use crate::*;
 
+mod cgroups;
+
 #[distributed_slice(SAMPLERS)]
 fn init(config: Arc<Config>) -> SamplerResult {
     if !config.enabled(NAME) {
