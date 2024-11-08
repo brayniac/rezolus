@@ -30,6 +30,29 @@
 #define APERF 3
 #define MPERF 4
 
+/**
+ * commit 2f064a59a1 ("sched: Change task_struct::state") changes
+ * the name of task_struct::state to task_struct::__state
+ * see:
+ *     https://github.com/torvalds/linux/commit/2f064a59a1
+ */
+struct task_struct___o {
+	volatile long int state;
+} __attribute__((preserve_access_index));
+
+struct task_struct___x {
+	unsigned int __state;
+} __attribute__((preserve_access_index));
+
+static __always_inline __s64 get_task_state(void *task)
+{
+	struct task_struct___x *t = task;
+
+	if (bpf_core_field_exists(t->__state))
+		return BPF_CORE_READ(t, __state);
+	return BPF_CORE_READ((struct task_struct___o *)task, state);
+}
+
 // perf counters by cgroup
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
@@ -85,14 +108,14 @@ int handle__sched_switch(u64 *ctx)
 // 	// - lookup previous values
 // 	// - update cgroup counters
 	if (get_task_state(prev) == TASK_RUNNING) {
-		c = cycles.perf_read(processor_id);
-		i = instructions.perf_read(processor_id);
+		c = bpf_perf_event_read(&cycles, processor_id);
+		i = bpf_perf_event_read(&instructions, processor_id);
 
 		idx = COUNTER_GROUP_WIDTH * processor_id + CYCLES;
 		cnt = bpf_map_lookup_elem(&perf_counters, &idx);
 
 		if (cnt) {
-			c = c - cnt;
+			c = c - *cnt;
 
 
 		}
