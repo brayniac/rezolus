@@ -6,7 +6,7 @@ mod builder;
 mod counters;
 mod histogram;
 
-use counters::{Counters, CpuCounters};
+use counters::{Counters, CpuCounters, ProcessCounters};
 use histogram::Histogram;
 
 pub use builder::Builder as BpfBuilder;

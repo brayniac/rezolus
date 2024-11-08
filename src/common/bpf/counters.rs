@@ -204,27 +204,25 @@ impl<'a> ProcessCounters<'a> {
         Self {
             counter_map,
             counters,
+            width,
         }
     }
 
     /// Refreshes the counters by reading from the BPF map and setting each
     /// counter metric to the current value.
     pub fn refresh(&mut self) {
-        // zero out temp counters
-        self.values.fill(0);
-
         let bank_width = self.counter_map.bank_width();
 
         // borrow the BPF counters map so we can read per-process values
         let counters = self.counter_map.values();
 
         // iterate through and increment our local value for each process counter
-        for counter in 0..MAX_PID {
+        for pid in 0..MAX_PID {
             for idx in 0..self.width {
-                let value = counters[idx + cpu * bank_width];
+                let value = counters[idx + pid * bank_width];
 
-                // set this CPU's counter to the new value
-                let _ = self.counter.set(cpu, idx, value);
+                // set this PID's counter to the new value
+                let _ = self.counter.set(pid, idx, value);
             }
         }
     }
