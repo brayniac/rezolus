@@ -1,11 +1,11 @@
 use crate::common::bpf::*;
 
 use libbpf_rs::skel::{OpenSkel, Skel, SkelBuilder};
-use libbpf_rs::OpenObject;
+use libbpf_rs::{MapCore, OpenObject};
 use metriken::{LazyCounter, RwLockHistogram};
 
 use std::mem::MaybeUninit;
-use std::os::fd::{AsFd, AsRawFd, FromRawFd};
+use std::os::fd::{AsFd, AsRawFd, FromRawFd, RawFd};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -117,7 +117,7 @@ where
                         continue;
                     }
 
-                    map.update((key as u64).as_bytes_ne(), (fd as u32).as_bytes_ne());
+                    map.update((key as u64).to_bytes_ne(), (fd as u32).to_bytes_ne());
                 }
             }
 
