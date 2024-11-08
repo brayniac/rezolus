@@ -222,7 +222,7 @@ impl<'a> ProcessCounters<'a> {
                 let value = counters[idx + pid * bank_width];
 
                 // set this PID's counter to the new value
-                let _ = self.counter.set(pid, idx, value);
+                let _ = self.counters.set(pid, idx, value);
             }
         }
     }

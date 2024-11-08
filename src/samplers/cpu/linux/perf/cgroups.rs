@@ -60,10 +60,9 @@ fn init(config: Arc<Config>) -> SamplerResult {
     for pid in 0..MAX_PID {
         for counter in &["process/cpu/cycles", "process/cpu/instructions"] {
             counters.push(
-                cpu,
+                pid,
                 DynamicCounterBuilder::new(*counter)
-                    .metadata("pid", format!("{}", cpu))
-                    .formatter(cpu_metric_formatter)
+                    .metadata("pid", format!("{}", pid))
                     .build(),
             );
         }
