@@ -50,13 +50,13 @@ struct {
 
 struct {
 	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
+	// __uint(map_flags, BPF_F_MMAPABLE);
 	__uint(max_entries, MAX_CPUS);
 } cycles SEC(".maps");
 
 struct {
 	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
+	// __uint(map_flags, BPF_F_MMAPABLE);
 	__uint(max_entries, MAX_CPUS);
 } instructions SEC(".maps");
 
