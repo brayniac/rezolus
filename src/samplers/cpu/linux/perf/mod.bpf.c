@@ -54,17 +54,11 @@ struct {
 	__uint(value_size, sizeof(u32));
 } cycles SEC(".maps");
 
-// struct {
-// 	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
-// 	// __uint(map_flags, BPF_F_MMAPABLE);
-// 	// __uint(max_entries, MAX_CPUS);
-// } cycles SEC(".maps");
-
-// struct {
-// 	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
-// 	// __uint(map_flags, BPF_F_MMAPABLE);
-// 	// __uint(max_entries, MAX_CPUS);
-// } instructions SEC(".maps");
+struct {
+	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
+	__uint(key_size, sizeof(u32));
+	__uint(value_size, sizeof(u32));
+} instructions SEC(".maps");
 
 SEC("tp_btf/sched_switch")
 int handle__sched_switch(u64 *ctx)
@@ -78,14 +72,26 @@ int handle__sched_switch(u64 *ctx)
 // 	u32 pid, idx;
 // 	u64 *tsp, delta_ns, *cnt, offcpu_ns;
 
-// 	u32 processor_id = bpf_get_smp_processor_id();
+	u32 idx;
+	u64 *cnt;
+
+	u32 processor_id = bpf_get_smp_processor_id();
 // 	u64 ts = bpf_ktime_get_ns();
 
 // 	// prev task is moving from running
 // 	// - read perf counters
 // 	// - lookup previous values
 // 	// - update cgroup counters
-// 	if (get_task_state(prev) == TASK_RUNNING) {
+	if (get_task_state(prev) == TASK_RUNNING) {
+		u64 c = cycles.perf_read(processor_id);
+
+		idx = COUNTER_GROUP_WIDTH * processor_id + CYCLES;
+		cnt = bpf_map_lookup_elem(&perf_counters, &idx);
+
+		if (cnt) {
+
+		}
+	}
 
 
 // 		// count involuntary context switch

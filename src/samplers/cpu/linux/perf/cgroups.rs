@@ -55,12 +55,14 @@ fn init(config: Arc<Config>) -> SamplerResult {
 
     let cpus = common::linux::cpus()?;
 
-    let mut cycles: Vec<Option<RawFd>> = cpus.iter().map(|cpu| fds.get(*cpu, Counter::Cycles)).collect();
+    let cycles: Vec<Option<RawFd>> = cpus.iter().map(|cpu| fds.get(*cpu, Counter::Cycles)).collect();
+    let instructions: Vec<Option<RawFd>> = cpus.iter().map(|cpu| fds.get(*cpu, Counter::Instructions)).collect();
 
     let bpf = BpfBuilder::new(ModSkelBuilder::default)
         // .counters("counters", counters)
         // .map("syscall_lut", syscall_lut())
         .perf_events("cycles", cycles)
+        .perf_events("instructions", instructions)
         .build()?;
 
     Ok(Some(Box::new(bpf)))
@@ -69,8 +71,8 @@ fn init(config: Arc<Config>) -> SamplerResult {
 impl SkelExt for ModSkel<'_> {
     fn map(&self, name: &str) -> &libbpf_rs::Map {
         match name {
-            // "counters" => &self.maps.counters,
-            // "syscall_lut" => &self.maps.syscall_lut,
+            "cycles" => &self.maps.cycles,
+            "instructions" => &self.maps.instructions,
             _ => unimplemented!(),
         }
     }
