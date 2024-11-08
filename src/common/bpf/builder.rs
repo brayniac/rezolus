@@ -117,7 +117,7 @@ where
                         continue;
                     }
 
-                    map.update((key as u64).to_ne_bytes(), (fd as u32).to_ne_bytes());
+                    map.update(&(key as u64).to_ne_bytes(), &(fd as u32).to_ne_bytes());
                 }
             }
 
