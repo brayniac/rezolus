@@ -14,6 +14,7 @@ pub struct Builder<T: 'static + SkelBuilder<'static>> {
     counters: Vec<(&'static str, Vec<&'static LazyCounter>)>,
     histograms: Vec<(&'static str, &'static RwLockHistogram)>,
     maps: Vec<(&'static str, Vec<u32>)>,
+    perf_events: Vec<(&'static str, Vec<Option<RawFd>>)>,
     cpu_counters: Vec<(&'static str, Vec<&'static LazyCounter>, ScopedCounters)>,
 }
 
@@ -29,6 +30,7 @@ where
             counters: Vec::new(),
             histograms: Vec::new(),
             maps: Vec::new(),
+            perf_events: Vec::new(),
             cpu_counters: Vec::new(),
         }
     }
@@ -98,6 +100,25 @@ where
                 }
 
                 let _ = mmap.flush();
+            }
+
+            // write perf event FDs into perf event maps
+            for (name, values) in self.perf_events.into_iter() {
+                let map = skel.map(name);
+
+                for (key, fd) in values.iter().enumerate() {
+                    if fd.is_none() {
+                        continue;
+                    }
+
+                    let fd = fd.unwrap();
+
+                    if fd < 0 {
+                        continue;
+                    }
+
+                    map.update((key as u64).as_bytes_ne(), (fd as u32).as_bytes_ne());
+                }
             }
 
             // indicate that we have finished initialization
@@ -173,6 +194,11 @@ where
     /// tables.
     pub fn map(mut self, name: &'static str, values: Vec<u32>) -> Self {
         self.maps.push((name, values));
+        self
+    }
+
+    pub fn perf_events(mut self, name: &'static str, values: Vec<Option<RawFd>>) -> Self {
+        self.perf_events.push((name, values));
         self
     }
 
