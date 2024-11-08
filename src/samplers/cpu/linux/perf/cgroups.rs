@@ -21,11 +21,13 @@ mod bpf {
 use bpf::*;
 
 use crate::common::*;
+use crate::samplers::cpu::linux::perf::*;
 // use crate::samplers::syscall::linux::stats::*;
 // use crate::samplers::syscall::linux::syscall_lut;
 use crate::*;
 
 use std::sync::Arc;
+use std::os::fd::RawFd;
 
 #[distributed_slice(SAMPLERS)]
 fn init(config: Arc<Config>) -> SamplerResult {
