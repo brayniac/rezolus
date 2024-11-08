@@ -26,6 +26,7 @@ const PAGE_SIZE: usize = 4096;
 
 // This is the maximum number of CPUs we track with BPF counters.
 const MAX_CPUS: usize = 1024;
+const MAX_PID: usize = 4 * 1024 * 1024;
 
 const COUNTER_SIZE: usize = std::mem::size_of::<u64>();
 

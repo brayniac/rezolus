@@ -16,6 +16,7 @@ pub struct Builder<T: 'static + SkelBuilder<'static>> {
     maps: Vec<(&'static str, Vec<u32>)>,
     perf_events: Vec<(&'static str, Vec<Option<RawFd>>)>,
     cpu_counters: Vec<(&'static str, Vec<&'static LazyCounter>, ScopedCounters)>,
+    process_counters: Vec<(&'static str, ScopedCounters, usize)>,
 }
 
 impl<T: 'static> Builder<T>
@@ -32,6 +33,7 @@ where
             maps: Vec::new(),
             perf_events: Vec::new(),
             cpu_counters: Vec::new(),
+            process_counters: Vec::new(),
         }
     }
 
@@ -75,6 +77,14 @@ where
                 .into_iter()
                 .map(|(name, totals, individual)| {
                     CpuCounters::new(skel.map(name), totals, individual)
+                })
+                .collect();
+
+            let mut process_counters: Vec<ProcessCounters> = self
+                .process_counters
+                .into_iter()
+                .map(|(name, counters, width)| {
+                    ProcessCounters::new(skel.map(name), counters, width)
                 })
                 .collect();
 
@@ -140,6 +150,10 @@ where
                 }
 
                 for v in &mut cpu_counters {
+                    v.refresh();
+                }
+
+                for v in &mut process_counters {
                     v.refresh();
                 }
 
@@ -212,6 +226,16 @@ where
         individual: ScopedCounters,
     ) -> Self {
         self.cpu_counters.push((name, totals, individual));
+        self
+    }
+
+    pub fn process_counters(
+        mut self,
+        name: &'static str,
+        counters: ScopedCounters,
+        width: usize,
+    ) -> Self {
+        self.process_counters.push((name, counters, width));
         self
     }
 }

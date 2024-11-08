@@ -55,12 +55,27 @@ fn init(config: Arc<Config>) -> SamplerResult {
 
     let cpus = common::linux::cpus()?;
 
+    let mut counters = ScopedCounters::new();
+
+    for pid in 0..MAX_PID {
+        for counter in &["process/cpu/cycles", "process/cpu/instructions"] {
+            counters.push(
+                cpu,
+                DynamicCounterBuilder::new(*counter)
+                    .metadata("pid", format!("{}", cpu))
+                    .formatter(cpu_metric_formatter)
+                    .build(),
+            );
+        }
+    }
+
     let cycles: Vec<Option<RawFd>> = cpus.iter().map(|cpu| fds.get(*cpu, Counter::Cycles)).collect();
     let instructions: Vec<Option<RawFd>> = cpus.iter().map(|cpu| fds.get(*cpu, Counter::Instructions)).collect();
 
     let bpf = BpfBuilder::new(ModSkelBuilder::default)
         // .counters("counters", counters)
         // .map("syscall_lut", syscall_lut())
+        .process_counters("counters", counters, 2)
         .perf_events("cycles", cycles)
         .perf_events("instructions", instructions)
         .build()?;

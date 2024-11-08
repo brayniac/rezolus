@@ -182,3 +182,50 @@ impl<'a> CpuCounters<'a> {
         }
     }
 }
+
+
+pub struct ProcessCounters<'a> {
+    counter_map: CounterMap<'a>,
+    counters: ScopedCounters,
+    width: usize,
+}
+
+impl<'a> ProcessCounters<'a> {
+    /// Create a new set of counters from the provided BPF map and collection of
+    /// scoped counter metrics.
+    pub fn new(
+        map: &'a Map,
+        counters: ScopedCounters,
+        width: usize,
+    ) -> Self {
+        // load the BPF counter map
+        let counter_map = CounterMap::new(map, width).expect("failed to initialize");
+
+        Self {
+            counter_map,
+            counters,
+        }
+    }
+
+    /// Refreshes the counters by reading from the BPF map and setting each
+    /// counter metric to the current value.
+    pub fn refresh(&mut self) {
+        // zero out temp counters
+        self.values.fill(0);
+
+        let bank_width = self.counter_map.bank_width();
+
+        // borrow the BPF counters map so we can read per-process values
+        let counters = self.counter_map.values();
+
+        // iterate through and increment our local value for each process counter
+        for counter in 0..MAX_PID {
+            for idx in 0..self.width {
+                let value = counters[idx + cpu * bank_width];
+
+                // set this CPU's counter to the new value
+                let _ = self.counter.set(cpu, idx, value);
+            }
+        }
+    }
+}

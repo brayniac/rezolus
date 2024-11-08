@@ -19,7 +19,7 @@
 
 #define COUNTER_GROUP_WIDTH 8
 #define MAX_CPUS 1024
-#define MAX_CGROUP 4194304
+#define MAX_PID 4194304
 
 #define TASK_RUNNING 0
 
@@ -53,13 +53,18 @@ static __always_inline __s64 get_task_state(void *task)
 	return BPF_CORE_READ((struct task_struct___o *)task, state);
 }
 
+static __always_inline __s64 get_task_tgid(void *task)
+{
+	return BPF_CORE_READ(task, pid);
+}
+
 // perf counters by cgroup
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, MAX_CGROUP * COUNTER_GROUP_WIDTH);
+	__uint(max_entries, MAX_PID * COUNTER_GROUP_WIDTH);
 } counters SEC(".maps");
 
 // previous values
@@ -94,6 +99,8 @@ int handle__sched_switch(u64 *ctx)
 	struct task_struct *prev = (struct task_struct *)ctx[1];
 	struct task_struct *next = (struct task_struct *)ctx[2];
 
+
+
 // 	u32 pid, idx;
 // 	u64 *tsp, delta_ns, *cnt, offcpu_ns;
 
@@ -108,6 +115,8 @@ int handle__sched_switch(u64 *ctx)
 // 	// - lookup previous values
 // 	// - update cgroup counters
 	if (get_task_state(prev) == TASK_RUNNING) {
+		u32 tgid = get_task_tgid(prev);
+
 		c = bpf_perf_event_read(&cycles, processor_id);
 		i = bpf_perf_event_read(&instructions, processor_id);
 
@@ -115,9 +124,32 @@ int handle__sched_switch(u64 *ctx)
 		cnt = bpf_map_lookup_elem(&perf_counters, &idx);
 
 		if (cnt) {
-			c = c - *cnt;
+			u64 delta_c = c - *cnt;
 
+			__atomic_store(cnt, c, __ATOMIC_RELAXED);
 
+			idx = tgid + CYCLES;
+			cnt = bpf_map_lookup_elem(&counters, idx);
+
+			if (cnt) {
+				__atomic_fetch_add(cnt, delta_c, __ATOMIC_RELAXED);
+			}
+		}
+
+		idx = COUNTER_GROUP_WIDTH * processor_id + INSTRUCTIONS;
+		cnt = bpf_map_lookup_elem(&perf_counters, &idx);
+
+		if (cnt) {
+			u64 delta_c = c - *cnt;
+
+			__atomic_store(cnt, c, __ATOMIC_RELAXED);
+
+			idx = tgid + INSTRUCTIONS;
+			cnt = bpf_map_lookup_elem(&counters, idx);
+
+			if (cnt) {
+				__atomic_fetch_add(cnt, delta_c, __ATOMIC_RELAXED);
+			}
 		}
 	}
 
