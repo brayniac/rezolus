@@ -5,7 +5,7 @@ mod latency;
 
 pub const MAX_SYSCALL_ID: usize = 1024;
 
-pub fn syscall_lut() -> Vec<u64> {
+pub fn syscall_lut() -> Vec<u32> {
     (0..MAX_SYSCALL_ID)
         .map(|id| {
             if let Some(syscall_name) = syscall_numbers::native::sys_call_name(id as i64) {

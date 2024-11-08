@@ -13,7 +13,7 @@ pub struct Builder<T: 'static + SkelBuilder<'static>> {
     skel: fn() -> T,
     counters: Vec<(&'static str, Vec<&'static LazyCounter>)>,
     histograms: Vec<(&'static str, &'static RwLockHistogram)>,
-    maps: Vec<(&'static str, Vec<u64>)>,
+    maps: Vec<(&'static str, Vec<u32>)>,
     cpu_counters: Vec<(&'static str, Vec<&'static LazyCounter>, ScopedCounters)>,
 }
 
@@ -82,16 +82,16 @@ where
                 let file = unsafe { std::fs::File::from_raw_fd(fd as _) };
                 let mut mmap = unsafe {
                     memmap2::MmapOptions::new()
-                        .len(std::mem::size_of::<u64>() * values.len())
+                        .len(std::mem::size_of::<u32>() * values.len())
                         .map_mut(&file)
                         .expect("failed to mmap() bpf map")
                 };
 
                 for (index, bytes) in mmap
-                    .chunks_exact_mut(std::mem::size_of::<u64>())
+                    .chunks_exact_mut(std::mem::size_of::<u32>())
                     .enumerate()
                 {
-                    let value = bytes.as_mut_ptr() as *mut u64;
+                    let value = bytes.as_mut_ptr() as *mut u32;
                     unsafe {
                         *value = values[index];
                     }
@@ -171,7 +171,7 @@ where
     /// Register a map which is loaded from userspace values into the BPF
     /// program. This is useful for dynamic configuration or providing lookup
     /// tables.
-    pub fn map(mut self, name: &'static str, values: Vec<u64>) -> Self {
+    pub fn map(mut self, name: &'static str, values: Vec<u32>) -> Self {
         self.maps.push((name, values));
         self
     }
