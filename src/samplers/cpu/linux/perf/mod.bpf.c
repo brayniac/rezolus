@@ -122,7 +122,7 @@ int handle__sched_switch(u64 *ctx)
 			u64 delta_c = c - *cnt;
 			*cnt = c;
 
-			idx = tgid + CYCLES;
+			idx = tgid * COUNTER_GROUP_WIDTH + INSTRUCTIONS;
 			cnt = bpf_map_lookup_elem(&counters, &idx);
 
 			if (cnt) {
@@ -137,7 +137,7 @@ int handle__sched_switch(u64 *ctx)
 			u64 delta_i = i - *cnt;
 			*cnt = i;
 
-			idx = tgid + INSTRUCTIONS;
+			idx = tgid * COUNTER_GROUP_WIDTH + INSTRUCTIONS;
 			cnt = bpf_map_lookup_elem(&counters, &idx);
 
 			if (cnt) {

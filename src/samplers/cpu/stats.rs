@@ -100,11 +100,11 @@ pub fn cpu_pid_metric_formatter(metric: &MetricEntry, format: Format) -> String 
 
             if metric.metadata().contains_key("pid") {
                 format!(
-                    "process/{}/cpu/{name}",
+                    "process/{}/{name}",
                     metric.metadata().get("pid").unwrap_or("unknown"),
                 )
             } else {
-                format!("{name}/total",)
+                panic!("pid metrics need a pid")
             }
         }
         Format::Prometheus => {
@@ -118,7 +118,7 @@ pub fn cpu_pid_metric_formatter(metric: &MetricEntry, format: Format) -> String 
             let name = if metric.metadata().contains_key("pid") {
                 format!("process/{}", metric.name())
             } else {
-                format!("{}/total", metric.name())
+                panic!("pid metrics need a pid")
             };
 
             if metadata.is_empty() {
