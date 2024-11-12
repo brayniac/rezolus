@@ -3,6 +3,7 @@
 // Copyright (c) 2023 The Rezolus Authors
 
 #include <vmlinux.h>
+#include "../../../common/bpf/helpers.h"
 #include "../../../common/bpf/histogram.h"
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_core_read.h>
@@ -61,25 +62,13 @@ static int handle_block_rq_complete(struct request *rq, int error, unsigned int 
 
 	if (idx < COUNTER_GROUP_WIDTH / 2) {
 		idx = COUNTER_GROUP_WIDTH * bpf_get_smp_processor_id() + idx;
-		cnt = bpf_map_lookup_elem(&counters, &idx);
-
-		if (cnt) {
-			__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
-		}
+		array_incr(&counters, idx);
 
 		idx = idx + COUNTER_GROUP_WIDTH / 2;
-		cnt = bpf_map_lookup_elem(&counters, &idx);
-
-		if (cnt) {
-			__atomic_fetch_add(cnt, nr_bytes, __ATOMIC_RELAXED);
-		}
+		array_add(&counters, idx, nr_bytes);
 
 		idx = value_to_index(nr_bytes, HISTOGRAM_POWER);
-		cnt = bpf_map_lookup_elem(&size, &idx);
-
-		if (cnt) {
-			__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
-		}
+		array_incr(&size, idx);
 	}
 
 	return 0;
