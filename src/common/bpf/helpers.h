@@ -1,12 +1,12 @@
 #include <bpf/bpf_helpers.h>
 
 static __always_inline void array_add(void *array, u32 idx, u64 value) {
-    u64 *cnt;
+    u64 *elem;
 
-    cnt = bpf_map_lookup_elem(array, &idx);
+    elem = bpf_map_lookup_elem(array, &idx);
 
-    if (cnt) {
-        __atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
+    if (elem) {
+        __atomic_fetch_add(elem, value, __ATOMIC_RELAXED);
     }
 }
 
