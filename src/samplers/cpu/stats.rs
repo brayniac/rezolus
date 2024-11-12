@@ -93,6 +93,7 @@ pub fn cpu_metric_formatter(metric: &MetricEntry, format: Format) -> String {
     }
 }
 
+#[allow(dead_code)]
 pub fn cpu_pid_metric_formatter(metric: &MetricEntry, format: Format) -> String {
     match format {
         Format::Simple => {
