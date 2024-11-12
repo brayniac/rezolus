@@ -10,6 +10,7 @@
 // srtt.
 
 #include <vmlinux.h>
+#include "../../../common/bpf/helpers.h"
 #include "../../../common/bpf/histogram.h"
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_core_read.h>
