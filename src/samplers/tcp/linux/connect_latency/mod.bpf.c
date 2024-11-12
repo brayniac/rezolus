@@ -79,11 +79,7 @@ static int handle_tcp_rcv_state_process(void *ctx, struct sock *sk)
 	delta_ns = (now - *tsp);
 
 	idx = value_to_index(delta_ns, HISTOGRAM_POWER);
-	cnt = bpf_map_lookup_elem(&latency, &idx);
-
-	if (cnt) {
-		__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
-	}
+	array_incr(&latency, idx);
 
 cleanup:
 	bpf_map_delete_elem(&start, &sock_ident);

@@ -60,7 +60,7 @@ static int handle_block_rq_issue(__u64 *ctx)
 
 static int handle_block_rq_complete(struct request *rq, int error, unsigned int nr_bytes)
 {
-	u64 delta, *tsp, *cnt, ts = bpf_ktime_get_ns();
+	u64 delta, *tsp, ts = bpf_ktime_get_ns();
 	u32 idx, op;
 	unsigned int cmd_flags;
 

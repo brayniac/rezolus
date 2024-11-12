@@ -25,14 +25,8 @@ struct {
 SEC("kprobe/tcp_retransmit_skb")
 int BPF_KPROBE(tcp_retransmit_skb, struct sock *sk, struct sk_buff *skb, int segs)
 {
-	u64 *cnt;
-
 	u32 idx = COUNTER_GROUP_WIDTH * bpf_get_smp_processor_id();
-	cnt = bpf_map_lookup_elem(&counters, &idx);
-
-	if (cnt) {
-		__atomic_fetch_add(cnt, segs, __ATOMIC_RELAXED);
-	}
+	array_incr(&counters, idx);
 
 	return 0;
 }

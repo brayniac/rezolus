@@ -154,7 +154,7 @@ int handle__sched_switch(u64 *ctx)
 	struct task_struct *next = (struct task_struct *)ctx[2];
 
 	u32 pid, idx;
-	u64 *tsp, delta_ns, *cnt, offcpu_ns;
+	u64 *tsp, delta_ns, offcpu_ns;
 
 	u32 processor_id = bpf_get_smp_processor_id();
 	u64 ts = bpf_ktime_get_ns();

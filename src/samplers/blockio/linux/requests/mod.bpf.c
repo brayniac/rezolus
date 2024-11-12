@@ -52,7 +52,7 @@ struct {
 
 static int handle_block_rq_complete(struct request *rq, int error, unsigned int nr_bytes)
 {
-	u64 delta, *tsp, *cnt;
+	u64 delta, *tsp;
 	u32 idx;
 	unsigned int cmd_flags;
 
