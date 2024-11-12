@@ -1,6 +1,6 @@
 #include <bpf/bpf_helpers.h>
 
-static __always_inline void array_add(int array, u32 idx, u64 value) {
+static __always_inline void array_add(void *array, u32 idx, u64 value) {
     u64 *cnt;
 
     cnt = bpf_map_lookup_elem(array, &idx);
@@ -10,6 +10,6 @@ static __always_inline void array_add(int array, u32 idx, u64 value) {
     }
 }
 
-static __always_inline void array_incr(int array, u32 idx) {
+static __always_inline void array_incr(void *array, u32 idx) {
     array_add(array, idx, 1);
 }
