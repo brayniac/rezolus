@@ -70,23 +70,22 @@ static int probe_ip(bool receiving, struct sock *sk, size_t size)
 
 	u32 offset = COUNTER_GROUP_WIDTH * bpf_get_smp_processor_id();
 
-	u64 size = (u64) size;
-
+	u64 sz = (u64) size;
 
 	if (receiving) {
 		idx = offset + TCP_RX_BYTES;
-		array_add(&counters, idx, size);
+		array_add(&counters, idx, sz);
 
-		idx = value_to_index(size, HISTOGRAM_POWER);
+		idx = value_to_index(sz, HISTOGRAM_POWER);
 		array_incr(&rx_size, idx);
 
 		idx = offset + TCP_RX_PACKETS;
 		array_incr(&counters, idx);
 	} else {
 		idx = offset + TCP_TX_BYTES;
-		array_add(&counters, idx, size);
+		array_add(&counters, idx, sz);
 
-		idx = value_to_index((u64) size, HISTOGRAM_POWER);
+		idx = value_to_index(sz, HISTOGRAM_POWER);
 		array_incr(&tx_size, idx);
 
 		idx = offset + TCP_TX_PACKETS;
