@@ -181,7 +181,7 @@ async fn prometheus(State(state): State<Arc<AppState>>) -> String {
 
                     let metadata = metadata.join(", ");
 
-                    let mut entry = format!("# TYPE {name}_distribution{metadata} histogram\n");
+                    let mut entry = format!("# TYPE {name}_distribution{{{metadata}}} histogram\n");
                     for bucket in histogram {
                         // add this bucket's sum of observations
                         sum += bucket.count() * bucket.end();
@@ -193,14 +193,17 @@ async fn prometheus(State(state): State<Arc<AppState>>) -> String {
                         let bucket_metadata = bucket_metadata.join(",");
 
                         entry += &format!(
-                            "{name}_distribution_bucket{bucket_metadata} {count} {timestamp}\n",
+                            "{name}_distribution_bucket{{{bucket_metadata}}} {count} {timestamp}\n",
                         );
                     }
 
+                    bucket_metadata[0] = "le=\"+Inf\"".to_string();
+                    let bucket_metadata = bucket_metadata.join(",");
+
                     entry +=
-                        &format!("{name}_distribution_bucket{{le=\"+Inf\"}} {count} {timestamp}\n");
-                    entry += &format!("{name}_distribution_count{metadata} {count} {timestamp}\n");
-                    entry += &format!("{name}_distribution_sum{metadata} {sum} {timestamp}");
+                        &format!("{name}_distribution_bucket{{{bucket_metadata}}} {count} {timestamp}\n");
+                    entry += &format!("{name}_distribution_count{{{metadata}}} {count} {timestamp}\n");
+                    entry += &format!("{name}_distribution_sum{{{metadata}}} {sum} {timestamp}");
 
                     data.push(entry);
                 }
