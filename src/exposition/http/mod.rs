@@ -170,7 +170,18 @@ async fn prometheus(State(state): State<Arc<AppState>>) -> String {
                     // which is also free-running
                     let mut sum = 0;
 
-                    let mut entry = format!("# TYPE {name}_distribution histogram\n");
+                    let metadata: Vec<String> = metric
+                        .metadata()
+                        .iter()
+                        .map(|(key, value)| format!("{key}=\"{value}\""))
+                        .collect();
+
+                    let mut bucket_metadata = vec!["unknown".to_owned()];
+                    bucket_metadata.extend_from_slice(&metadata);
+
+                    let metadata = metadata.join(", ");
+
+                    let mut entry = format!("# TYPE {name}_distribution{metadata} histogram\n");
                     for bucket in histogram {
                         // add this bucket's sum of observations
                         sum += bucket.count() * bucket.end();
@@ -178,16 +189,18 @@ async fn prometheus(State(state): State<Arc<AppState>>) -> String {
                         // add the count to the aggregate
                         count += bucket.count();
 
+                        bucket_metadata[0] = format!("le=\"{}\"", bucket.end());
+                        let bucket_metadata = bucket_metadata.join(",");
+
                         entry += &format!(
-                            "{name}_distribution_bucket{{le=\"{}\"}} {count} {timestamp}\n",
-                            bucket.end()
+                            "{name}_distribution_bucket{bucket_metadata} {count} {timestamp}\n",
                         );
                     }
 
                     entry +=
                         &format!("{name}_distribution_bucket{{le=\"+Inf\"}} {count} {timestamp}\n");
-                    entry += &format!("{name}_distribution_count {count} {timestamp}\n");
-                    entry += &format!("{name}_distribution_sum {sum} {timestamp}");
+                    entry += &format!("{name}_distribution_count{metadata} {count} {timestamp}\n");
+                    entry += &format!("{name}_distribution_sum{metadata} {sum} {timestamp}");
 
                     data.push(entry);
                 }
