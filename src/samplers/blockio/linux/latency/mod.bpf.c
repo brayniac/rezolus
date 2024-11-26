@@ -37,13 +37,30 @@ struct {
 	__type(key, u32);
 	__type(value, u64);
 	__uint(max_entries, HISTOGRAM_BUCKETS);
-} latency SEC(".maps");
+} read_latency SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(map_flags, BPF_F_MMAPABLE);
+	__type(key, u32);
+	__type(value, u64);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
+} write_latency SEC(".maps");
 
 static int __always_inline trace_rq_start(struct request *rq, int issue)
 {
-	u64 ts = bpf_ktime_get_ns();
+	u32 op;
+	unsigned int cmd_flags;
 
-	bpf_map_update_elem(&start, &rq, &ts, 0);
+	cmd_flags = BPF_CORE_READ(rq, cmd_flags);
+	op = cmd_flags & REQ_OP_MASK;
+
+	if (op == REQ_OP_READ || op == REQ_OP_WRITE) {
+		u64 ts = bpf_ktime_get_ns();
+
+		bpf_map_update_elem(&start, &rq, &ts, 0);
+	}
+
 	return 0;
 }
 
@@ -60,7 +77,8 @@ static int handle_block_rq_issue(__u64 *ctx)
 static int handle_block_rq_complete(struct request *rq, int error, unsigned int nr_bytes)
 {
 	u64 delta, *tsp, *cnt, ts = bpf_ktime_get_ns();
-	u32 idx;
+	u32 idx, op;
+	unsigned int cmd_flags;
 
 	tsp = bpf_map_lookup_elem(&start, &rq);
 	if (!tsp) {
@@ -70,11 +88,23 @@ static int handle_block_rq_complete(struct request *rq, int error, unsigned int 
 	if (*tsp <= ts) {
 		delta = ts - *tsp;
 
-		idx = value_to_index(delta, HISTOGRAM_POWER);
-		cnt = bpf_map_lookup_elem(&latency, &idx);
+		cmd_flags = BPF_CORE_READ(rq, cmd_flags);
+		op = cmd_flags & REQ_OP_MASK;
 
-		if (cnt) {
-			__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
+		if (op == REQ_OP_READ) {
+			idx = value_to_index(delta, HISTOGRAM_POWER);
+			cnt = bpf_map_lookup_elem(&read_latency, &idx);
+
+			if (cnt) {
+				__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
+			}
+		} else if (op == REQ_OP_WRITE) {
+			idx = value_to_index(delta, HISTOGRAM_POWER);
+			cnt = bpf_map_lookup_elem(&write_latency, &idx);
+
+			if (cnt) {
+				__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
+			}
 		}
 	}
 

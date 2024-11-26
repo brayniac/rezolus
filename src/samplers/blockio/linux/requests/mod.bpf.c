@@ -47,20 +47,29 @@ struct {
 	__type(key, u32);
 	__type(value, u64);
 	__uint(max_entries, HISTOGRAM_BUCKETS);
-} size SEC(".maps");
+} read_size SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(map_flags, BPF_F_MMAPABLE);
+	__type(key, u32);
+	__type(value, u64);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
+} write_size SEC(".maps");
+
 
 static int handle_block_rq_complete(struct request *rq, int error, unsigned int nr_bytes)
 {
 	u64 delta, *tsp, *cnt;
-	u32 idx;
+	u32 idx, op;
 	unsigned int cmd_flags;
 
 	cmd_flags = BPF_CORE_READ(rq, cmd_flags);
 
-	idx = cmd_flags & REQ_OP_MASK;
+	op = cmd_flags & REQ_OP_MASK;
 
 	if (idx < COUNTER_GROUP_WIDTH / 2) {
-		idx = COUNTER_GROUP_WIDTH * bpf_get_smp_processor_id() + idx;
+		idx = COUNTER_GROUP_WIDTH * bpf_get_smp_processor_id() + op;
 		cnt = bpf_map_lookup_elem(&counters, &idx);
 
 		if (cnt) {
@@ -74,11 +83,20 @@ static int handle_block_rq_complete(struct request *rq, int error, unsigned int 
 			__atomic_fetch_add(cnt, nr_bytes, __ATOMIC_RELAXED);
 		}
 
-		idx = value_to_index(nr_bytes, HISTOGRAM_POWER);
-		cnt = bpf_map_lookup_elem(&size, &idx);
+		if (op == REQ_OP_READ) {
+			idx = value_to_index(nr_bytes, HISTOGRAM_POWER);
+			cnt = bpf_map_lookup_elem(&read_size, &idx);
 
-		if (cnt) {
-			__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
+			if (cnt) {
+				__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
+			}
+		} else if (op == REQ_OP_WRITE) {
+			idx = value_to_index(nr_bytes, HISTOGRAM_POWER);
+			cnt = bpf_map_lookup_elem(&write_size, &idx);
+
+			if (cnt) {
+				__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
+			}
 		}
 	}
 

@@ -3,17 +3,35 @@ use metriken::*;
 
 #[metric(
     name = "blockio/latency",
-    description = "Distribution of blockio operation latency in nanoseconds",
-    metadata = { unit = "nanoseconds" }
+    description = "Distribution of blockio read operation latency in nanoseconds",
+    formatter = blockio_metric_formatter,
+    metadata = { op = "read", unit = "nanoseconds" }
 )]
-pub static BLOCKIO_LATENCY: RwLockHistogram = RwLockHistogram::new(HISTOGRAM_GROUPING_POWER, 64);
+pub static BLOCKIO_READ_LATENCY: RwLockHistogram = RwLockHistogram::new(HISTOGRAM_GROUPING_POWER, 64);
+
+#[metric(
+    name = "blockio/latency",
+    description = "Distribution of blockio write operation latency in nanoseconds",
+    formatter = blockio_metric_formatter,
+    metadata = { op = "read", unit = "nanoseconds" }
+)]
+pub static BLOCKIO_WRITE_LATENCY: RwLockHistogram = RwLockHistogram::new(HISTOGRAM_GROUPING_POWER, 64);
 
 #[metric(
     name = "blockio/size",
-    description = "Distribution of blockio operation sizes in bytes",
-    metadata = { unit = "bytes" }
+    description = "Distribution of blockio read operation sizes in bytes",
+    formatter = blockio_metric_formatter,
+    metadata = { op = "read", unit = "bytes" }
 )]
-pub static BLOCKIO_SIZE: RwLockHistogram = RwLockHistogram::new(HISTOGRAM_GROUPING_POWER, 64);
+pub static BLOCKIO_READ_SIZE: RwLockHistogram = RwLockHistogram::new(HISTOGRAM_GROUPING_POWER, 64);
+
+#[metric(
+    name = "blockio/size",
+    description = "Distribution of blockio write operation sizes in bytes",
+    formatter = blockio_metric_formatter,
+    metadata = { op = "write", unit = "bytes" }
+)]
+pub static BLOCKIO_WRITE_SIZE: RwLockHistogram = RwLockHistogram::new(HISTOGRAM_GROUPING_POWER, 64);
 
 #[metric(
     name = "blockio/operations",
@@ -99,8 +117,14 @@ pub fn blockio_metric_formatter(metric: &MetricEntry, format: Format) -> String 
                     "blockio/bytes" => {
                         format!("blockio/{op}/bytes")
                     }
+                    "blockio/latency" => {
+                        format!("blockio/{op}/latency")
+                    }
                     "blockio/operations" => {
                         format!("blockio/{op}/operations")
+                    }
+                    "blockio/size" => {
+                        format!("blockio/{op}/size")
                     }
                     _ => {
                         format!("{}/{op}", metric.name())
