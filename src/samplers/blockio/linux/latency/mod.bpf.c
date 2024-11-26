@@ -3,7 +3,7 @@
 // Copyright (c) 2023 The Rezolus Authors
 
 #include <vmlinux.h>
-#include "../../../common/bpf/histogram.h"
+#include "../../../common/bpf/helpers.h"
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_core_read.h>
 #include <bpf/bpf_tracing.h>
@@ -39,6 +39,22 @@ struct {
 	__uint(max_entries, HISTOGRAM_BUCKETS);
 } latency SEC(".maps");
 
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(map_flags, BPF_F_MMAPABLE);
+	__type(key, u32);
+	__type(value, u64);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
+} read_latency SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(map_flags, BPF_F_MMAPABLE);
+	__type(key, u32);
+	__type(value, u64);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
+} write_latency SEC(".maps");
+
 static int __always_inline trace_rq_start(struct request *rq, int issue)
 {
 	u64 ts = bpf_ktime_get_ns();
@@ -59,22 +75,34 @@ static int handle_block_rq_issue(__u64 *ctx)
 
 static int handle_block_rq_complete(struct request *rq, int error, unsigned int nr_bytes)
 {
-	u64 delta, *tsp, *cnt, ts = bpf_ktime_get_ns();
-	u32 idx;
+	u64 delta, *tsp, ts = bpf_ktime_get_ns();
+	u32 idx, op;
+	unsigned int cmd_flags;
 
 	tsp = bpf_map_lookup_elem(&start, &rq);
 	if (!tsp) {
 		return 0;
 	}
 
+	cmd_flags = BPF_CORE_READ(rq, cmd_flags);
+	op = cmd_flags & REQ_OP_MASK;
+
 	if (*tsp <= ts) {
 		delta = ts - *tsp;
 
 		idx = value_to_index(delta, HISTOGRAM_POWER);
-		cnt = bpf_map_lookup_elem(&latency, &idx);
 
-		if (cnt) {
-			__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
+		// increment total latency histogram
+		array_incr(&latency, idx);
+
+		// incremenet per-operation latency histogram
+		switch (op) {
+			case REQ_OP_READ:
+				array_incr(&read_latency, idx);
+				break;
+			case REQ_OP_WRITE:
+				array_incr(&write_latency, idx);
+				break;
 		}
 	}
 
