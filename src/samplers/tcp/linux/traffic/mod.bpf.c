@@ -76,8 +76,7 @@ static int probe_ip(bool receiving, struct sock *sk, size_t size)
 		idx = offset + TCP_RX_BYTES;
 		array_add(&counters, idx, sz);
 
-		idx = value_to_index(sz, HISTOGRAM_POWER);
-		array_incr(&rx_size, idx);
+		histogram_incr(&rx_size, HISTOGRAM_POWER, sz);
 
 		idx = offset + TCP_RX_PACKETS;
 		array_incr(&counters, idx);
@@ -85,8 +84,7 @@ static int probe_ip(bool receiving, struct sock *sk, size_t size)
 		idx = offset + TCP_TX_BYTES;
 		array_add(&counters, idx, sz);
 
-		idx = value_to_index(sz, HISTOGRAM_POWER);
-		array_incr(&tx_size, idx);
+		histogram_incr(&tx_size, HISTOGRAM_POWER, sz);
 
 		idx = offset + TCP_TX_PACKETS;
 		array_incr(&counters, idx);

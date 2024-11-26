@@ -183,8 +183,7 @@ int handle__sched_switch(u64 *ctx)
 			delta_ns = ts - *tsp;
 
 			// update histogram
-			idx = value_to_index(delta_ns, HISTOGRAM_POWER);
-			array_incr(&running, idx);
+			histogram_incr(&running, HISTOGRAM_POWER, delta_ns);
 
 			*tsp = 0;
 		}
@@ -210,8 +209,7 @@ int handle__sched_switch(u64 *ctx)
 		delta_ns = ts - *tsp;
 
 		// update the histogram
-		idx = value_to_index(delta_ns, HISTOGRAM_POWER);
-		array_incr(&runqlat, idx);
+		histogram_incr(&runqlat, HISTOGRAM_POWER, delta_ns);
 
 		*tsp = 0;
 
@@ -225,8 +223,7 @@ int handle__sched_switch(u64 *ctx)
 				offcpu_ns = offcpu_ns - delta_ns;
 
 				// update the histogram
-				idx = value_to_index(offcpu_ns, HISTOGRAM_POWER);
-				array_incr(&offcpu, idx);
+				histogram_incr(&offcpu, HISTOGRAM_POWER, offcpu_ns);
 			}
 
 			*tsp = 0;

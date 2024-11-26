@@ -67,8 +67,7 @@ static int handle_block_rq_complete(struct request *rq, int error, unsigned int 
 		idx = idx + COUNTER_GROUP_WIDTH / 2;
 		array_add(&counters, idx, nr_bytes);
 
-		idx = value_to_index(nr_bytes, HISTOGRAM_POWER);
-		array_incr(&size, idx);
+		histogram_incr(&size, HISTOGRAM_POWER, nr_bytes);
 	}
 
 	return 0;

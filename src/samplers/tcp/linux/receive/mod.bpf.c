@@ -53,15 +53,13 @@ int BPF_KPROBE(tcp_rcv_kprobe, struct sock *sk)
 	// record nanoseconds.
 	srtt_ns = 1000 * (u64) srtt_us >> 3;
 
-	idx = value_to_index(srtt_ns, HISTOGRAM_POWER);
-	array_incr(&srtt, idx);
+	histogram_incr(&srtt, HISTOGRAM_POWER, srtt_ns);
 
 	// NOTE: mdev is stored as 4x the value in microseconds but we want to
 	// record nanoseconds.
 	mdev_ns = 1000 * (u64) mdev_us >> 2;
 
-	idx = value_to_index(mdev_ns, HISTOGRAM_POWER);
-	array_incr(&jitter, idx);
+	histogram_incr(&jitter, HISTOGRAM_POWER, mdev_ns);
 
 	return 0;
 }

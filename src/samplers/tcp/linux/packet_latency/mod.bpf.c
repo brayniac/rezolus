@@ -87,8 +87,7 @@ static int handle_tcp_rcv_space_adjust(void *ctx, struct sock *sk)
 
 	delta_ns = (now - *tsp);
 
-	idx = value_to_index(delta_ns, HISTOGRAM_POWER);
-	array_incr(&latency, idx);
+	histogram_incr(&latency, HISTOGRAM_POWER, delta_ns);
 
 cleanup:
 	bpf_map_delete_elem(&start, &sock_ident);

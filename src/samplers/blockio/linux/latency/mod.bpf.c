@@ -75,8 +75,7 @@ static int handle_block_rq_complete(struct request *rq, int error, unsigned int 
 	if (*tsp <= ts) {
 		delta = ts - *tsp;
 
-		idx = value_to_index(delta, HISTOGRAM_POWER);
-		array_incr(&latency, idx);
+		histogram_incr(&latency, HISTOGRAM_POWER, delta);
 	}
 
 	bpf_map_delete_elem(&start, &rq);
