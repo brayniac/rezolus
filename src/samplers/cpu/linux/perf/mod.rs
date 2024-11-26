@@ -70,11 +70,11 @@ impl PerfInner {
 
             match PerfGroup::new(cpu) {
                 Ok(g) => {
-                    fds[cpu * 8 + Counter::Cycles as usize] = g.get_fd().unwrap_or(0);
-                    fds[cpu * 8 + Counter::Instructions as usize] = g.get_fd().unwrap_or(0);
-                    fds[cpu * 8 + Counter::Tsc as usize] = g.get_fd().unwrap_or(0);
-                    fds[cpu * 8 + Counter::Aperf as usize] = g.get_fd().unwrap_or(0);
-                    fds[cpu * 8 + Counter::Mperf as usize] = g.get_fd().unwrap_or(0);
+                    fds[cpu * 8 + Counter::Cycles as usize] = g.get_fd(Counter::Cycles).unwrap_or(0);
+                    fds[cpu * 8 + Counter::Instructions as usize] = g.get_fd(Counter::Instructions).unwrap_or(0);
+                    fds[cpu * 8 + Counter::Tsc as usize] = g.get_fd(Counter::Tsc).unwrap_or(0);
+                    fds[cpu * 8 + Counter::Aperf as usize] = g.get_fd(Counter::Aperf).unwrap_or(0);
+                    fds[cpu * 8 + Counter::Mperf as usize] = g.get_fd(Counter::Mperf).unwrap_or(0);
 
                     groups.push(g)
                 }
