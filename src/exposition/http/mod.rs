@@ -190,7 +190,7 @@ async fn prometheus(State(state): State<Arc<AppState>>) -> String {
                         count += bucket.count();
 
                         bucket_metadata[0] = format!("le=\"{}\"", bucket.end());
-                        let bucket_metadata = bucket_metadata.join(",");
+                        let bucket_metadata = bucket_metadata.join(", ");
 
                         entry += &format!(
                             "{name}_distribution_bucket{{{bucket_metadata}}} {count} {timestamp}\n",
@@ -198,7 +198,7 @@ async fn prometheus(State(state): State<Arc<AppState>>) -> String {
                     }
 
                     bucket_metadata[0] = "le=\"+Inf\"".to_string();
-                    let bucket_metadata = bucket_metadata.join(",");
+                    let bucket_metadata = bucket_metadata.join(", ");
 
                     entry +=
                         &format!("{name}_distribution_bucket{{{bucket_metadata}}} {count} {timestamp}\n");
