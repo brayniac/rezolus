@@ -31,7 +31,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
 
     let counters = vec![&SCHEDULER_IVCSW];
 
-    let bpf = BpfBuilder::new(ModSkelBuilder::default)
+    let bpf = BpfBuilder::new(config.clone(), ModSkelBuilder::default)
         .counters("counters", counters)
         .histogram("runqlat", &SCHEDULER_RUNQUEUE_LATENCY)
         .histogram("running", &SCHEDULER_RUNNING)

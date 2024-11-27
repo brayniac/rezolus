@@ -74,7 +74,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
         }
     }
 
-    let bpf = BpfBuilder::new(ModSkelBuilder::default)
+    let bpf = BpfBuilder::new(config.clone(), ModSkelBuilder::default)
         .cpu_counters("counters", totals, individual)
         .build()?;
 

@@ -36,7 +36,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
         &NETWORK_TX_PACKETS,
     ];
 
-    let bpf = BpfBuilder::new(ModSkelBuilder::default)
+    let bpf = BpfBuilder::new(config.clone(), ModSkelBuilder::default)
         .counters("counters", counters)
         .build()?;
 

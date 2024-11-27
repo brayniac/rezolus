@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 pub struct Builder<T: 'static + SkelBuilder<'static>> {
     skel: fn() -> T,
+    config: Arc<Config>,
     counters: Vec<(&'static str, Vec<&'static LazyCounter>)>,
     histograms: Vec<(&'static str, &'static RwLockHistogram)>,
     maps: Vec<(&'static str, Vec<u64>)>,
@@ -24,7 +25,7 @@ where
     <<T as SkelBuilder<'static>>::Output as OpenSkel<'static>>::Output: OpenSkelExt,
     <<T as SkelBuilder<'static>>::Output as OpenSkel<'static>>::Output: SkelExt,
 {
-    pub fn new(skel: fn() -> T) -> Self {
+    pub fn new(config: Arc<Config>, skel: fn() -> T) -> Self {
         Self {
             skel,
             counters: Vec::new(),
@@ -46,8 +47,11 @@ where
             let open_object: &'static mut MaybeUninit<OpenObject> =
                 Box::leak(Box::new(MaybeUninit::uninit()));
 
+            // initialize open options
+            let open_opts: bpf_object_open_opts = Default::default();
+
             // open and load the BPF program
-            let mut skel = (self.skel)().open(open_object)?.load()?;
+            let mut skel = (self.skel)().open_opts(open_opts, open_object)?.load()?;
 
             // log the number of instructions for each probe in the program
             skel.log_prog_instructions();
