@@ -53,7 +53,7 @@ where
                 Box::leak(Box::new(MaybeUninit::uninit()));
 
             // initialize open options
-            let open_opts: bpf_object_open_opts = Default::default();
+            let mut open_opts: bpf_object_open_opts = Default::default();
 
             if let Some(btf_path) = self.config.general().btf_path() {
                 let btf_path = std::ffi::CString::new(btf_path).expect("bad BTF path");
