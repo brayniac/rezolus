@@ -4,6 +4,8 @@ use crate::config::*;
 pub struct General {
     #[serde(default = "listen")]
     listen: String,
+    #[serde(default)]
+    btf_path: Option<String>,
 }
 
 impl General {
@@ -23,5 +25,9 @@ impl General {
                 std::process::exit(1);
             })
             .unwrap()
+    }
+
+    pub fn btf_path(&self) -> Option<&str> {
+        self.btf_path.as_deref()
     }
 }

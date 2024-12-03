@@ -13,8 +13,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 pub struct Builder<T: 'static + SkelBuilder<'static>> {
-    skel: fn() -> T,
     config: Arc<Config>,
+    skel: fn() -> T,
     counters: Vec<(&'static str, Vec<&'static LazyCounter>)>,
     histograms: Vec<(&'static str, &'static RwLockHistogram)>,
     maps: Vec<(&'static str, Vec<u64>)>,
@@ -54,6 +54,16 @@ where
 
             // initialize open options
             let open_opts: bpf_object_open_opts = Default::default();
+
+            if let Some(btf_path) = config.general().btf_path() {
+                let btf_path = CString::new(btf_path);
+                let ptr = btf_path.as_ptr();
+
+                // ensure the cstr is not dropped
+                std::mem::forget(btf_path);
+
+                open_opts.btf_custom_path = ptr;
+            }
 
             // open and load the BPF program
             let mut skel = (self.skel)().open_opts(open_opts, open_object)?.load()?;
