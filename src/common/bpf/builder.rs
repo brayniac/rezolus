@@ -55,8 +55,8 @@ where
             // initialize open options
             let open_opts: bpf_object_open_opts = Default::default();
 
-            if let Some(btf_path) = config.general().btf_path() {
-                let btf_path = CString::new(btf_path);
+            if let Some(btf_path) = self.config.general().btf_path() {
+                let btf_path = std::ffi::CString;::new(btf_path);
                 let ptr = btf_path.as_ptr();
 
                 // ensure the cstr is not dropped
