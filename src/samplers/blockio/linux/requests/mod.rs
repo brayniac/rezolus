@@ -37,7 +37,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
         &BLOCKIO_DISCARD_BYTES,
     ];
 
-    let bpf = BpfBuilder::new(ModSkelBuilder::default)
+    let bpf = BpfBuilder::new(config, ModSkelBuilder::default)
         .counters("counters", counters)
         .histogram("size", &BLOCKIO_SIZE)
         .histogram("read_size", &BLOCKIO_READ_SIZE)

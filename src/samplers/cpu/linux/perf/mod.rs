@@ -50,7 +50,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
 
     println!("initializing bpf for: {NAME}");
 
-    let bpf = BpfBuilder::new(ModSkelBuilder::default)
+    let bpf = BpfBuilder::new(config, ModSkelBuilder::default)
         .perf_event("cycles", perf_event::events::Hardware::CPU_CYCLES)
         .perf_event("instructions", perf_event::events::Hardware::INSTRUCTIONS)
         .cpu_counters("counters", totals, individual)

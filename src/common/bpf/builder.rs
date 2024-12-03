@@ -3,6 +3,7 @@ use crate::common::*;
 
 use libbpf_rs::skel::{OpenSkel, Skel, SkelBuilder};
 use libbpf_rs::{MapCore, MapFlags, OpenObject};
+use libbpf_sys::bpf_object_open_opts;
 use metriken::{LazyCounter, RwLockHistogram};
 use perf_event::ReadFormat;
 
@@ -29,6 +30,7 @@ where
 {
     pub fn new(config: Arc<Config>, skel: fn() -> T) -> Self {
         Self {
+            config,
             skel,
             counters: Vec::new(),
             histograms: Vec::new(),

@@ -45,7 +45,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
         &SYSCALL_YIELD,
     ];
 
-    let bpf = BpfBuilder::new(ModSkelBuilder::default)
+    let bpf = BpfBuilder::new(config, ModSkelBuilder::default)
         .counters("counters", counters)
         .map("syscall_lut", syscall_lut())
         .build()?;
