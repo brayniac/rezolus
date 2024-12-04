@@ -185,64 +185,6 @@ impl<'a> CpuCounters<'a> {
     }
 }
 
-/// This wraps the BPF map along with an opened memory-mapped region for the map
-/// values.
-struct CgroupCounterMap<'a> {
-    _map: &'a Map<'a>,
-    mmap: MmapMut,
-    counters: usize,
-}
-
-impl<'a> CounterMap<'a> {
-    /// Create a new `CounterMap` from the provided BPF map that holds the
-    /// provided number of counters.
-    pub fn new(map: &'a Map, counters: usize) -> Result<Self, ()> {
-        // each CPU has its own bank of counters, this bank is the next nearest
-        // whole number of cachelines wide
-        let bank_cachelines = whole_cachelines::<u64>(counters);
-
-        // the number of possible slots per bank of counters
-        let bank_width = bank_cachelines * COUNTERS_PER_CACHELINE;
-
-        // our total mapped region size in bytes
-        let total_bytes = bank_cachelines * CACHELINE_SIZE * MAX_CPUS;
-
-        let fd = map.as_fd().as_raw_fd();
-        let file = unsafe { std::fs::File::from_raw_fd(fd as _) };
-        let mmap: MmapMut = unsafe {
-            MmapOptions::new()
-                .len(total_bytes)
-                .map_mut(&file)
-                .map_err(|e| error!("failed to mmap() bpf counterset: {e}"))
-        }?;
-
-        let (_prefix, values, _suffix) = unsafe { mmap.align_to::<u64>() };
-
-        if values.len() != MAX_CPUS * bank_width {
-            error!("mmap region not aligned or width doesn't match");
-            return Err(());
-        }
-
-        Ok(Self {
-            _map: map,
-            mmap,
-            bank_width,
-        })
-    }
-
-    /// Borrow a reference to the raw values.
-    pub fn values(&self) -> &[u64] {
-        let (_prefix, values, _suffix) = unsafe { self.mmap.align_to::<u64>() };
-        values
-    }
-
-    /// Get the bank width which is the stride for reading through the values
-    /// slice.
-    pub fn bank_width(&self) -> usize {
-        self.bank_width
-    }
-}
-
 pub struct PackedCounters<'a> {
     _map: &'a Map<'a>,
     mmap: MmapMut,
