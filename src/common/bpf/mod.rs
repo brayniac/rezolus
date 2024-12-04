@@ -16,6 +16,7 @@ pub trait OpenSkelExt {
 
 pub trait SkelExt {
     fn map(&self, name: &str) -> &libbpf_rs::Map;
+    fn map_mut(&self, name: &str)
 }
 
 const CACHELINE_SIZE: usize = 64;
@@ -36,7 +37,7 @@ fn whole_pages<T>(count: usize) -> usize {
     ((count * std::mem::size_of::<T>()) + PAGE_SIZE - 1) / PAGE_SIZE
 }
 
-use counters::{Counters, CpuCounters};
+use counters::{Counters, CpuCounters, PackedCounters};
 use histogram::Histogram;
 use sync_primitive::SyncPrimitive;
 
