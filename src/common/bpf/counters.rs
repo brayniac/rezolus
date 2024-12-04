@@ -209,14 +209,13 @@ impl<'a> PackedCounters<'a> {
             MmapOptions::new()
                 .len(total_bytes)
                 .map_mut(&file)
-                .map_err(|e| error!("failed to mmap() bpf counterset: {e}"))
-        }?;
+                .map_err(|e| panic!("failed to mmap() bpf counterset: {e}"))
+        };
 
         let (_prefix, values, _suffix) = unsafe { mmap.align_to::<u64>() };
 
         if values.len() != individual.len() {
-            error!("mmap region not aligned or width doesn't match");
-            return Err(());
+            panic!("mmap region not aligned or width doesn't match");
         }
 
         Self {

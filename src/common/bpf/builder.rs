@@ -18,7 +18,7 @@ pub struct Builder<T: 'static + SkelBuilder<'static>> {
     maps: Vec<(&'static str, Vec<u64>)>,
     cpu_counters: Vec<(&'static str, Vec<&'static LazyCounter>, ScopedCounters)>,
     perf_events: Vec<(&'static str, perf_event::events::Hardware)>,
-    packed_counters: Vec<(&'static src, Vec<DynamicCounter>)>,
+    packed_counters: Vec<(&'static str, Vec<DynamicCounter>)>,
 }
 
 impl<T: 'static> Builder<T>
