@@ -117,7 +117,7 @@ int handle__sched_switch(u64 *ctx)
 			if (elem) {
 				delta_c = c - *elem;
 
-				array_add(&cgroup_counters, &idx, delta_c);
+				array_add(&cgroup_counters, idx, delta_c);
 			}
 
 			bpf_map_update_elem(&cgroup_counters_prev, &idx, &c, BPF_ANY);
@@ -129,7 +129,7 @@ int handle__sched_switch(u64 *ctx)
 			if (elem) {
 				delta_i = i - *elem;
 
-				array_add(&cgroup_counters, &idx, delta_i);
+				array_add(&cgroup_counters, idx, delta_i);
 			}
 
 			bpf_map_update_elem(&cgroup_counters_prev, &idx, &i, BPF_ANY);
