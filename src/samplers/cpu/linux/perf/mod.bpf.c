@@ -107,7 +107,7 @@ int handle__sched_switch(u64 *ctx)
 	bpf_map_update_elem(&counters, &idx, &i, BPF_ANY);
 
 	if (bpf_core_field_exists(prev->sched_task_group)) {
-		int cgroup_id = prev->sched_task_group->css->id;
+		int cgroup_id = prev->sched_task_group->css.id;
 
 		if (cgroup_id && cgroup_id < MAX_CGROUP_IDS) {
 			idx = cgroup_id + CYCLES;
