@@ -106,30 +106,30 @@ int handle__sched_switch(u64 *ctx)
 	idx = processor_id * COUNTER_GROUP_WIDTH + INSTRUCTIONS;
 	bpf_map_update_elem(&counters, &idx, &i, BPF_ANY);
 
-	if (bpf_core_field_exists(t->task_group)) {
-		int cgroup_id = t->task_group->css->id;
+	if (bpf_core_field_exists(prev->task_group)) {
+		int cgroup_id = prev->task_group->css->id;
 
 		if (cgroup_id && cgroup_id < MAX_CGROUP_IDS) {
 			idx = cgroup_id + CYCLES;
 
-			elem = bpf_map_lookup(&cgroup_counters_prev, &idx);
+			elem = bpf_map_lookup_elem(&cgroup_counters_prev, &idx);
 
 			if (elem) {
 				delta_c = c - *elem;
 
-				bpf_array_add(&cgroup_counters, &idx, delta_c);
+				array_add(&cgroup_counters, &idx, delta_c);
 			}
 
 			bpf_map_update_elem(&cgroup_counters_prev, &idx, &c, BPF_ANY);
 
 			idx = cgroup_id + INSTRUCTIONS;
 
-			elem = bpf_map_lookup(&cgroup_counters_prev, &idx);
+			elem = bpf_map_lookup_elem(&cgroup_counters_prev, &idx);
 
 			if (elem) {
 				delta_i = i - *elem;
 
-				bpf_array_add(&cgroup_counters, &idx, delta_i);
+				array_add(&cgroup_counters, &idx, delta_i);
 			}
 
 			bpf_map_update_elem(&cgroup_counters_prev, &idx, &i, BPF_ANY);
