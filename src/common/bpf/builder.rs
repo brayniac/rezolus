@@ -133,7 +133,7 @@ where
                 perf_events.len()
             );
 
-            let mut packed_counters = Vec<PackedCounters> = self
+            let mut packed_counters: Vec<PackedCounters> = self
                 .packed_counters
                 .into_iter()
                 .map(|(name, individual)| {
