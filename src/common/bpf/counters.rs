@@ -209,7 +209,7 @@ impl<'a> PackedCounters<'a> {
             MmapOptions::new()
                 .len(total_bytes)
                 .map_mut(&file)
-                .map_err(|e| panic!("failed to mmap() bpf counterset: {e}"))
+                .expect("failed to mmap() bpf counterset")
         };
 
         let (_prefix, values, _suffix) = unsafe { mmap.align_to::<u64>() };
