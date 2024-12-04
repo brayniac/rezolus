@@ -9,7 +9,7 @@
 #define COUNTERS 2
 #define COUNTER_GROUP_WIDTH 8
 #define MAX_CPUS 1024
-#define MAX_CGROUP_IDS 4194304
+#define MAX_CGROUPS 4194304
 
 #define TASK_RUNNING 0
 
@@ -109,7 +109,7 @@ int handle__sched_switch(u64 *ctx)
 	if (bpf_core_field_exists(prev->sched_task_group)) {
 		int cgroup_id = prev->sched_task_group->css.id;
 
-		if (cgroup_id && cgroup_id < MAX_CGROUP_IDS) {
+		if (cgroup_id && cgroup_id < MAX_CGROUPS) {
 			idx = cgroup_id + CYCLES;
 
 			elem = bpf_map_lookup_elem(&cgroup_counters_prev, &idx);

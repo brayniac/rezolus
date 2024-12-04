@@ -22,6 +22,8 @@ use crate::*;
 
 use std::sync::Arc;
 
+const MAX_CGROUPS: usize = 4194304
+
 #[distributed_slice(SAMPLERS)]
 fn init(config: Arc<Config>) -> SamplerResult {
     if !config.enabled(NAME) {
@@ -34,11 +36,11 @@ fn init(config: Arc<Config>) -> SamplerResult {
 
     let metrics = ["cpu/cycles", "cpu/instructions"];
 
-    let mut individual = ScopedCounters::new();
+    let mut cpu_counters = ScopedCounters::new();
 
     for cpu in cpus {
         for metric in metrics {
-            individual.push(
+            cpu_counters.push(
                 cpu,
                 DynamicCounterBuilder::new(metric)
                     .metadata("id", format!("{}", cpu))
@@ -48,12 +50,25 @@ fn init(config: Arc<Config>) -> SamplerResult {
         }
     }
 
-    println!("initializing bpf for: {NAME}");
+    let mut cgroup_counters = Vec::new();
+
+
+    for cgroup_id in 0..MAX_CGROUPS {
+        for metric in metrics {
+            cgroup_counters.push(
+                DynamicCounterBuilder::new(metric)
+                    .metadata("cgroup", format!("{cgroup_id}"))
+                    .formatter(cgroup_metric_formatter)
+                    .build(),
+            );
+        }
+    }
 
     let bpf = BpfBuilder::new(ModSkelBuilder::default)
         .perf_event("cycles", perf_event::events::Hardware::CPU_CYCLES)
         .perf_event("instructions", perf_event::events::Hardware::INSTRUCTIONS)
-        .cpu_counters("counters", totals, individual)
+        .cpu_counters("counters", totals, cpu_counters)
+        .packed_counters("cgroup_counters", cgroup_counters)
         .build()?;
 
     Ok(Some(Box::new(bpf)))
@@ -62,6 +77,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
 impl SkelExt for ModSkel<'_> {
     fn map(&self, name: &str) -> &libbpf_rs::Map {
         match name {
+            "cgroup_counters" => &self.maps.cgroup_counters,
             "counters" => &self.maps.counters,
             "cycles" => &self.maps.cycles,
             "instructions" => &self.maps.instructions,
