@@ -31,7 +31,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, MAX_CGROUP_IDS * COUNTERS);
+	__uint(max_entries, MAX_CGROUPS * COUNTERS);
 } cgroup_counters SEC(".maps");
 
 struct {
@@ -39,7 +39,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, MAX_CGROUP_IDS * COUNTERS);
+	__uint(max_entries, MAX_CGROUPS * COUNTERS);
 } cgroup_counters_prev SEC(".maps");
 
 /**
