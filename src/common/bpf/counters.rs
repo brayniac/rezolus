@@ -232,7 +232,9 @@ impl<'a> PackedCounters<'a> {
 
         // update all individual counters
         for idx in 0..self.individual.len() {
-            self.individual[idx].set(values[idx]);
+            if values[idx] != 0 {
+                self.individual[idx].set(values[idx]);
+            }
         }
     }
 }
