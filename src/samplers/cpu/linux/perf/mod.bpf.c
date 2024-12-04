@@ -6,17 +6,16 @@
 #include <bpf/bpf_core_read.h>
 #include <bpf/bpf_helpers.h>
 
+#define COUNTERS 2
 #define COUNTER_GROUP_WIDTH 8
 #define MAX_CPUS 1024
+#define MAX_CGROUP_IDS 4194304
 
 #define TASK_RUNNING 0
 
 // counter positions
 #define CYCLES 0
 #define INSTRUCTIONS 1
-#define TSC 2
-#define APERF 3
-#define MPERF 4
 
 // counters (see constants defined at top)
 struct {
@@ -27,6 +26,22 @@ struct {
 	__uint(max_entries, MAX_CPUS * COUNTER_GROUP_WIDTH);
 } counters SEC(".maps");
 
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(map_flags, BPF_F_MMAPABLE);
+	__type(key, u32);
+	__type(value, u64);
+	__uint(max_entries, MAX_CGROUP_IDS * COUNTERS);
+} cgroup_counters SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(map_flags, BPF_F_MMAPABLE);
+	__type(key, u32);
+	__type(value, u64);
+	__uint(max_entries, MAX_CGROUP_IDS * COUNTERS);
+} cgroup_counters_prev SEC(".maps");
+
 /**
  * perf event arrays
  */
@@ -35,14 +50,12 @@ struct {
 	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
 	__type(key, u32);
 	__type(value, u32);
-	// __uint(max_entries, MAX_CPUS);
 } cycles SEC(".maps");
 
 struct {
 	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
 	__type(key, u32);
 	__type(value, u32);
-	// __uint(max_entries, MAX_CPUS);
 } instructions SEC(".maps");
 
 /**
@@ -78,10 +91,9 @@ int handle__sched_switch(u64 *ctx)
 	struct task_struct *next = (struct task_struct *)ctx[2];
 
 	u32 idx;
-	u64 *elem;
+	u64 *elem, delta_c, delta_i;
 
 	u32 processor_id = bpf_get_smp_processor_id();
-	u64 ts = bpf_ktime_get_ns();
 
 	u64 flags = processor_id & BPF_F_INDEX_MASK;
 
@@ -93,6 +105,36 @@ int handle__sched_switch(u64 *ctx)
 
 	idx = processor_id * COUNTER_GROUP_WIDTH + INSTRUCTIONS;
 	bpf_map_update_elem(&counters, &idx, &i, BPF_ANY);
+
+	if (bpf_core_field_exists(t->task_group)) {
+		int cgroup_id = t->task_group->css->id;
+
+		if (cgroup_id && cgroup_id < MAX_CGROUP_IDS) {
+			idx = cgroup_id + CYCLES;
+
+			elem = bpf_map_lookup(&cgroup_counters_prev, &idx);
+
+			if (elem) {
+				delta_c = c - *elem;
+
+				bpf_array_add(&cgroup_counters, &idx, delta_c);
+			}
+
+			bpf_map_update_elem(&cgroup_counters_prev, &idx, &c, BPF_ANY);
+
+			idx = cgroup_id + INSTRUCTIONS;
+
+			elem = bpf_map_lookup(&cgroup_counters_prev, &idx);
+
+			if (elem) {
+				delta_i = i - *elem;
+
+				bpf_array_add(&cgroup_counters, &idx, delta_i);
+			}
+
+			bpf_map_update_elem(&cgroup_counters_prev, &idx, &i, BPF_ANY);
+		}
+	}
 
 	return 0;
 }
