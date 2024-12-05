@@ -136,8 +136,6 @@ int handle__sched_switch(u64 *ctx)
 				array_add(&cgroup_cycles, cgroup_id, delta_c);
 			}
 
-			bpf_map_update_elem(&cycles_prev, &processor_id, &c, BPF_ANY);
-
 			// update cgroup instructions
 
 			elem = bpf_map_lookup_elem(&instructions_prev, &processor_id);
@@ -147,10 +145,11 @@ int handle__sched_switch(u64 *ctx)
 
 				array_add(&cgroup_instructions, cgroup_id, delta_i);
 			}
-
-			bpf_map_update_elem(&instructions_prev, &processor_id, &i, BPF_ANY);
 		}
 	}
+
+	bpf_map_update_elem(&cycles_prev, &processor_id, &c, BPF_ANY);
+	bpf_map_update_elem(&instructions_prev, &processor_id, &i, BPF_ANY);
 
 	return 0;
 }
