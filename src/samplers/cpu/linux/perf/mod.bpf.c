@@ -145,10 +145,10 @@ int handle__sched_switch(u64 *ctx)
 			if (elem) {
 				delta_i = i - *elem;
 
-				array_add(&cgroup_counters, cgroup_id, delta_i);
+				array_add(&cgroup_instructions, cgroup_id, delta_i);
 			}
 
-			bpf_map_update_elem(&cgroup_counters_prev, &cgroup_id, &i, BPF_ANY);
+			bpf_map_update_elem(&cgroup_instructions_prev, &cgroup_id, &i, BPF_ANY);
 		}
 	}
 
