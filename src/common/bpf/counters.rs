@@ -198,7 +198,7 @@ impl<'a> PackedCounters<'a> {
     /// The map layout is not cacheline padded. The ordering of the dynamic
     /// counters must exactly match the layout in the BPF map.
     pub fn new(map: &'a Map, counters: &'static RwLockCounterGroup) -> Self {
-        let total_bytes = individual.len() * std::mem::size_of::<u64>();
+        let total_bytes = counters.len() * std::mem::size_of::<u64>();
 
         let fd = map.as_fd().as_raw_fd();
         let file = unsafe { std::fs::File::from_raw_fd(fd as _) };
@@ -218,7 +218,7 @@ impl<'a> PackedCounters<'a> {
         Self {
             _map: map,
             mmap,
-            individual,
+            counters,
         }
     }
 
