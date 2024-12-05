@@ -125,7 +125,7 @@ async fn prometheus(State(state): State<Arc<AppState>>) -> String {
                 };
 
                 data.push(format!(
-                    "# TYPE {name}_total counter\n{name_and_metadata}_total {value} {timestamp}",
+                    "# TYPE {name}_total counter\n{name_and_metadata} {value} {timestamp}",
                 ));
             }
             Some(Value::Gauge(value)) => {
