@@ -1,3 +1,4 @@
+use crate::common::RwLockCounterGroup;
 use crate::common::HISTOGRAM_GROUPING_POWER;
 use crate::Arc;
 use crate::Config;
@@ -189,6 +190,28 @@ async fn prometheus(State(state): State<Arc<AppState>>) -> String {
 
                             data.push(entry);
                         }
+                    }
+                } else if let Some(counters) = any.downcast_ref::<RwLockCounterGroup>() {
+                    if let Some(counters) = counters.load() {
+                        let mut entry = format!("# TYPE {name} counter\n");
+
+                        let metadata: Vec<String> = metric
+                            .metadata()
+                            .iter()
+                            .map(|(key, value)| format!("{key}=\"{value}\""))
+                            .collect();
+
+                        let metadata = metadata.join(", ");
+
+                        for (id, value) in counters.iter().enumerate() {
+                            if *value == 0 {
+                                continue;
+                            }
+
+                            entry += &format!("{name}{{{metadata}, id=\"{id}\"}} {value} {timestamp}\n");
+                        }
+
+                        data.push(entry);
                     }
                 }
             }

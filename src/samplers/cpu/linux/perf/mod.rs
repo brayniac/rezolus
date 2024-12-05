@@ -22,8 +22,6 @@ use crate::*;
 
 use std::sync::Arc;
 
-const MAX_CGROUPS: usize = 4194304;
-
 #[distributed_slice(SAMPLERS)]
 fn init(config: Arc<Config>) -> SamplerResult {
     if !config.enabled(NAME) {
