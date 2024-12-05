@@ -188,7 +188,7 @@ impl<'a> CpuCounters<'a> {
 pub struct PackedCounters<'a> {
     _map: &'a Map<'a>,
     mmap: MmapMut,
-    individual: Vec<DynamicCounter>,
+    counters: &'static RwLockCounterGroup,
 }
 
 impl<'a> PackedCounters<'a> {
@@ -197,10 +197,7 @@ impl<'a> PackedCounters<'a> {
     ///
     /// The map layout is not cacheline padded. The ordering of the dynamic
     /// counters must exactly match the layout in the BPF map.
-    pub fn new(
-        map: &'a Map,
-        individual: Vec<DynamicCounter>,
-    ) -> Self {
+    pub fn new(map: &'a Map, counters: &'static RwLockCounterGroup) -> Self {
         let total_bytes = individual.len() * std::mem::size_of::<u64>();
 
         let fd = map.as_fd().as_raw_fd();
@@ -214,7 +211,7 @@ impl<'a> PackedCounters<'a> {
 
         let (_prefix, values, _suffix) = unsafe { mmap.align_to::<u64>() };
 
-        if values.len() != individual.len() {
+        if values.len() != counters.len() {
             panic!("mmap region not aligned or width doesn't match");
         }
 
@@ -231,9 +228,9 @@ impl<'a> PackedCounters<'a> {
         let (_prefix, values, _suffix) = unsafe { self.mmap.align_to::<u64>() };
 
         // update all individual counters
-        for idx in 0..self.individual.len() {
+        for idx in 0..self.counters.len() {
             if values[idx] != 0 {
-                self.individual[idx].set(values[idx]);
+                self.counters.set(idx, values[idx]);
             }
         }
     }

@@ -31,16 +31,32 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, MAX_CGROUPS * COUNTERS);
-} cgroup_counters SEC(".maps");
+	__uint(max_entries, MAX_CGROUPS);
+} cgroup_cycles SEC(".maps");
 
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, MAX_CGROUPS * COUNTERS);
-} cgroup_counters_prev SEC(".maps");
+	__uint(max_entries, MAX_CGROUPS);
+} cgroup_instructions SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(map_flags, BPF_F_MMAPABLE);
+	__type(key, u32);
+	__type(value, u64);
+	__uint(max_entries, MAX_CGROUPS);
+} cgroup_cycles_prev SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(map_flags, BPF_F_MMAPABLE);
+	__type(key, u32);
+	__type(value, u64);
+	__uint(max_entries, MAX_CGROUPS);
+} cgroup_instructions_prev SEC(".maps");
 
 /**
  * perf event arrays
@@ -110,29 +126,29 @@ int handle__sched_switch(u64 *ctx)
 		int cgroup_id = prev->sched_task_group->css.id;
 
 		if (cgroup_id && cgroup_id < MAX_CGROUPS) {
-			idx = cgroup_id + CYCLES;
+			// update cgroup cycles
 
-			elem = bpf_map_lookup_elem(&cgroup_counters_prev, &idx);
+			elem = bpf_map_lookup_elem(&cgroup_cycles_prev, &cgroup_id);
 
 			if (elem) {
 				delta_c = c - *elem;
 
-				array_add(&cgroup_counters, idx, delta_c);
+				array_add(&cgroup_cycles, cgroup_id, delta_c);
 			}
 
-			bpf_map_update_elem(&cgroup_counters_prev, &idx, &c, BPF_ANY);
+			bpf_map_update_elem(&cgroup_cycles_prev, &cgroup_id, &c, BPF_ANY);
 
-			idx = cgroup_id + INSTRUCTIONS;
+			// update cgroup instructions
 
-			elem = bpf_map_lookup_elem(&cgroup_counters_prev, &idx);
+			elem = bpf_map_lookup_elem(&cgroup_instructions_prev, &cgroup_id);
 
 			if (elem) {
 				delta_i = i - *elem;
 
-				array_add(&cgroup_counters, idx, delta_i);
+				array_add(&cgroup_counters, cgroup_id, delta_i);
 			}
 
-			bpf_map_update_elem(&cgroup_counters_prev, &idx, &i, BPF_ANY);
+			bpf_map_update_elem(&cgroup_counters_prev, &cgroup_id, &i, BPF_ANY);
 		}
 	}
 

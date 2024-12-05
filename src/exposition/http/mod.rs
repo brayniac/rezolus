@@ -1,4 +1,3 @@
-use metriken::Value;
 use crate::common::HISTOGRAM_GROUPING_POWER;
 use crate::Arc;
 use crate::Config;
@@ -8,6 +7,7 @@ use axum::routing::get;
 use axum::Router;
 use histogram::AtomicHistogram;
 use metriken::RwLockHistogram;
+use metriken::Value;
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::{compression::CompressionLayer, decompression::RequestDecompressionLayer};
@@ -181,8 +181,9 @@ async fn prometheus(State(state): State<Arc<AppState>>) -> String {
                                 );
                             }
 
-                            entry +=
-                                &format!("{name}_distribution_bucket{{le=\"+Inf\"}} {count} {timestamp}\n");
+                            entry += &format!(
+                                "{name}_distribution_bucket{{le=\"+Inf\"}} {count} {timestamp}\n"
+                            );
                             entry += &format!("{name}_distribution_count {count} {timestamp}\n");
                             entry += &format!("{name}_distribution_sum {sum} {timestamp}");
 

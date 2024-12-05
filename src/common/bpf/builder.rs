@@ -18,7 +18,7 @@ pub struct Builder<T: 'static + SkelBuilder<'static>> {
     maps: Vec<(&'static str, Vec<u64>)>,
     cpu_counters: Vec<(&'static str, Vec<&'static LazyCounter>, ScopedCounters)>,
     perf_events: Vec<(&'static str, perf_event::events::Hardware)>,
-    packed_counters: Vec<(&'static str, Vec<DynamicCounter>)>,
+    packed_counters: Vec<(&'static str, &'static RwLockCounterGroup)>,
 }
 
 impl<T: 'static> Builder<T>
@@ -136,9 +136,7 @@ where
             let mut packed_counters: Vec<PackedCounters> = self
                 .packed_counters
                 .into_iter()
-                .map(|(name, individual)| {
-                    PackedCounters::new(skel.map(name), individual)
-                })
+                .map(|(name, counters)| PackedCounters::new(skel.map(name), counters))
                 .collect();
 
             // load any data from userspace into BPF maps
@@ -271,9 +269,9 @@ where
     pub fn packed_counters(
         mut self,
         name: &'static str,
-        individual: Vec<DynamicCounter>,
+        counters: &'static RwLockCounterGroup,
     ) -> Self {
-        self.packed_counters.push((name, individual));
+        self.packed_counters.push((name, counters));
         self
     }
 }
