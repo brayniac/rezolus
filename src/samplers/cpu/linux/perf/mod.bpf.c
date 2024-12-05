@@ -48,7 +48,7 @@ struct {
 	__type(key, u32);
 	__type(value, u64);
 	__uint(max_entries, MAX_CGROUPS);
-} cgroup_cycles_prev SEC(".maps");
+} cycles_prev SEC(".maps");
 
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
@@ -56,7 +56,7 @@ struct {
 	__type(key, u32);
 	__type(value, u64);
 	__uint(max_entries, MAX_CGROUPS);
-} cgroup_instructions_prev SEC(".maps");
+} instructions_prev SEC(".maps");
 
 /**
  * perf event arrays
@@ -128,7 +128,7 @@ int handle__sched_switch(u64 *ctx)
 		if (cgroup_id && cgroup_id < MAX_CGROUPS) {
 			// update cgroup cycles
 
-			elem = bpf_map_lookup_elem(&cgroup_cycles_prev, &cgroup_id);
+			elem = bpf_map_lookup_elem(&cycles_prev, &processor_id);
 
 			if (elem) {
 				delta_c = c - *elem;
@@ -136,11 +136,11 @@ int handle__sched_switch(u64 *ctx)
 				array_add(&cgroup_cycles, cgroup_id, delta_c);
 			}
 
-			bpf_map_update_elem(&cgroup_cycles_prev, &cgroup_id, &c, BPF_ANY);
+			bpf_map_update_elem(&cycles_prev, &processor_id, &c, BPF_ANY);
 
 			// update cgroup instructions
 
-			elem = bpf_map_lookup_elem(&cgroup_instructions_prev, &cgroup_id);
+			elem = bpf_map_lookup_elem(&instructions_prev, &processor_id);
 
 			if (elem) {
 				delta_i = i - *elem;
@@ -148,7 +148,7 @@ int handle__sched_switch(u64 *ctx)
 				array_add(&cgroup_instructions, cgroup_id, delta_i);
 			}
 
-			bpf_map_update_elem(&cgroup_instructions_prev, &cgroup_id, &i, BPF_ANY);
+			bpf_map_update_elem(&instructions_prev, &processor_id, &i, BPF_ANY);
 		}
 	}
 
