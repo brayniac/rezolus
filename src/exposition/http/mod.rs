@@ -193,7 +193,7 @@ async fn prometheus(State(state): State<Arc<AppState>>) -> String {
                     }
                 } else if let Some(counters) = any.downcast_ref::<RwLockCounterGroup>() {
                     if let Some(counters) = counters.load() {
-                        let mut entry = format!("# TYPE {name} counter\n");
+                        let mut entry = format!("# TYPE {name} counter");
 
                         let metadata: Vec<String> = metric
                             .metadata()
@@ -208,7 +208,7 @@ async fn prometheus(State(state): State<Arc<AppState>>) -> String {
                                 continue;
                             }
 
-                            entry += &format!("{name}{{{metadata}, id=\"{id}\"}} {value} {timestamp}\n");
+                            entry += &format!("\n{name}{{{metadata}, id=\"{id}\"}} {value} {timestamp}");
                         }
 
                         data.push(entry);

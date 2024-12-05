@@ -230,7 +230,7 @@ impl<'a> PackedCounters<'a> {
         // update all individual counters
         for idx in 0..self.counters.len() {
             if values[idx] != 0 {
-                self.counters.set(idx, values[idx]);
+                let _ = self.counters.set(idx, values[idx]);
             }
         }
     }

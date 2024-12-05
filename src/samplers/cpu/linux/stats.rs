@@ -72,7 +72,6 @@ pub static CPU_INSTRUCTIONS: LazyCounter = LazyCounter::new(Counter::default);
 #[metric(
     name = "cgroup/cpu/cycles",
     description = "The number of elapsed CPU cycles on a per-cgroup basis",
-    formatter = cgroup_metric_formatter,
     metadata = { unit = "cycles" }
 )]
 pub static CGROUP_CPU_CYCLES: RwLockCounterGroup = RwLockCounterGroup::new(MAX_CGROUPS);
@@ -80,7 +79,6 @@ pub static CGROUP_CPU_CYCLES: RwLockCounterGroup = RwLockCounterGroup::new(MAX_C
 #[metric(
     name = "cgroup/cpu/instructions",
     description = "The number of elapsed CPU cycles on a per-cgroup basis",
-    formatter = cgroup_metric_formatter,
     metadata = { unit = "cycles" }
 )]
 pub static CGROUP_CPU_INSTRUCTIONS: RwLockCounterGroup = RwLockCounterGroup::new(MAX_CGROUPS);
