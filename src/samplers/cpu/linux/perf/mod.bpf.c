@@ -110,11 +110,9 @@ int handle__sched_switch(u64 *ctx)
 	u64 *elem, delta_c, delta_i;
 
 	u32 processor_id = bpf_get_smp_processor_id();
-
-	u64 flags = processor_id & BPF_F_INDEX_MASK;
-
-	u64 c = bpf_perf_event_read(&cycles, flags);
-	u64 i = bpf_perf_event_read(&instructions, flags);
+	
+	u64 c = bpf_perf_event_read(&cycles, BPF_F_CURRENT_CPU);
+	u64 i = bpf_perf_event_read(&instructions, BPF_F_CURRENT_CPU);
 
 	idx = processor_id * COUNTER_GROUP_WIDTH + CYCLES;
 	bpf_map_update_elem(&counters, &idx, &c, BPF_ANY);

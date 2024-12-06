@@ -53,7 +53,7 @@ impl RwLockCounterGroup {
         } else {
             let mut inner = self.get_or_init().write();
 
-            inner[idx] += value;
+            inner[idx] = value;
 
             Ok(())
         }
