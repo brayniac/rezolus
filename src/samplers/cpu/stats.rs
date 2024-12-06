@@ -92,3 +92,47 @@ pub fn cpu_metric_formatter(metric: &MetricEntry, format: Format) -> String {
         _ => metriken::default_formatter(metric, format),
     }
 }
+
+/// A function to format per-cgroup metrics.
+///
+/// For the `Simple` format, the metrics will be formatted according to the
+/// a pattern which depends on the metric metadata:
+/// `{name}/cgroup{id}` eg: `cpu/cycles/cgroup0`
+///
+/// For the `Prometheus` format, if the metric has an `cgroup` set in the
+/// metadata, the metric name is left as-is. Note: we rely on the exposition
+/// logic to convert the `/`s to `_`s in the metric name.
+#[allow(dead_code)]
+pub fn cgroup_metric_formatter(metric: &MetricEntry, format: Format) -> String {
+    match format {
+        Format::Simple => {
+            let name = metric.name().to_string();
+
+            if metric.metadata().contains_key("cgroup") {
+                format!(
+                    "{name}/cgroup{}",
+                    metric.metadata().get("cgroup").unwrap_or("unknown"),
+                )
+            } else {
+                panic!("cgroup wasn't set")
+            }
+        }
+        Format::Prometheus => {
+            let metadata: Vec<String> = metric
+                .metadata()
+                .iter()
+                .map(|(key, value)| format!("{key}=\"{value}\""))
+                .collect();
+            let metadata = metadata.join(", ");
+
+            let name = if metric.metadata().contains_key("cgroup") {
+                metric.name().to_string()
+            } else {
+                panic!("cgroup wasn't set")
+            };
+
+            format!("{}{{{metadata}}}", name)
+        }
+        _ => metriken::default_formatter(metric, format),
+    }
+}

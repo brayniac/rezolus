@@ -1,6 +1,9 @@
+use crate::common::RwLockCounterGroup;
 use crate::samplers::cpu::stats::*;
 
 use metriken::*;
+
+pub const MAX_CGROUPS: usize = 4_194_304;
 
 #[metric(
     name = "cpu/usage",
@@ -65,6 +68,20 @@ pub static CPU_CYCLES: LazyCounter = LazyCounter::new(Counter::default);
     metadata = { unit = "instructions" }
 )]
 pub static CPU_INSTRUCTIONS: LazyCounter = LazyCounter::new(Counter::default);
+
+#[metric(
+    name = "cgroup/cpu/cycles",
+    description = "The number of elapsed CPU cycles on a per-cgroup basis",
+    metadata = { unit = "cycles" }
+)]
+pub static CGROUP_CPU_CYCLES: RwLockCounterGroup = RwLockCounterGroup::new(MAX_CGROUPS);
+
+#[metric(
+    name = "cgroup/cpu/instructions",
+    description = "The number of elapsed CPU cycles on a per-cgroup basis",
+    metadata = { unit = "cycles" }
+)]
+pub static CGROUP_CPU_INSTRUCTIONS: RwLockCounterGroup = RwLockCounterGroup::new(MAX_CGROUPS);
 
 #[metric(
     name = "cpu/base_frequency/average",

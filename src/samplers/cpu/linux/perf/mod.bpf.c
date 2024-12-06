@@ -6,17 +6,16 @@
 #include <bpf/bpf_core_read.h>
 #include <bpf/bpf_helpers.h>
 
+#define COUNTERS 2
 #define COUNTER_GROUP_WIDTH 8
 #define MAX_CPUS 1024
+#define MAX_CGROUPS 4194304
 
 #define TASK_RUNNING 0
 
 // counter positions
 #define CYCLES 0
 #define INSTRUCTIONS 1
-#define TSC 2
-#define APERF 3
-#define MPERF 4
 
 // counters (see constants defined at top)
 struct {
@@ -27,6 +26,38 @@ struct {
 	__uint(max_entries, MAX_CPUS * COUNTER_GROUP_WIDTH);
 } counters SEC(".maps");
 
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(map_flags, BPF_F_MMAPABLE);
+	__type(key, u32);
+	__type(value, u64);
+	__uint(max_entries, MAX_CGROUPS);
+} cgroup_cycles SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(map_flags, BPF_F_MMAPABLE);
+	__type(key, u32);
+	__type(value, u64);
+	__uint(max_entries, MAX_CGROUPS);
+} cgroup_instructions SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(map_flags, BPF_F_MMAPABLE);
+	__type(key, u32);
+	__type(value, u64);
+	__uint(max_entries, MAX_CGROUPS);
+} cycles_prev SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(map_flags, BPF_F_MMAPABLE);
+	__type(key, u32);
+	__type(value, u64);
+	__uint(max_entries, MAX_CGROUPS);
+} instructions_prev SEC(".maps");
+
 /**
  * perf event arrays
  */
@@ -35,14 +66,12 @@ struct {
 	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
 	__type(key, u32);
 	__type(value, u32);
-	// __uint(max_entries, MAX_CPUS);
 } cycles SEC(".maps");
 
 struct {
 	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
 	__type(key, u32);
 	__type(value, u32);
-	// __uint(max_entries, MAX_CPUS);
 } instructions SEC(".maps");
 
 /**
@@ -78,21 +107,47 @@ int handle__sched_switch(u64 *ctx)
 	struct task_struct *next = (struct task_struct *)ctx[2];
 
 	u32 idx;
-	u64 *elem;
+	u64 *elem, delta_c, delta_i;
 
 	u32 processor_id = bpf_get_smp_processor_id();
-	u64 ts = bpf_ktime_get_ns();
 
-	u64 flags = processor_id & BPF_F_INDEX_MASK;
-
-	u64 c = bpf_perf_event_read(&cycles, flags);
-	u64 i = bpf_perf_event_read(&instructions, flags);
+	u64 c = bpf_perf_event_read(&cycles, BPF_F_CURRENT_CPU);
+	u64 i = bpf_perf_event_read(&instructions, BPF_F_CURRENT_CPU);
 
 	idx = processor_id * COUNTER_GROUP_WIDTH + CYCLES;
 	bpf_map_update_elem(&counters, &idx, &c, BPF_ANY);
 
 	idx = processor_id * COUNTER_GROUP_WIDTH + INSTRUCTIONS;
 	bpf_map_update_elem(&counters, &idx, &i, BPF_ANY);
+
+	if (bpf_core_field_exists(prev->sched_task_group)) {
+		int cgroup_id = prev->sched_task_group->css.id;
+
+		if (cgroup_id && cgroup_id < MAX_CGROUPS) {
+			// update cgroup cycles
+
+			elem = bpf_map_lookup_elem(&cycles_prev, &processor_id);
+
+			if (elem) {
+				delta_c = c - *elem;
+
+				array_add(&cgroup_cycles, cgroup_id, delta_c);
+			}
+
+			// update cgroup instructions
+
+			elem = bpf_map_lookup_elem(&instructions_prev, &processor_id);
+
+			if (elem) {
+				delta_i = i - *elem;
+
+				array_add(&cgroup_instructions, cgroup_id, delta_i);
+			}
+		}
+	}
+
+	bpf_map_update_elem(&cycles_prev, &processor_id, &c, BPF_ANY);
+	bpf_map_update_elem(&instructions_prev, &processor_id, &i, BPF_ANY);
 
 	return 0;
 }

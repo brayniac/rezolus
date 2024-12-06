@@ -34,11 +34,11 @@ fn init(config: Arc<Config>) -> SamplerResult {
 
     let metrics = ["cpu/cycles", "cpu/instructions"];
 
-    let mut individual = ScopedCounters::new();
+    let mut cpu_counters = ScopedCounters::new();
 
     for cpu in cpus {
         for metric in metrics {
-            individual.push(
+            cpu_counters.push(
                 cpu,
                 DynamicCounterBuilder::new(metric)
                     .metadata("id", format!("{}", cpu))
@@ -48,12 +48,12 @@ fn init(config: Arc<Config>) -> SamplerResult {
         }
     }
 
-    println!("initializing bpf for: {NAME}");
-
     let bpf = BpfBuilder::new(ModSkelBuilder::default)
         .perf_event("cycles", perf_event::events::Hardware::CPU_CYCLES)
         .perf_event("instructions", perf_event::events::Hardware::INSTRUCTIONS)
-        .cpu_counters("counters", totals, individual)
+        .cpu_counters("counters", totals, cpu_counters)
+        .packed_counters("cgroup_cycles", &CGROUP_CPU_CYCLES)
+        .packed_counters("cgroup_instructions", &CGROUP_CPU_INSTRUCTIONS)
         .build()?;
 
     Ok(Some(Box::new(bpf)))
@@ -62,6 +62,8 @@ fn init(config: Arc<Config>) -> SamplerResult {
 impl SkelExt for ModSkel<'_> {
     fn map(&self, name: &str) -> &libbpf_rs::Map {
         match name {
+            "cgroup_cycles" => &self.maps.cgroup_cycles,
+            "cgroup_instructions" => &self.maps.cgroup_instructions,
             "counters" => &self.maps.counters,
             "cycles" => &self.maps.cycles,
             "instructions" => &self.maps.instructions,

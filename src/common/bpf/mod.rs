@@ -36,7 +36,7 @@ fn whole_pages<T>(count: usize) -> usize {
     ((count * std::mem::size_of::<T>()) + PAGE_SIZE - 1) / PAGE_SIZE
 }
 
-use counters::{Counters, CpuCounters};
+use counters::{Counters, CpuCounters, PackedCounters};
 use histogram::Histogram;
 use sync_primitive::SyncPrimitive;
 
