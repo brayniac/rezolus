@@ -56,7 +56,7 @@ impl PerfInner {
                 cpu,
                 DynamicGaugeBuilder::new("cpu/frequency")
                     .metadata("id", format!("{}", cpu))
-                    .formatter(cpu_metric_formatter)
+                    .formatter(cpu_metric_percore_formatter)
                     .build(),
             );
 
