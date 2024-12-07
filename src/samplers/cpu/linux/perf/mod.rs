@@ -17,7 +17,6 @@ use bpf::*;
 
 use crate::common::*;
 use crate::samplers::cpu::linux::stats::*;
-use crate::samplers::cpu::stats::*;
 use crate::*;
 
 use std::sync::Arc;
