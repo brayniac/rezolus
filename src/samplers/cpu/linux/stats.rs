@@ -100,7 +100,7 @@ pub fn cpu_usage_percore_formatter(metric: &MetricEntry, format: Format) -> Stri
     match format {
         Format::Simple => {
             let id = metric.metadata().get("id").expect("no `id` for metric formatter");
-            let id = metric.metadata().get("state").expect("no `state` for metric formatter");
+            let state = metric.metadata().get("state").expect("no `state` for metric formatter");
             format!("{}/{state}/cpu{id}", metric.name())
         }
         _ => {
