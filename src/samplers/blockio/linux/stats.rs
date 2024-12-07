@@ -109,54 +109,7 @@ pub static BLOCKIO_DISCARD_BYTES: LazyCounter = LazyCounter::new(Counter::defaul
 )]
 pub static BLOCKIO_FLUSH_BYTES: LazyCounter = LazyCounter::new(Counter::default);
 
-/// A function to format the blockio metrics that allows for export of ops and
-/// byte counters by operation type.
-///
-/// Note: we do not currently support per-device metrics.
-///
-/// For the `Simple` format, the metrics will be formatted according to the
-/// a pattern which depends on the metric metadata:
-/// `blockio/{op}/{operations, bytes}/total` eg: `blockio/read/operations/total`
-///
-/// For the `Prometheus` format, we supply the operation type as metadata. Note:
-/// we rely on the exposition logic to convert the `/`s to `_`s in the metric
-/// name.
-pub fn blockio_metric_formatter(metric: &MetricEntry, format: Format) -> String {
-    match format {
-        Format::Simple => {
-            if let Some(op) = metric.metadata().get("op") {
-                match metric.name() {
-                    "blockio/bytes/total" => {
-                        format!("blockio/{op}/bytes/total")
-                    }
-                    "blockio/operations/total" => {
-                        format!("blockio/{op}/operations/total")
-                    }
-                    _ => {
-                        panic!("unexpected metric name");
-                    }
-                }
-            } else {
-                metric.name()
-            }
-        }
-        Format::Prometheus => {
-            let metadata: Vec<String> = metric
-                .metadata()
-                .iter()
-                .map(|(key, value)| format!("{key}=\"{value}\""))
-                .collect();
-            let metadata = metadata.join(", ");
-
-            if metadata.is_empty() {
-                metric.name()
-            } else {
-                format!("{}{{{metadata}}}", metric.name())
-            }
-        }
-        _ => metriken::default_formatter(metric, format),
-    }
-}
+// metric formatters
 
 pub fn blockio_bytes_metric_formatter(metric: &MetricEntry, format: Format) -> String {
     match format {
