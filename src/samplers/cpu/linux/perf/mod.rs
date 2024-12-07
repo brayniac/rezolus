@@ -42,7 +42,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
                 cpu,
                 DynamicCounterBuilder::new(metric)
                     .metadata("id", format!("{}", cpu))
-                    .formatter(cpu_metric_formatter)
+                    .formatter(cpu_metric_percore_formatter)
                     .build(),
             );
         }

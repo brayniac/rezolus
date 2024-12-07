@@ -68,7 +68,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
                 DynamicCounterBuilder::new("cpu/usage")
                     .metadata("id", format!("{}", cpu))
                     .metadata("state", state)
-                    .formatter(cpu_core_formatter)
+                    .formatter(cpu_usage_percore_formatter)
                     .build(),
             );
         }
