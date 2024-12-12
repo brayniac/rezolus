@@ -135,6 +135,12 @@ int handle__sched_switch(u64 *ctx)
 	u64 c = bpf_perf_event_read(&cycles, BPF_F_CURRENT_CPU);
 	u64 i = bpf_perf_event_read(&instructions, BPF_F_CURRENT_CPU);
 
+	idx = processor_id * COUNTER_GROUP_WIDTH + CYCLES;
+	bpf_map_update_elem(&counters, &idx, &c, BPF_ANY);
+
+	idx = processor_id * COUNTER_GROUP_WIDTH + INSTRUCTIONS;
+	bpf_map_update_elem(&counters, &idx, &i, BPF_ANY);
+
 	if (bpf_core_field_exists(prev->sched_task_group)) {
 		int cgroup_id = prev->sched_task_group->css.id;
 

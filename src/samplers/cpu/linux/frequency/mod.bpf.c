@@ -162,6 +162,15 @@ int handle__sched_switch(u64 *ctx)
 	u64 m = bpf_perf_event_read(&mperf, BPF_F_CURRENT_CPU);
 	u64 t = bpf_perf_event_read(&tsc, BPF_F_CURRENT_CPU);
 
+	idx = processor_id * COUNTER_GROUP_WIDTH + APERF;
+	bpf_map_update_elem(&counters, &idx, &a, BPF_ANY);
+
+	idx = processor_id * COUNTER_GROUP_WIDTH + MPERF;
+	bpf_map_update_elem(&counters, &idx, &m, BPF_ANY);
+
+	idx = processor_id * COUNTER_GROUP_WIDTH + TSC;
+	bpf_map_update_elem(&counters, &idx, &t, BPF_ANY);
+
 	if (bpf_core_field_exists(prev->sched_task_group)) {
 		int cgroup_id = prev->sched_task_group->css.id;
 
