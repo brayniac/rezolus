@@ -5,6 +5,7 @@
 #include "../../../common/bpf/helpers.h"
 #include <bpf/bpf_core_read.h>
 #include <bpf/bpf_helpers.h>
+#include <bpf/bpf_tracing.h>
 
 #define COUNTER_GROUP_WIDTH 8
 #define MAX_CPUS 1024
