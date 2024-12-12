@@ -67,6 +67,15 @@ pub static CPU_CYCLES: LazyCounter = LazyCounter::new(Counter::default);
 )]
 pub static CPU_INSTRUCTIONS: LazyCounter = LazyCounter::new(Counter::default);
 
+#[metric(name = "cpu/aperf/total")]
+pub static CPU_APERF: LazyCounter = LazyCounter::new(Counter::default);
+
+#[metric(name = "cpu/mperf/total")]
+pub static CPU_MPERF: LazyCounter = LazyCounter::new(Counter::default);
+
+#[metric(name = "cpu/tsc/total")]
+pub static CPU_TSC: LazyCounter = LazyCounter::new(Counter::default);
+
 #[metric(
     name = "cgroup/cpu/cycles",
     description = "The number of elapsed CPU cycles on a per-cgroup basis",
@@ -80,26 +89,6 @@ pub static CGROUP_CPU_CYCLES: RwLockCounterGroup = RwLockCounterGroup::new(MAX_C
     metadata = { unit = "cycles" }
 )]
 pub static CGROUP_CPU_INSTRUCTIONS: RwLockCounterGroup = RwLockCounterGroup::new(MAX_CGROUPS);
-
-#[metric(
-    name = "cpu/base_frequency/average",
-    description = "Average base CPU frequency (MHz)",
-    metadata = { unit = "megahertz" }
-)]
-pub static CPU_BASE_FREQUENCY_AVERAGE: LazyGauge = LazyGauge::new(Gauge::default);
-
-#[metric(name = "cpu/aperf/total")]
-pub static CPU_APERF: LazyCounter = LazyCounter::new(Counter::default);
-
-#[metric(name = "cpu/mperf/total")]
-pub static CPU_MPERF: LazyCounter = LazyCounter::new(Counter::default);
-
-#[metric(name = "cpu/tsc/total")]
-pub static CPU_TSC: LazyCounter = LazyCounter::new(Counter::default);
-
-pub fn simple_formatter(metric: &MetricEntry, _format: Format) -> String {
-    metric.name().to_string()
-}
 
 pub fn cpu_metric_percore_formatter(metric: &MetricEntry, format: Format) -> String {
     match format {
