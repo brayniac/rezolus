@@ -77,6 +77,10 @@ impl SkelExt for ModSkel<'_> {
 impl OpenSkelExt for ModSkel<'_> {
     fn log_prog_instructions(&self) {
         debug!(
+            "{NAME} cpuacct_account_field() BPF instruction count: {}",
+            self.progs.cpuacct_account_field_kprobe.insn_cnt()
+        );
+        debug!(
             "{NAME} handle__sched_switch() BPF instruction count: {}",
             self.progs.handle__sched_switch.insn_cnt()
         );

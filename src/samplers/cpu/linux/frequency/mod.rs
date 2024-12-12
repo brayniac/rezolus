@@ -59,6 +59,9 @@ fn init(config: Arc<Config>) -> SamplerResult {
         .perf_event("mperf", PerfEvent::msr(MsrId::MPERF)?)
         .perf_event("tsc", PerfEvent::msr(MsrId::TSC)?)
         .cpu_counters("counters", totals, individual)
+        .packed_counters("cgroup_aperf", &CGROUP_CPU_APERF)
+        .packed_counters("cgroup_mperf", &CGROUP_CPU_MPERF)
+        .packed_counters("cgroup_tsc", &CGROUP_CPU_TSC)
         .build()?;
 
     Ok(Some(Box::new(bpf)))
