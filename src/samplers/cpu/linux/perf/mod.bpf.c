@@ -9,7 +9,7 @@
 #define COUNTERS 2
 #define COUNTER_GROUP_WIDTH 8
 #define MAX_CPUS 1024
-#define MAX_CGROUPS 4194304
+#define MAX_CGROUPS 4096
 
 #define TASK_RUNNING 0
 

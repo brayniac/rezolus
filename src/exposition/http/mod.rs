@@ -1,14 +1,11 @@
 use crate::common::RwLockCounterGroup;
 use crate::common::HISTOGRAM_GROUPING_POWER;
-use crate::Arc;
-use crate::Config;
-use crate::Sampler;
+use crate::{Arc, Config, Sampler};
+
 use axum::extract::State;
 use axum::routing::get;
 use axum::Router;
-use histogram::AtomicHistogram;
-use metriken::RwLockHistogram;
-use metriken::Value;
+use metriken::{AtomicHistogram, RwLockHistogram, Value};
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::{compression::CompressionLayer, decompression::RequestDecompressionLayer};
@@ -107,6 +104,12 @@ async fn prometheus(State(state): State<Arc<AppState>>) -> String {
     let mut data = Vec::new();
 
     for metric in &metriken::metrics() {
+        let value = metric.value();
+
+        if value.is_none() {
+            continue;
+        }
+
         let name = metric.name();
 
         if name.starts_with("log_") {
@@ -117,27 +120,28 @@ async fn prometheus(State(state): State<Arc<AppState>>) -> String {
             continue;
         }
 
-        match metric.value() {
-            Some(Value::Counter(value)) => {
-                let name_and_metadata = if metric.metadata().is_empty() {
-                    name
-                } else {
-                    &metric.formatted(metriken::Format::Prometheus)
-                };
+        let metadata: Vec<String> = metric
+            .metadata()
+            .iter()
+            .map(|(key, value)| format!("{key}=\"{value}\""))
+            .collect();
+        let metadata = metadata.join(", ");
 
+        let name_with_metadata = if metadata.is_empty() {
+            metric.name().to_string()
+        } else {
+            format!("{}{{{metadata}}}", metric.name())
+        };
+
+        match value {
+            Some(Value::Counter(value)) => {
                 data.push(format!(
-                    "# TYPE {name}_total counter\n{name_and_metadata} {value} {timestamp}",
+                    "# TYPE {name} counter\n{name_with_metadata} {value} {timestamp}"
                 ));
             }
             Some(Value::Gauge(value)) => {
-                let name_and_metadata = if metric.metadata().is_empty() {
-                    name
-                } else {
-                    &metric.formatted(metriken::Format::Prometheus)
-                };
-
                 data.push(format!(
-                    "# TYPE {name} gauge\n{name_and_metadata} {value} {timestamp}",
+                    "# TYPE {name} gauge\n{name_with_metadata} {value} {timestamp}"
                 ));
             }
             Some(Value::Other(any)) => {
@@ -215,9 +219,7 @@ async fn prometheus(State(state): State<Arc<AppState>>) -> String {
                     }
                 }
             }
-            _ => {
-                continue;
-            }
+            _ => { }
         }
     }
 
@@ -246,22 +248,26 @@ fn simple_stats(quoted: bool) -> Vec<String> {
     let q = if quoted { "\"" } else { "" };
 
     for metric in &metriken::metrics() {
+        let value = metric.value();
+
+        if value.is_none() {
+            continue;
+        }
+
         if metric.name().starts_with("log_") {
             continue;
         }
 
         let simple_name = metric.formatted(metriken::Format::Simple);
 
-        match metric.value() {
+        match value {
             Some(Value::Counter(value)) => {
                 data.push(format!("{q}{simple_name}{q}: {value}"));
             }
             Some(Value::Gauge(value)) => {
                 data.push(format!("{q}{simple_name}{q}: {value}"));
             }
-            _ => {
-                continue;
-            }
+            _ => {}
         }
     }
 

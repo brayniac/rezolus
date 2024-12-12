@@ -6,6 +6,9 @@
 //! And produces these stats:
 //! * `cpu/cycles`
 //! * `cpu/instructions`
+//!
+//! These stats can be used to calculate the IPC and IPNS in post-processing or
+//! in an observability stack.
 
 const NAME: &str = "cpu_perf";
 
@@ -17,7 +20,6 @@ use bpf::*;
 
 use crate::common::*;
 use crate::samplers::cpu::linux::stats::*;
-use crate::samplers::cpu::stats::*;
 use crate::*;
 
 use std::sync::Arc;
@@ -42,7 +44,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
                 cpu,
                 DynamicCounterBuilder::new(metric)
                     .metadata("id", format!("{}", cpu))
-                    .formatter(cpu_metric_formatter)
+                    .formatter(cpu_metric_percore_formatter)
                     .build(),
             );
         }
