@@ -212,7 +212,11 @@ async fn prometheus(State(state): State<Arc<AppState>>) -> String {
                                 continue;
                             }
 
-                            entry += &format!("\n{name}{{{metadata}, id=\"{id}\"}} {value} {timestamp}");
+                            if metadata.is_empty() {
+                                entry += &format!("\n{name}{{id=\"{id}\"}} {value} {timestamp}");
+                            } else {
+                                entry += &format!("\n{name}{{{metadata}, id=\"{id}\"}} {value} {timestamp}");
+                            }
                         }
 
                         data.push(entry);
