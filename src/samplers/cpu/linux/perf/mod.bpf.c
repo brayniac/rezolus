@@ -102,6 +102,7 @@ static __always_inline __s64 get_task_state(void *task)
 SEC("kprobe/cpuacct_account_field")
 int BPF_KPROBE(cpuacct_account_field_kprobe, void *task, u32 index, u64 delta)
 {
+	u32 idx;
 	u32 processor_id = bpf_get_smp_processor_id();
 
 	u64 c = bpf_perf_event_read(&cycles, BPF_F_CURRENT_CPU);

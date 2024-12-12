@@ -8,6 +8,7 @@
 
 #define COUNTER_GROUP_WIDTH 8
 #define MAX_CPUS 1024
+#define MAX_CGROUPS 4096
 
 #define TASK_RUNNING 0
 
@@ -123,6 +124,7 @@ static __always_inline __s64 get_task_state(void *task)
 SEC("kprobe/cpuacct_account_field")
 int BPF_KPROBE(cpuacct_account_field_kprobe, void *task, u32 index, u64 delta)
 {
+	u32 idx;
 	u32 processor_id = bpf_get_smp_processor_id();
 
 	u64 a = bpf_perf_event_read(&aperf, BPF_F_CURRENT_CPU);
@@ -170,7 +172,7 @@ int handle__sched_switch(u64 *ctx)
 			if (elem) {
 				delta_a = a - *elem;
 
-				array_add(&cgroup_cycles, cgroup_id, delta_a);
+				array_add(&cgroup_aperf, cgroup_id, delta_a);
 			}
 
 			// update cgroup mperf
@@ -180,7 +182,7 @@ int handle__sched_switch(u64 *ctx)
 			if (elem) {
 				delta_m = m - *elem;
 
-				array_add(&cgroup_instructions, cgroup_id, delta_m);
+				array_add(&cgroup_mperf, cgroup_id, delta_m);
 			}
 
 			// update cgroup tsc
@@ -190,7 +192,7 @@ int handle__sched_switch(u64 *ctx)
 			if (elem) {
 				delta_t = t - *elem;
 
-				array_add(&cgroup_instructions, cgroup_id, delta_t);
+				array_add(&cgroup_tsc, cgroup_id, delta_t);
 			}
 		}
 	}
