@@ -133,10 +133,7 @@ pub struct CpuCounters<'a> {
 impl<'a> CpuCounters<'a> {
     /// Create a new set of counters from the provided BPF map and collection of
     /// counter metrics.
-    pub fn new(
-        map: &'a Map,
-        counters: ScopedCounters,
-    ) -> Self {
+    pub fn new(map: &'a Map, counters: ScopedCounters) -> Self {
         // load the BPF counter map
         let counter_map = CounterMap::new(map, counters.len()).expect("failed to initialize");
 

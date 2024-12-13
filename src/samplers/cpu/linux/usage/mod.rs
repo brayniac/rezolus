@@ -33,7 +33,20 @@ fn init(config: Arc<Config>) -> SamplerResult {
     }
 
     let bpf = BpfBuilder::new(ModSkelBuilder::default)
-        .cpu_counters("counters", vec![&CPU_BUSY, &CPU_USER, &CPU_NICE, &CPU_SYSTEM, &CPU_SOFTIRQ, &CPU_IRQ, &CPU_STEAL, &CPU_GUEST, &CPU_GUEST_NICE])
+        .cpu_counters(
+            "counters",
+            vec![
+                &CPU_USAGE_BUSY,
+                &CPU_USAGE_USER,
+                &CPU_USAGE_NICE,
+                &CPU_USAGE_SYSTEM,
+                &CPU_USAGE_SOFTIRQ,
+                &CPU_USAGE_IRQ,
+                &CPU_USAGE_STEAL,
+                &CPU_USAGE_GUEST,
+                &CPU_USAGE_GUEST_NICE,
+            ],
+        )
         .build()?;
 
     Ok(Some(Box::new(bpf)))

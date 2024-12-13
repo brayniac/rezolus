@@ -120,9 +120,7 @@ where
             let mut cpu_counters: Vec<CpuCounters> = self
                 .cpu_counters
                 .into_iter()
-                .map(|(name, counters)| {
-                    CpuCounters::new(skel.map(name), counters)
-                })
+                .map(|(name, counters)| CpuCounters::new(skel.map(name), counters))
                 .collect();
 
             let cpus = match common::linux::cpus() {
@@ -250,7 +248,9 @@ where
         Ok(AsyncBpf {
             thread,
             sync: sync2,
-            perf_counters: BpfPerfCounters { inner: perf_counters2 },
+            perf_counters: BpfPerfCounters {
+                inner: perf_counters2,
+            },
         })
     }
 
@@ -287,7 +287,7 @@ where
     pub fn cpu_counters(
         mut self,
         name: &'static str,
-        counters: ScopedCounters,
+        counters: Vec<&'static RwLockCounterGroup>,
     ) -> Self {
         self.cpu_counters.push((name, counters));
         self

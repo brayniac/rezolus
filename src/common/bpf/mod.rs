@@ -9,8 +9,8 @@ pub use builder::PerfEvent;
 use crate::samplers::Sampler;
 use crate::*;
 
-use std::collections::HashMap;
 use parking_lot::Mutex;
+use std::collections::HashMap;
 
 pub trait OpenSkelExt {
     /// When called, the SkelBuilder should log instruction counts for each of

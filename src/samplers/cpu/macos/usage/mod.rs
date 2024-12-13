@@ -1,8 +1,7 @@
 const NAME: &str = "cpu_usage";
 
-
-use crate::samplers::cpu::stats::*;
 use crate::samplers::cpu::macos::stats::*;
+use crate::samplers::cpu::stats::*;
 use crate::*;
 
 use libc::mach_host_self;

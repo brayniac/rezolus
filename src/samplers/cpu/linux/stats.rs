@@ -116,19 +116,13 @@ pub static CGROUP_CPU_CYCLES: RwLockCounterGroup = RwLockCounterGroup::new(MAX_C
 )]
 pub static CGROUP_CPU_INSTRUCTIONS: RwLockCounterGroup = RwLockCounterGroup::new(MAX_CGROUPS);
 
-#[metric(
-    name = "cgroup/cpu/aperf"
-)]
+#[metric(name = "cgroup/cpu/aperf")]
 pub static CGROUP_CPU_APERF: RwLockCounterGroup = RwLockCounterGroup::new(MAX_CGROUPS);
 
-#[metric(
-    name = "cgroup/cpu/mperf"
-)]
+#[metric(name = "cgroup/cpu/mperf")]
 pub static CGROUP_CPU_MPERF: RwLockCounterGroup = RwLockCounterGroup::new(MAX_CGROUPS);
 
-#[metric(
-    name = "cgroup/cpu/tsc"
-)]
+#[metric(name = "cgroup/cpu/tsc")]
 pub static CGROUP_CPU_TSC: RwLockCounterGroup = RwLockCounterGroup::new(MAX_CGROUPS);
 
 pub fn cpu_metric_percore_formatter(metric: &MetricEntry, format: Format) -> String {
