@@ -32,37 +32,8 @@ fn init(config: Arc<Config>) -> SamplerResult {
         return Ok(None);
     }
 
-    let cpus = crate::common::linux::cpus()?;
-
-    let states = [
-        "busy",
-        "user",
-        "nice",
-        "system",
-        "softirq",
-        "irq",
-        "steal",
-        "guest",
-        "guest_nice",
-    ];
-
-    let mut counters = ScopedCounters::new();
-
-    for cpu in cpus {
-        for state in states {
-            counters.push(
-                cpu,
-                DynamicCounterBuilder::new("cpu/usage")
-                    .metadata("id", format!("{}", cpu))
-                    .metadata("state", state)
-                    .formatter(cpu_usage_percore_formatter)
-                    .build(),
-            );
-        }
-    }
-
     let bpf = BpfBuilder::new(ModSkelBuilder::default)
-        .cpu_counters("counters", counters)
+        .cpu_counters("counters", vec![&CPU_BUSY, &CPU_USER, &CPU_NICE, &CPU_SYSTEM, &CPU_SOFTIRQ, &CPU_IRQ, &CPU_STEAL, &CPU_GUEST, &CPU_GUEST_NICE])
         .build()?;
 
     Ok(Some(Box::new(bpf)))

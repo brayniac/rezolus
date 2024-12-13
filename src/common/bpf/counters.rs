@@ -127,7 +127,7 @@ impl<'a> Counters<'a> {
 /// are set.
 pub struct CpuCounters<'a> {
     counter_map: CounterMap<'a>,
-    counters: ScopedCounters,
+    counters: Vec<&'static RwLockCounterGroup>,
 }
 
 impl<'a> CpuCounters<'a> {
@@ -138,7 +138,7 @@ impl<'a> CpuCounters<'a> {
         counters: ScopedCounters,
     ) -> Self {
         // load the BPF counter map
-        let counter_map = CounterMap::new(map, counters.width()).expect("failed to initialize");
+        let counter_map = CounterMap::new(map, counters.len()).expect("failed to initialize");
 
         Self {
             counter_map,
@@ -156,11 +156,11 @@ impl<'a> CpuCounters<'a> {
 
         // iterate through and increment our local value for each cpu counter
         for cpu in 0..MAX_CPUS {
-            for idx in 0..self.counters.width() {
+            for idx in 0..self.counters.len() {
                 let value = counters[idx + cpu * bank_width];
 
                 // set this CPU's counter to the new value
-                let _ = self.counters.set(cpu, idx, value);
+                let _ = self.counters[idx].set(cpu, value);
             }
         }
     }
