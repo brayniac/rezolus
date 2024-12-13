@@ -35,40 +35,14 @@ pub async fn serve(config: Arc<Config>, samplers: Arc<Box<[Box<dyn Sampler>]>>) 
 fn app(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/", get(root))
-        .route("/admin/metrics.json", get(json))
         .route("/metrics", get(prometheus))
         .route("/metrics/binary", get(msgpack))
-        .route("/vars", get(human_readable))
-        .route("/vars.json", get(json))
         .with_state(state)
         .layer(
             ServiceBuilder::new()
                 .layer(RequestDecompressionLayer::new())
                 .layer(CompressionLayer::new()),
         )
-}
-
-async fn human_readable(State(state): State<Arc<AppState>>) -> String {
-    refresh(&state.samplers).await;
-
-    let data = simple_stats(false);
-
-    let mut content = data.join("\n");
-    content += "\n";
-
-    content
-}
-
-async fn json(State(state): State<Arc<AppState>>) -> String {
-    refresh(&state.samplers).await;
-
-    let data = simple_stats(true);
-
-    let mut content = "{".to_string();
-    content += &data.join(", ");
-    content += "}";
-
-    content
 }
 
 async fn msgpack(State(state): State<Arc<AppState>>) -> Vec<u8> {
@@ -246,37 +220,4 @@ async fn refresh(samplers: &[Box<dyn Sampler>]) {
     let s: Vec<_> = samplers.iter().map(|s| s.refresh()).collect();
 
     futures::future::join_all(s).await;
-}
-
-fn simple_stats(quoted: bool) -> Vec<String> {
-    let mut data = Vec::new();
-
-    let q = if quoted { "\"" } else { "" };
-
-    for metric in &metriken::metrics() {
-        let value = metric.value();
-
-        if value.is_none() {
-            continue;
-        }
-
-        if metric.name().starts_with("log_") {
-            continue;
-        }
-
-        let simple_name = metric.formatted(metriken::Format::Simple);
-
-        match value {
-            Some(Value::Counter(value)) => {
-                data.push(format!("{q}{simple_name}{q}: {value}"));
-            }
-            Some(Value::Gauge(value)) => {
-                data.push(format!("{q}{simple_name}{q}: {value}"));
-            }
-            _ => {}
-        }
-    }
-
-    data.sort();
-    data
 }
