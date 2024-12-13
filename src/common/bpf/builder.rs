@@ -56,7 +56,7 @@ pub struct Builder<T: 'static + SkelBuilder<'static>> {
     counters: Vec<(&'static str, Vec<&'static LazyCounter>)>,
     histograms: Vec<(&'static str, &'static RwLockHistogram)>,
     maps: Vec<(&'static str, Vec<u64>)>,
-    cpu_counters: Vec<(&'static str, Vec<&'static LazyCounter>, ScopedCounters)>,
+    cpu_counters: Vec<(&'static str, ScopedCounters)>,
     perf_events: Vec<(&'static str, PerfEvent)>,
     packed_counters: Vec<(&'static str, &'static RwLockCounterGroup)>,
 }

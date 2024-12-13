@@ -138,7 +138,7 @@ impl<'a> CpuCounters<'a> {
         counters: ScopedCounters,
     ) -> Self {
         // load the BPF counter map
-        let counter_map = CounterMap::new(map, totals.len()).expect("failed to initialize");
+        let counter_map = CounterMap::new(map, counters.width()).expect("failed to initialize");
 
         Self {
             counter_map,
