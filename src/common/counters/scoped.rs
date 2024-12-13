@@ -30,4 +30,8 @@ impl ScopedCounters {
         self.inner.resize_with(scope + 1, Default::default);
         self.inner[scope].push(counter);
     }
+
+    pub fn width(&self) -> usize {
+        self.inner.first().map(|v| v.len()).unwrap_or(0)
+    }
 }

@@ -156,11 +156,11 @@ impl<'a> CpuCounters<'a> {
 
         // iterate through and increment our local value for each cpu counter
         for cpu in 0..MAX_CPUS {
-            for idx in 0..self.totals.len() {
+            for idx in 0..self.counters.width() {
                 let value = counters[idx + cpu * bank_width];
 
                 // set this CPU's counter to the new value
-                let _ = self.individual.set(cpu, idx, value);
+                let _ = self.counters.set(cpu, idx, value);
             }
         }
     }

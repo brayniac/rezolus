@@ -120,8 +120,8 @@ where
             let mut cpu_counters: Vec<CpuCounters> = self
                 .cpu_counters
                 .into_iter()
-                .map(|(name, totals, individual)| {
-                    CpuCounters::new(skel.map(name), totals, individual)
+                .map(|(name, counters)| {
+                    CpuCounters::new(skel.map(name), counters)
                 })
                 .collect();
 
@@ -287,10 +287,9 @@ where
     pub fn cpu_counters(
         mut self,
         name: &'static str,
-        totals: Vec<&'static LazyCounter>,
-        individual: ScopedCounters,
+        counters: ScopedCounters,
     ) -> Self {
-        self.cpu_counters.push((name, totals, individual));
+        self.cpu_counters.push((name, counters));
         self
     }
 
