@@ -86,6 +86,9 @@ where
         let initialized = Arc::new(AtomicBool::new(false));
         let initialized2 = initialized.clone();
 
+        let perf_events = Arc::new(Mutex::new(HashMap::new()));
+        let perf_events2 = perf_events.clone();
+
         let thread = std::thread::spawn(move || {
             // storage for the BPF object file
             let open_object: &'static mut MaybeUninit<OpenObject> =
@@ -127,53 +130,45 @@ where
                 Err(_) => 1023,
             };
 
-            let perf_events: Vec<Vec<std::io::Result<perf_event::Counter>>> = self
-                .perf_events
-                .into_iter()
-                .map(|(name, event)| {
-                    let map = skel.map(name);
+            for((name, event)) in self.perf_events.into_iter() {
+                let map = skel.map(name);
 
-                    let mut counters = Vec::new();
+                let mut counters = Vec::new();
 
-                    for cpu in 0..=cpus {
-                        let mut counter = event
-                            .inner
-                            .builder()
-                            .one_cpu(cpu)
-                            .any_pid()
-                            .exclude_hv(false)
-                            .exclude_kernel(false)
-                            .pinned(true)
-                            .read_format(
-                                ReadFormat::TOTAL_TIME_ENABLED
-                                    | ReadFormat::TOTAL_TIME_RUNNING
-                                    | ReadFormat::GROUP,
-                            )
-                            .build();
+                for cpu in 0..=cpus {
+                    let mut counter = event
+                        .inner
+                        .builder()
+                        .one_cpu(cpu)
+                        .any_pid()
+                        .exclude_hv(false)
+                        .exclude_kernel(false)
+                        .pinned(true)
+                        .read_format(
+                            ReadFormat::TOTAL_TIME_ENABLED
+                                | ReadFormat::TOTAL_TIME_RUNNING
+                                | ReadFormat::GROUP,
+                        )
+                        .build();
 
-                        if let Ok(c) = counter.as_mut() {
-                            let _ = c.enable();
+                    if let Ok(c) = counter.as_mut() {
+                        let _ = c.enable();
 
-                            let fd = c.as_raw_fd();
+                        let fd = c.as_raw_fd();
 
-                            let _ = map.update(
-                                &((cpu as u32).to_ne_bytes()),
-                                &(fd.to_ne_bytes()),
-                                MapFlags::ANY,
-                            );
-                        }
-
-                        counters.push(counter);
+                        let _ = map.update(
+                            &((cpu as u32).to_ne_bytes()),
+                            &(fd.to_ne_bytes()),
+                            MapFlags::ANY,
+                        );
                     }
 
-                    counters
-                })
-                .collect();
+                    counters.push(counter);
+                }
 
-            debug!(
-                "initialized perf events for: {} hardware counters",
-                perf_events.len()
-            );
+                let p = perf_events.lock();
+                p.insert(name, counters);
+            }
 
             let mut packed_counters: Vec<PackedCounters> = self
                 .packed_counters
@@ -255,6 +250,7 @@ where
         Ok(AsyncBpf {
             thread,
             sync: sync2,
+            perf_events: perf_events2,
         })
     }
 
