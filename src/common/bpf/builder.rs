@@ -86,8 +86,8 @@ where
         let initialized = Arc::new(AtomicBool::new(false));
         let initialized2 = initialized.clone();
 
-        let perf_events = Arc::new(Mutex::new(HashMap::new()));
-        let perf_events2 = perf_events.clone();
+        let perf_counters = Arc::new(Mutex::new(HashMap::new()));
+        let perf_counters2 = perf_counters.clone();
 
         let thread = std::thread::spawn(move || {
             // storage for the BPF object file
@@ -130,7 +130,7 @@ where
                 Err(_) => 1023,
             };
 
-            for((name, event)) in self.perf_events.into_iter() {
+            for (name, event) in self.perf_events.into_iter() {
                 let map = skel.map(name);
 
                 let mut counters = Vec::new();
@@ -166,7 +166,7 @@ where
                     counters.push(counter);
                 }
 
-                let p = perf_events.lock();
+                let p = perf_counters.lock();
                 p.insert(name, counters);
             }
 
@@ -250,7 +250,7 @@ where
         Ok(AsyncBpf {
             thread,
             sync: sync2,
-            perf_events: perf_events2,
+            perf_counters: BpfPerfCounters { inner: perf_counters2 },
         })
     }
 

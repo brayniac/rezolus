@@ -9,6 +9,9 @@ pub use builder::PerfEvent;
 use crate::samplers::Sampler;
 use crate::*;
 
+use std::collections::HashMap;
+use parking_lot::Mutex;
+
 pub trait OpenSkelExt {
     /// When called, the SkelBuilder should log instruction counts for each of
     /// the programs within the skeleton. Log level should be debug.
@@ -41,10 +44,20 @@ use counters::{Counters, CpuCounters, PackedCounters};
 use histogram::Histogram;
 use sync_primitive::SyncPrimitive;
 
+pub struct BpfPerfCounters {
+    inner: Arc<Mutex<HashMap<String, Vec<Result<perf_event::Counter>>>>>,
+}
+
 pub struct AsyncBpf {
     thread: std::thread::JoinHandle<Result<(), libbpf_rs::Error>>,
     sync: SyncPrimitive,
-    perf_events: Arc<Mutex<HashMap<String, Vec<Result<perf_event::Counter>>>>>,
+    perf_counters: BpfPerfCounters,
+}
+
+impl AsyncBpf {
+    pub fn perf_counters(&self) -> BpfPerfCounters {
+        self.perf_counters.clone()
+    }
 }
 
 #[async_trait]
