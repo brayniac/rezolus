@@ -1,5 +1,4 @@
 use crate::common::RwLockCounterGroup;
-use crate::samplers::cpu::stats::*;
 
 use metriken::*;
 
