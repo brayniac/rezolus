@@ -166,7 +166,7 @@ where
                     counters.push(counter);
                 }
 
-                let p = perf_counters.lock();
+                let mut p = perf_counters.lock();
                 p.insert(name, counters);
             }
 
