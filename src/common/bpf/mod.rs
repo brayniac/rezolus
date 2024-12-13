@@ -46,7 +46,7 @@ use sync_primitive::SyncPrimitive;
 
 #[derive(Clone)]
 pub struct BpfPerfCounters {
-    inner: Arc<Mutex<HashMap<String, Vec<Result<perf_event::Counter, std::io::Error>>>>>,
+    inner: Arc<Mutex<HashMap<&'static str, Vec<Result<perf_event::Counter, std::io::Error>>>>>,
 }
 
 pub struct AsyncBpf {
