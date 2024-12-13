@@ -69,7 +69,7 @@ impl<'a> CounterMap<'a> {
 /// Represents a set of counters where the BPF map has one bank of counters per
 /// CPU to avoid contention. Each bank of counters is a whole number of
 /// cachelines to avoid false sharing. Per-CPU counters are not individually
-/// tracked.
+/// tracked, instead they are aggregated through summing.
 pub struct Counters<'a> {
     counter_map: CounterMap<'a>,
     counters: Vec<&'static LazyCounter>,
@@ -123,13 +123,11 @@ impl<'a> Counters<'a> {
 
 /// Represents a set of counters where the BPF map has one bank of counters per
 /// CPU. Like `Counters`, each bank is a whole number of cachelines to avoid
-/// false sharing. Unlike `Counters`, each CPU's counters are also individually
-/// tracked.
+/// false sharing. No aggregation is performed, instead only per-CPU counters
+/// are set.
 pub struct CpuCounters<'a> {
     counter_map: CounterMap<'a>,
-    totals: Vec<&'static LazyCounter>,
-    individual: ScopedCounters,
-    values: Vec<u64>,
+    counters: ScopedCounters,
 }
 
 impl<'a> CpuCounters<'a> {
@@ -137,29 +135,20 @@ impl<'a> CpuCounters<'a> {
     /// counter metrics.
     pub fn new(
         map: &'a Map,
-        totals: Vec<&'static LazyCounter>,
-        individual: ScopedCounters,
+        counters: ScopedCounters,
     ) -> Self {
-        // we need temporary buffer so we can total up the per-CPU values
-        let values = vec![0; totals.len()];
-
         // load the BPF counter map
         let counter_map = CounterMap::new(map, totals.len()).expect("failed to initialize");
 
         Self {
             counter_map,
-            totals,
-            individual,
-            values,
+            counters,
         }
     }
 
     /// Refreshes the counters by reading from the BPF map and setting each
     /// counter metric to the current value.
     pub fn refresh(&mut self) {
-        // zero out temp counters
-        self.values.fill(0);
-
         let bank_width = self.counter_map.bank_width();
 
         // borrow the BPF counters map so we can read per-cpu values
@@ -170,21 +159,16 @@ impl<'a> CpuCounters<'a> {
             for idx in 0..self.totals.len() {
                 let value = counters[idx + cpu * bank_width];
 
-                // add this CPU's counter to the combined value for this counter
-                self.values[idx] = self.values[idx].wrapping_add(value);
-
                 // set this CPU's counter to the new value
                 let _ = self.individual.set(cpu, idx, value);
             }
         }
-
-        // set each counter metric to its new combined value
-        for (value, counter) in self.values.iter().zip(self.totals.iter_mut()) {
-            counter.set(*value);
-        }
     }
 }
 
+/// Represents a set of counters where the BPF map is a dense set of counters,
+/// meaning there is no padding. No aggregation is performed, and the values are
+/// updated into a single `RwLockCounterGroup`.
 pub struct PackedCounters<'a> {
     _map: &'a Map<'a>,
     mmap: MmapMut,

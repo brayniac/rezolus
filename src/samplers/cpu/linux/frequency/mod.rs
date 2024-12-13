@@ -38,11 +38,11 @@ fn init(config: Arc<Config>) -> SamplerResult {
 
     let metrics = ["cpu/aperf", "cpu/mperf", "cpu/tsc"];
 
-    let mut individual = ScopedCounters::new();
+    let mut counters = ScopedCounters::new();
 
     for cpu in cpus {
         for metric in metrics {
-            individual.push(
+            counters.push(
                 cpu,
                 DynamicCounterBuilder::new(metric)
                     .metadata("id", format!("{}", cpu))
@@ -58,7 +58,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
         .perf_event("aperf", PerfEvent::msr(MsrId::APERF)?)
         .perf_event("mperf", PerfEvent::msr(MsrId::MPERF)?)
         .perf_event("tsc", PerfEvent::msr(MsrId::TSC)?)
-        .cpu_counters("counters", totals, individual)
+        .cpu_counters("counters", counters)
         .packed_counters("cgroup_aperf", &CGROUP_CPU_APERF)
         .packed_counters("cgroup_mperf", &CGROUP_CPU_MPERF)
         .packed_counters("cgroup_tsc", &CGROUP_CPU_TSC)

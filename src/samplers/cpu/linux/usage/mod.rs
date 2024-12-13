@@ -59,11 +59,11 @@ fn init(config: Arc<Config>) -> SamplerResult {
         "guest_nice",
     ];
 
-    let mut individual = ScopedCounters::new();
+    let mut counters = ScopedCounters::new();
 
     for cpu in cpus {
         for state in states {
-            individual.push(
+            counters.push(
                 cpu,
                 DynamicCounterBuilder::new("cpu/usage")
                     .metadata("id", format!("{}", cpu))
@@ -75,7 +75,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
     }
 
     let bpf = BpfBuilder::new(ModSkelBuilder::default)
-        .cpu_counters("counters", totals, individual)
+        .cpu_counters("counters", counters)
         .build()?;
 
     Ok(Some(Box::new(bpf)))

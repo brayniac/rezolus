@@ -36,11 +36,11 @@ fn init(config: Arc<Config>) -> SamplerResult {
 
     let metrics = ["cpu/cycles", "cpu/instructions"];
 
-    let mut cpu_counters = ScopedCounters::new();
+    let mut counters = ScopedCounters::new();
 
     for cpu in cpus {
         for metric in metrics {
-            cpu_counters.push(
+            counters.push(
                 cpu,
                 DynamicCounterBuilder::new(metric)
                     .metadata("id", format!("{}", cpu))
@@ -53,7 +53,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
     let bpf = BpfBuilder::new(ModSkelBuilder::default)
         .perf_event("cycles", PerfEvent::cpu_cycles())
         .perf_event("instructions", PerfEvent::instructions())
-        .cpu_counters("counters", totals, cpu_counters)
+        .cpu_counters("counters", counters)
         .packed_counters("cgroup_cycles", &CGROUP_CPU_CYCLES)
         .packed_counters("cgroup_instructions", &CGROUP_CPU_INSTRUCTIONS)
         .build()?;
