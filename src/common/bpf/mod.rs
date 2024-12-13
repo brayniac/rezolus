@@ -44,8 +44,9 @@ use counters::{Counters, CpuCounters, PackedCounters};
 use histogram::Histogram;
 use sync_primitive::SyncPrimitive;
 
+#[derive(Clone)]
 pub struct BpfPerfCounters {
-    inner: Arc<Mutex<HashMap<String, Vec<Result<perf_event::Counter>>>>>,
+    inner: Arc<Mutex<HashMap<String, Vec<Result<perf_event::Counter, std::io::Error>>>>>,
 }
 
 pub struct AsyncBpf {
