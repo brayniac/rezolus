@@ -35,18 +35,6 @@ fn init(config: Arc<Config>) -> SamplerResult {
 
     let cpus = crate::common::linux::cpus()?;
 
-    let totals = vec![
-        &CPU_USAGE_BUSY,
-        &CPU_USAGE_USER,
-        &CPU_USAGE_NICE,
-        &CPU_USAGE_SYSTEM,
-        &CPU_USAGE_SOFTIRQ,
-        &CPU_USAGE_IRQ,
-        &CPU_USAGE_STEAL,
-        &CPU_USAGE_GUEST,
-        &CPU_USAGE_GUEST_NICE,
-    ];
-
     let states = [
         "busy",
         "user",

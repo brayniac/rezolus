@@ -34,8 +34,6 @@ fn init(config: Arc<Config>) -> SamplerResult {
 
     let cpus = crate::common::linux::cpus()?;
 
-    let totals = vec![&CPU_APERF, &CPU_MPERF, &CPU_TSC];
-
     let metrics = ["cpu/aperf", "cpu/mperf", "cpu/tsc"];
 
     let mut counters = ScopedCounters::new();

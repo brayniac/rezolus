@@ -32,8 +32,6 @@ fn init(config: Arc<Config>) -> SamplerResult {
 
     let cpus = crate::common::linux::cpus()?;
 
-    let totals = vec![&CPU_CYCLES, &CPU_INSTRUCTIONS];
-
     let metrics = ["cpu/cycles", "cpu/instructions"];
 
     let mut counters = ScopedCounters::new();
