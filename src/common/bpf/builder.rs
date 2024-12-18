@@ -6,6 +6,7 @@ use libbpf_rs::{MapCore, MapFlags, OpenObject, RingBuffer, RingBufferBuilder};
 use metriken::{LazyCounter, RwLockHistogram};
 use perf_event::ReadFormat;
 
+use std::collections::HashMap;
 use std::mem::MaybeUninit;
 use std::os::fd::{AsFd, AsRawFd, FromRawFd};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -13,6 +14,59 @@ use std::sync::Arc;
 
 pub struct PerfEvent {
     inner: Event,
+}
+
+pub struct PerfCounter {
+    counter: perf_event::Counter,
+    group: &'static CounterGroup,
+}
+
+pub struct CpuPerfCounters {
+    cpu: usize,
+    counters: Vec<PerfCounter>,
+}
+
+impl CpuPerfCounters {
+    pub fn new(cpu: usize) -> Self {
+        Self {
+            cpu,
+            counters: Vec::new(),
+        }
+    }
+
+    pub fn push(counter: perf_event::Counter, group: &'static CounterGroup) -> Self {
+        self.counters.push(PerfCounter { counter, group })
+    }
+
+    pub fn refresh(&self) {
+        for c in self.counters {
+            if let Ok(value) = c.counter.read() {
+                c.group.set(self.cpu, value);
+            }
+        }
+    }
+}
+
+pub struct PerfCounters {
+    inner: HashMap<usize, CpuPerfCounters>,
+}
+
+impl PerfCounters {
+    pub fn new() -> Self {
+        Self {
+            inner: HashMap::new(),
+        }
+    }
+
+    pub fn push(cpu: usize, counter: perf_event::Counter, group: &'static CounterGroup) {
+        if !self.inner.contains(cpu) {
+            self.inner.insert(cpu, CpuPerfCounters::new(cpu));
+        }
+
+        let mut c = self.inner.get_mut(cpu).unwrap();
+
+        c.push(counter, group);
+    }
 }
 
 enum Event {
@@ -61,7 +115,7 @@ pub struct Builder<T: 'static + SkelBuilder<'static>> {
         Vec<&'static LazyCounter>,
         Vec<&'static CounterGroup>,
     )>,
-    perf_events: Vec<(&'static str, PerfEvent)>,
+    perf_events: Vec<(&'static str, PerfEvent, &'static CounterGroup)>,
     packed_counters: Vec<(&'static str, &'static CounterGroup)>,
     ringbuf_handler: Vec<(&'static str, fn(&[u8]) -> i32)>,
 }
@@ -133,13 +187,13 @@ where
                 Err(_) => 1023,
             };
 
+            let mut perf_counters = PerfCounters::new();
+
             let perf_events: Vec<Vec<std::io::Result<perf_event::Counter>>> = self
                 .perf_events
                 .into_iter()
-                .map(|(name, event)| {
+                .map(|(name, event, group)| {
                     let map = skel.map(name);
-
-                    let mut counters = Vec::new();
 
                     for cpu in 0..=cpus {
                         let mut counter = event
@@ -169,12 +223,59 @@ where
                             );
                         }
 
-                        counters.push(counter);
+                        perf_counters.push(cpu, counter, group);
                     }
 
                     counters
                 })
                 .collect();
+
+            let mut perf_threads = Vec::new();
+
+            let mut perf_sync = Vec::new();
+
+            let mut unpinned = Vec::new();
+
+            for (cpu, counters) in perf_counters.into_iter() {
+                let psync = SyncPrimitive::new();
+                let psync2 = psync.clone();
+
+                perf_threads.push(std::thread::spawn(move || {
+                    if core_affinity::set_for_current(id).is_err() {
+                        unpinned.push(counters);
+                        return;
+                    }
+
+                    loop {
+                        psync.wait_trigger();
+
+                        counters.refresh();
+
+                        psync.notify();
+                    }
+                }));
+
+                perf_sync.push(psync2);
+            }
+
+            if !unpinned.is_empty() {
+                let psync = SyncPrimitive::new();
+                let psync2 = psync.clone();
+
+                perf_threads.push(std::thread::spawn(move || {
+                    loop {
+                        psync.wait_trigger();
+
+                        for counters in unpinned.iter() {
+                            counters.refresh();
+                        }
+
+                        psync.notify();
+                    }
+                }));
+
+                perf_sync.push(psync2);
+            }
 
             let ringbuffer: Option<RingBuffer> = if self.ringbuf_handler.is_empty() {
                 None
@@ -254,6 +355,14 @@ where
                     v.refresh();
                 }
 
+                for v in &mut perf_sync {
+                    // notify the thread to start
+                    v.trigger();
+
+                    // wait for notification that thread has finished
+                    v.wait_notify().await;
+                }
+
                 // notify that we have finished running
                 sync.notify();
             }
@@ -322,8 +431,8 @@ where
     }
 
     /// Specify a perf event array name and an associated perf event.
-    pub fn perf_event(mut self, name: &'static str, event: PerfEvent) -> Self {
-        self.perf_events.push((name, event));
+    pub fn perf_event(mut self, name: &'static str, event: PerfEvent, group: &'static CounterGroup) -> Self {
+        self.perf_events.push((name, event, group));
         self
     }
 

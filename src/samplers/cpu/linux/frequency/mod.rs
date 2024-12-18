@@ -77,10 +77,9 @@ fn init(config: Arc<Config>) -> SamplerResult {
     let individual = vec![&CPU_APERF_PERCORE, &CPU_MPERF_PERCORE, &CPU_TSC_PERCORE];
 
     let bpf = BpfBuilder::new(ModSkelBuilder::default)
-        .perf_event("aperf", PerfEvent::msr(MsrId::APERF)?)
-        .perf_event("mperf", PerfEvent::msr(MsrId::MPERF)?)
-        .perf_event("tsc", PerfEvent::msr(MsrId::TSC)?)
-        .cpu_counters("counters", totals, individual)
+        .perf_event("aperf", PerfEvent::msr(MsrId::APERF)?, &CPU_APERF_PERCORE)
+        .perf_event("mperf", PerfEvent::msr(MsrId::MPERF)?, &CPU_MPERF_PERCORE)
+        .perf_event("tsc", PerfEvent::msr(MsrId::TSC)?, &CPU_TSC_PERCORE)
         .packed_counters("cgroup_aperf", &CGROUP_CPU_APERF)
         .packed_counters("cgroup_mperf", &CGROUP_CPU_MPERF)
         .packed_counters("cgroup_tsc", &CGROUP_CPU_TSC)
