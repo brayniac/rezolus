@@ -115,24 +115,6 @@ static __always_inline __s64 get_task_state(void *task)
 	return BPF_CORE_READ((struct task_struct___o *)task, state);
 }
 
-// attach a kprobe cpuacct to update per-cpu counters
-
-SEC("kprobe/cpuacct_account_field")
-int BPF_KPROBE(cpuacct_account_field_kprobe, void *task, u32 index, u64 delta)
-{
-	u32 idx;
-	u32 processor_id = bpf_get_smp_processor_id();
-
-	u64 c = bpf_perf_event_read(&cycles, BPF_F_CURRENT_CPU);
-	u64 i = bpf_perf_event_read(&instructions, BPF_F_CURRENT_CPU);
-
-	idx = processor_id * COUNTER_GROUP_WIDTH + CYCLES;
-	bpf_map_update_elem(&counters, &idx, &c, BPF_ANY);
-
-	idx = processor_id * COUNTER_GROUP_WIDTH + INSTRUCTIONS;
-	bpf_map_update_elem(&counters, &idx, &i, BPF_ANY);
-}
-
 // attach a tracepoint on sched_switch for per-cgroup accounting
 
 SEC("tp_btf/sched_switch")
