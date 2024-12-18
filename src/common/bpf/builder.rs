@@ -34,7 +34,7 @@ impl CpuPerfCounters {
         }
     }
 
-    pub fn push(counter: perf_event::Counter, group: &'static CounterGroup) -> Self {
+    pub fn push(&mut self, counter: perf_event::Counter, group: &'static CounterGroup) -> Self {
         self.counters.push(PerfCounter { counter, group })
     }
 
@@ -58,7 +58,7 @@ impl PerfCounters {
         }
     }
 
-    pub fn push(cpu: usize, counter: perf_event::Counter, group: &'static CounterGroup) {
+    pub fn push(&mut self, cpu: usize, counter: perf_event::Counter, group: &'static CounterGroup) {
         if !self.inner.contains(cpu) {
             self.inner.insert(cpu, CpuPerfCounters::new(cpu));
         }
@@ -241,7 +241,7 @@ where
                 let psync2 = psync.clone();
 
                 perf_threads.push(std::thread::spawn(move || {
-                    if core_affinity::set_for_current(id).is_err() {
+                    if core_affinity::set_for_current(cpu).is_err() {
                         unpinned.push(counters);
                         return;
                     }
@@ -355,14 +355,6 @@ where
                     v.refresh();
                 }
 
-                for v in &mut perf_sync {
-                    // notify the thread to start
-                    v.trigger();
-
-                    // wait for notification that thread has finished
-                    v.wait_notify().await;
-                }
-
                 // notify that we have finished running
                 sync.notify();
             }
@@ -387,6 +379,8 @@ where
         Ok(AsyncBpf {
             thread,
             sync: sync2,
+            perf_threads: perf_threads,
+            perf_sync: perf_sync,
         })
     }
 

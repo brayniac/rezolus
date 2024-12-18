@@ -47,6 +47,8 @@ use sync_primitive::SyncPrimitive;
 pub struct AsyncBpf {
     thread: std::thread::JoinHandle<Result<(), libbpf_rs::Error>>,
     sync: SyncPrimitive,
+    perf_threads: Vec<std::thread::JoinHandle<()>>,
+    perf_sync: Vec<SyncPrimitive>,
 }
 
 #[async_trait]
@@ -62,5 +64,8 @@ impl Sampler for AsyncBpf {
 
         // wait for notification that thread has finished
         self.sync.wait_notify().await;
+
+        // trigger and wait on all perf threads
+        futures::future::join_all(self.perf_sync.iter().map(|s| s.trigger(); s.wait_notify()));
     }
 }
