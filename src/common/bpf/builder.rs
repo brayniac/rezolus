@@ -38,8 +38,8 @@ impl CpuPerfCounters {
         self.counters.push(PerfCounter { counter, group })
     }
 
-    pub fn refresh(&self) {
-        for c in self.counters {
+    pub fn refresh(&mut self) {
+        for c in self.counters.iter_mut() {
             if let Ok(value) = c.counter.read() {
                 c.group.set(self.cpu, value);
             }
