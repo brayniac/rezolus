@@ -35,7 +35,11 @@ impl CpuPerfCounters {
         }
     }
 
-    pub fn push(&mut self, counter: perf_event::Counter, group: &'static CounterGroup) -> Self {
+    pub fn push(
+        &mut self,
+        counter: perf_event::Counter,
+        group: &'static CounterGroup,
+    ) -> &mut Self {
         self.counters.push(PerfCounter { counter, group });
 
         self
@@ -62,7 +66,7 @@ impl PerfCounters {
     }
 
     pub fn push(&mut self, cpu: usize, counter: perf_event::Counter, group: &'static CounterGroup) {
-        if !self.inner.contains_key(cpu) {
+        if !self.inner.contains_key(&cpu) {
             self.inner.insert(cpu, CpuPerfCounters::new(cpu));
         }
 
@@ -195,49 +199,43 @@ where
 
             let mut perf_counters = PerfCounters::new();
 
-            let perf_events: Vec<Vec<std::io::Result<perf_event::Counter>>> = self
-                .perf_events
-                .into_iter()
-                .map(|(name, event, group)| {
-                    let map = skel.map(name);
+            for (name, event, group) in self.perf_events.into_iter() {
+                let map = skel.map(name);
 
-                    for cpu in 0..=cpus {
-                        if let Ok(mut counter) = event
-                            .inner
-                            .builder()
-                            .one_cpu(cpu)
-                            .any_pid()
-                            .exclude_hv(false)
-                            .exclude_kernel(false)
-                            .pinned(true)
-                            .read_format(
-                                ReadFormat::TOTAL_TIME_ENABLED
-                                    | ReadFormat::TOTAL_TIME_RUNNING
-                                    | ReadFormat::GROUP,
-                            )
-                            .build()
-                        {
-                            let _ = counter.enable();
+                for cpu in 0..=cpus {
+                    if let Ok(mut counter) = event
+                        .inner
+                        .builder()
+                        .one_cpu(cpu)
+                        .any_pid()
+                        .exclude_hv(false)
+                        .exclude_kernel(false)
+                        .pinned(true)
+                        .read_format(
+                            ReadFormat::TOTAL_TIME_ENABLED
+                                | ReadFormat::TOTAL_TIME_RUNNING
+                                | ReadFormat::GROUP,
+                        )
+                        .build()
+                    {
+                        let _ = counter.enable();
 
-                            let fd = counter.as_raw_fd();
+                        let fd = counter.as_raw_fd();
 
-                            let _ = map.update(
-                                &((cpu as u32).to_ne_bytes()),
-                                &(fd.to_ne_bytes()),
-                                MapFlags::ANY,
-                            );
+                        let _ = map.update(
+                            &((cpu as u32).to_ne_bytes()),
+                            &(fd.to_ne_bytes()),
+                            MapFlags::ANY,
+                        );
 
-                            perf_counters.push(cpu, counter, group);
-                        }
+                        perf_counters.push(cpu, counter, group);
                     }
-
-                    counters
-                })
-                .collect();
+                }
+            }
 
             let mut unpinned = Vec::new();
 
-            for (cpu, counters) in perf_counters.into_iter() {
+            for (cpu, counters) in perf_counters.inner.into_iter() {
                 let psync = SyncPrimitive::new();
                 let psync2 = psync.clone();
 

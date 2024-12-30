@@ -9,6 +9,8 @@ pub use builder::PerfEvent;
 use crate::samplers::Sampler;
 use crate::*;
 
+use parking_lot::Mutex;
+
 pub trait OpenSkelExt {
     /// When called, the SkelBuilder should log instruction counts for each of
     /// the programs within the skeleton. Log level should be debug.
