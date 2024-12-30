@@ -70,7 +70,7 @@ impl PerfCounters {
             self.inner.insert(cpu, CpuPerfCounters::new(cpu));
         }
 
-        let mut c = self.inner.get_mut(&cpu).unwrap();
+        let c = self.inner.get_mut(&cpu).unwrap();
 
         c.push(counter, group);
     }
@@ -242,7 +242,7 @@ where
                 let perf_threads = perf_threads.lock();
 
                 perf_threads.push(std::thread::spawn(move || {
-                    if core_affinity::set_for_current(cpu).is_err() {
+                    if !core_affinity::set_for_current(core_affinity::CoreId { id: cpu }) {
                         unpinned.push(counters);
                         return;
                     }
@@ -293,11 +293,6 @@ where
 
                 Some(builder.build().expect("failed to initialize ringbuffer"))
             };
-
-            debug!(
-                "initialized perf events for: {} hardware counters",
-                perf_events.len()
-            );
 
             let mut packed_counters: Vec<PackedCounters> = self
                 .packed_counters
