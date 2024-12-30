@@ -35,7 +35,9 @@ impl CpuPerfCounters {
     }
 
     pub fn push(&mut self, counter: perf_event::Counter, group: &'static CounterGroup) -> Self {
-        self.counters.push(PerfCounter { counter, group })
+        self.counters.push(PerfCounter { counter, group });
+
+        self
     }
 
     pub fn refresh(&mut self) {
@@ -59,11 +61,11 @@ impl PerfCounters {
     }
 
     pub fn push(&mut self, cpu: usize, counter: perf_event::Counter, group: &'static CounterGroup) {
-        if !self.inner.contains(cpu) {
+        if !self.inner.contains_key(cpu) {
             self.inner.insert(cpu, CpuPerfCounters::new(cpu));
         }
 
-        let mut c = self.inner.get_mut(cpu).unwrap();
+        let mut c = self.inner.get_mut(&cpu).unwrap();
 
         c.push(counter, group);
     }
@@ -146,6 +148,9 @@ where
         let initialized = Arc::new(AtomicBool::new(false));
         let initialized2 = initialized.clone();
 
+        let mut perf_threads = Mutex::new(Vec::new());
+        let mut perf_sync = Mutex::new(Vec::new());
+
         let thread = std::thread::spawn(move || {
             // storage for the BPF object file
             let open_object: &'static mut MaybeUninit<OpenObject> =
@@ -211,7 +216,7 @@ where
                             )
                             .build();
 
-                        if let Ok(c) = counter.as_mut() {
+                        if let Ok(counter) = counter {
                             let _ = c.enable();
 
                             let fd = c.as_raw_fd();
@@ -221,24 +226,22 @@ where
                                 &(fd.to_ne_bytes()),
                                 MapFlags::ANY,
                             );
-                        }
 
-                        perf_counters.push(cpu, counter, group);
+                            perf_counters.push(cpu, counter, group);
+                        }
                     }
 
                     counters
                 })
                 .collect();
 
-            let mut perf_threads = Vec::new();
-
-            let mut perf_sync = Vec::new();
-
             let mut unpinned = Vec::new();
 
             for (cpu, counters) in perf_counters.into_iter() {
                 let psync = SyncPrimitive::new();
                 let psync2 = psync.clone();
+
+                let perf_threads = perf_threads.lock();
 
                 perf_threads.push(std::thread::spawn(move || {
                     if core_affinity::set_for_current(cpu).is_err() {
@@ -255,12 +258,16 @@ where
                     }
                 }));
 
+                let perf_sync = perf_sync.lock();
+
                 perf_sync.push(psync2);
             }
 
             if !unpinned.is_empty() {
                 let psync = SyncPrimitive::new();
                 let psync2 = psync.clone();
+
+                let perf_threads = perf_threads.lock();
 
                 perf_threads.push(std::thread::spawn(move || {
                     loop {
@@ -273,6 +280,8 @@ where
                         psync.notify();
                     }
                 }));
+
+                let perf_sync = perf_sync.lock();
 
                 perf_sync.push(psync2);
             }
