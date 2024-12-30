@@ -153,8 +153,11 @@ where
         let initialized = Arc::new(AtomicBool::new(false));
         let initialized2 = initialized.clone();
 
-        let mut perf_threads = Mutex::new(Vec::new());
-        let mut perf_sync = Mutex::new(Vec::new());
+        let perf_threads = Arc::new(Mutex::new(Vec::new()));
+        let perf_threads2 = perf_threads.clone();
+
+        let perf_sync = Arc::new(Mutex::new(Vec::new()));
+        let perf_sync2 = perf_sync.clone();
 
         let thread = std::thread::spawn(move || {
             // storage for the BPF object file
@@ -379,8 +382,8 @@ where
         Ok(AsyncBpf {
             thread,
             sync: sync2,
-            perf_threads: perf_threads,
-            perf_sync: perf_sync,
+            perf_threads: perf_threads2,
+            perf_sync: perf_sync2,
         })
     }
 
