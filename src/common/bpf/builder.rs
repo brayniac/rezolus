@@ -4,6 +4,7 @@ use crate::common::*;
 use libbpf_rs::skel::{OpenSkel, Skel, SkelBuilder};
 use libbpf_rs::{MapCore, MapFlags, OpenObject, RingBuffer, RingBufferBuilder};
 use metriken::{LazyCounter, RwLockHistogram};
+use parking_lot::Mutex;
 use perf_event::ReadFormat;
 
 use std::collections::HashMap;
@@ -201,7 +202,7 @@ where
                     let map = skel.map(name);
 
                     for cpu in 0..=cpus {
-                        let mut counter = event
+                        if let Ok(mut counter) = event
                             .inner
                             .builder()
                             .one_cpu(cpu)
@@ -214,12 +215,11 @@ where
                                     | ReadFormat::TOTAL_TIME_RUNNING
                                     | ReadFormat::GROUP,
                             )
-                            .build();
+                            .build()
+                        {
+                            let _ = counter.enable();
 
-                        if let Ok(counter) = counter {
-                            let _ = c.enable();
-
-                            let fd = c.as_raw_fd();
+                            let fd = counter.as_raw_fd();
 
                             let _ = map.update(
                                 &((cpu as u32).to_ne_bytes()),
@@ -269,16 +269,14 @@ where
 
                 let perf_threads = perf_threads.lock();
 
-                perf_threads.push(std::thread::spawn(move || {
-                    loop {
-                        psync.wait_trigger();
+                perf_threads.push(std::thread::spawn(move || loop {
+                    psync.wait_trigger();
 
-                        for counters in unpinned.iter() {
-                            counters.refresh();
-                        }
-
-                        psync.notify();
+                    for counters in unpinned.iter() {
+                        counters.refresh();
                     }
+
+                    psync.notify();
                 }));
 
                 let perf_sync = perf_sync.lock();
@@ -434,7 +432,12 @@ where
     }
 
     /// Specify a perf event array name and an associated perf event.
-    pub fn perf_event(mut self, name: &'static str, event: PerfEvent, group: &'static CounterGroup) -> Self {
+    pub fn perf_event(
+        mut self,
+        name: &'static str,
+        event: PerfEvent,
+        group: &'static CounterGroup,
+    ) -> Self {
         self.perf_events.push((name, event, group));
         self
     }

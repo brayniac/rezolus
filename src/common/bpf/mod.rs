@@ -67,6 +67,9 @@ impl Sampler for AsyncBpf {
 
         // trigger and wait on all perf threads
         let perf_sync = self.perf_sync.lock();
-        futures::future::join_all(perf_sync.iter().map(|s| { s.trigger(); s.wait_notify() }));
+        futures::future::join_all(perf_sync.iter().map(|s| {
+            s.trigger();
+            s.wait_notify()
+        }));
     }
 }
