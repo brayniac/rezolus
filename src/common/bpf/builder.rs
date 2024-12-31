@@ -49,7 +49,7 @@ impl CpuPerfCounters {
     pub fn refresh(&mut self) {
         for c in self.counters.iter_mut() {
             if let Ok(value) = c.counter.read() {
-                c.group.set(self.cpu, value);
+                let _ = c.group.set(self.cpu, value);
             }
         }
     }
