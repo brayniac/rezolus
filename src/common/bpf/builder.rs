@@ -155,12 +155,6 @@ where
         let initialized = Arc::new(AtomicBool::new(false));
         let initialized2 = initialized.clone();
 
-        let perf_threads = Arc::new(Mutex::new(Vec::new()));
-        let perf_threads2 = perf_threads.clone();
-
-        let perf_sync = Arc::new(Mutex::new(Vec::new()));
-        let perf_sync2 = perf_sync.clone();
-
         let thread = std::thread::spawn(move || {
             // storage for the BPF object file
             let open_object: &'static mut MaybeUninit<OpenObject> =
@@ -250,13 +244,12 @@ where
 
                 let unpinned = unpinned_tx.clone();
                 let perf_threads = perf_threads_tx.clone();
-                let perf_sync = perf_sync.clone();
+                let perf_sync = perf_sync_tx.clone();
 
                 let pt_init = pt_init.clone();
 
                 perf_threads.send(std::thread::spawn(move || {
                     if !core_affinity::set_for_current(core_affinity::CoreId { id: cpu }) {
-                        let mut unpinned = unpinned.lock();
                         unpinned.send(counters).expect("failed to send unpinned perf counters");
                         pt_init.fetch_add(1, Ordering::Relaxed);
                         return;
