@@ -243,6 +243,8 @@ where
             debug!("launching {} threads to read perf counters", pt_pending.load(Ordering::SeqCst));
 
             for (cpu, mut counters) in perf_counters.inner.into_iter() {
+                debug!("launching perf thread for cpu {}", cpu);
+                
                 let psync = SyncPrimitive::new();
                 let psync2 = psync.clone();
 
