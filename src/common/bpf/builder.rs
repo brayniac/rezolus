@@ -11,8 +11,8 @@ use std::collections::HashMap;
 use std::mem::MaybeUninit;
 use std::os::fd::{AsFd, AsRawFd, FromRawFd};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
 use std::sync::mpsc::sync_channel;
+use std::sync::Arc;
 use std::time::Duration;
 
 pub struct PerfEvent {
@@ -155,6 +155,9 @@ where
         let initialized = Arc::new(AtomicBool::new(false));
         let initialized2 = initialized.clone();
 
+        let (perf_threads_tx, perf_threads_rx) = sync_channel(cpus);
+        let (perf_sync_tx, perf_sync_rx) = sync_channel(cpus);
+
         let thread = std::thread::spawn(move || {
             // storage for the BPF object file
             let open_object: &'static mut MaybeUninit<OpenObject> =
@@ -233,10 +236,8 @@ where
             }
 
             let (unpinned_tx, unpinned_rx) = sync_channel(cpus);
-            let (perf_threads_tx, perf_threads_rx) = sync_channel(cpus);
-            let (perf_sync_tx, perf_sync_rx) = sync_channel(cpus);
 
-            let pt_init = Arc::new(AtomicUsize::new(1));
+            let pt_pending = Arc::new(AtomicUsize::new(perf_counters.inner.len()));
 
             for (cpu, mut counters) in perf_counters.inner.into_iter() {
                 let psync = SyncPrimitive::new();
@@ -248,28 +249,34 @@ where
 
                 let pt_init = pt_init.clone();
 
-                perf_threads.send(std::thread::spawn(move || {
-                    if !core_affinity::set_for_current(core_affinity::CoreId { id: cpu }) {
-                        unpinned.send(counters).expect("failed to send unpinned perf counters");
-                        pt_init.fetch_add(1, Ordering::Relaxed);
-                        return;
-                    }
+                perf_threads
+                    .send(std::thread::spawn(move || {
+                        if !core_affinity::set_for_current(core_affinity::CoreId { id: cpu }) {
+                            unpinned
+                                .send(counters)
+                                .expect("failed to send unpinned perf counters");
+                            pt_init.fetch_sub(1, Ordering::Relaxed);
+                            return;
+                        }
 
-                    pt_init.fetch_add(1, Ordering::Relaxed);
+                        pt_init.fetch_sub(1, Ordering::Relaxed);
 
-                    loop {
-                        psync.wait_trigger();
+                        loop {
+                            psync.wait_trigger();
 
-                        counters.refresh();
+                            counters.refresh();
 
-                        psync.notify();
-                    }
-                })).expect("failed to send perf thread handle");
+                            psync.notify();
+                        }
+                    }))
+                    .expect("failed to send perf thread handle");
 
-                perf_sync.send(psync2).expect("failed to send perf thread sync primitive");
+                perf_sync
+                    .send(psync2)
+                    .expect("failed to send perf thread sync primitive");
             }
 
-            while pt_init.load(Ordering::Relaxed) < cpus {
+            while pt_pending.load(Ordering::Relaxed) > 0 {
                 std::thread::sleep(Duration::from_millis(50));
             }
 
@@ -280,23 +287,24 @@ where
                 let psync2 = psync.clone();
 
                 let perf_threads = perf_threads_tx.clone();
-                let perf_sync = perf_sync.clone();
+                let perf_sync = perf_sync_tx.clone();
 
-                perf_threads.send(std::thread::spawn(move || loop {
-                    psync.wait_trigger();
+                perf_threads
+                    .send(std::thread::spawn(move || loop {
+                        psync.wait_trigger();
 
-                    for counters in unpinned.iter_mut() {
-                        counters.refresh();
-                    }
+                        for counters in unpinned.iter_mut() {
+                            counters.refresh();
+                        }
 
-                    psync.notify();
-                })).expect("failed to send perf thread handle");
+                        psync.notify();
+                    }))
+                    .expect("failed to send perf thread handle");
 
-                perf_sync.send(psync2).expect("failed to send perf thread sync primitive");
+                perf_sync
+                    .send(psync2)
+                    .expect("failed to send perf thread sync primitive");
             }
-
-            let perf_sync = perf_sync_rx.into_iter().collect();
-            let perf_threads = perf_threads_rx.into_iter().collect();
 
             let ringbuffer: Option<RingBuffer> = if self.ringbuf_handler.is_empty() {
                 None
@@ -375,6 +383,10 @@ where
                 sync.notify();
             }
         });
+
+        // gather perf thread sync primitives and join handles
+        let perf_sync = perf_sync_rx.into_iter().collect();
+        let perf_threads = perf_threads_rx.into_iter().collect();
 
         // wait for the sampler thread to either error out or finish initializing
         loop {

@@ -69,7 +69,8 @@ impl Sampler for AsyncBpf {
 
         // trigger and wait on all perf threads
 
-        let perf_futures: Vec<_> = self.perf_sync
+        let perf_futures: Vec<_> = self
+            .perf_sync
             .iter()
             .map(|s| {
                 s.trigger();
