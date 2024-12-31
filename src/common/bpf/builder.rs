@@ -10,8 +10,9 @@ use perf_event::ReadFormat;
 use std::collections::HashMap;
 use std::mem::MaybeUninit;
 use std::os::fd::{AsFd, AsRawFd, FromRawFd};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 pub struct PerfEvent {
     inner: Event,
@@ -276,6 +277,8 @@ where
             while perf_threads_initialized.load(Ordering::Relaxed) < cpus {
                 std::thread::sleep(Duration::from_millis(50));
             }
+
+            let unpinned = unpinned.lock();
 
             if !unpinned.is_empty() {
                 let psync = SyncPrimitive::new();
