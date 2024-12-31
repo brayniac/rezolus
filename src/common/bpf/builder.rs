@@ -278,16 +278,20 @@ where
                 std::thread::sleep(Duration::from_millis(50));
             }
 
-            let unpinned = unpinned.lock();
+            let up = unpinned.lock();
 
-            if !unpinned.is_empty() {
+            if !up.is_empty() {
                 let psync = SyncPrimitive::new();
                 let psync2 = psync.clone();
 
                 let perf_threads = perf_threads.lock();
 
+                let unpinned = unpinned.clone();
+
                 perf_threads.push(std::thread::spawn(move || loop {
                     psync.wait_trigger();
+
+                    let unpinned = unpinned.lock();
 
                     for counters in unpinned.iter() {
                         counters.refresh();
