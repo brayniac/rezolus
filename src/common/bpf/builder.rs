@@ -237,9 +237,9 @@ where
                 }
             }
 
-            let mut unpinned = Arc::new(Mutex::new(Vec::new()));
+            let unpinned = Arc::new(Mutex::new(Vec::new()));
 
-            let mut perf_threads_initialized = Arc::new(AtomicUsize::new(0));
+            let perf_threads_initialized = Arc::new(AtomicUsize::new(0));
 
             for (cpu, mut counters) in perf_counters.inner.into_iter() {
                 let psync = SyncPrimitive::new();
@@ -252,7 +252,7 @@ where
 
                 perf_threads.push(std::thread::spawn(move || {
                     if !core_affinity::set_for_current(core_affinity::CoreId { id: cpu }) {
-                        let unpinned = unpinned.lock();
+                        let mut unpinned = unpinned.lock();
                         unpinned.push(counters);
                         perf_threads_initialized.fetch_add(1, Ordering::Relaxed);
                         return;
@@ -284,7 +284,7 @@ where
                 let psync = SyncPrimitive::new();
                 let psync2 = psync.clone();
 
-                let perf_threads = perf_threads.lock();
+                let mut perf_threads = perf_threads.lock();
 
                 let unpinned = unpinned.clone();
 
@@ -293,14 +293,14 @@ where
 
                     let unpinned = unpinned.lock();
 
-                    for counters in unpinned.iter() {
+                    for counters in unpinned.iter_mut() {
                         counters.refresh();
                     }
 
                     psync.notify();
                 }));
 
-                let perf_sync = perf_sync.lock();
+                let mut perf_sync = perf_sync.lock();
 
                 perf_sync.push(psync2);
             }
