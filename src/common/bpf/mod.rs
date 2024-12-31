@@ -78,7 +78,7 @@ impl Sampler for AsyncBpf {
                     s.trigger();
                     s.wait_notify()
                 })
-                .collect();
+                .collect()
         };
 
         futures::future::join_all(perf_futures.into_iter()).await;
