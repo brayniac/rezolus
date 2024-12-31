@@ -159,6 +159,8 @@ where
             Err(_) => 1023,
         };
 
+        let cpus = cpus + 1;
+
         let (perf_threads_tx, perf_threads_rx) = sync_channel(cpus);
         let (perf_sync_tx, perf_sync_rx) = sync_channel(cpus);
 
@@ -205,7 +207,7 @@ where
             for (name, event, group) in self.perf_events.into_iter() {
                 let map = skel.map(name);
 
-                for cpu in 0..=cpus {
+                for cpu in 0..cpus {
                     if let Ok(mut counter) = event
                         .inner
                         .builder()
