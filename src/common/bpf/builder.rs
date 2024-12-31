@@ -155,6 +155,11 @@ where
         let initialized = Arc::new(AtomicBool::new(false));
         let initialized2 = initialized.clone();
 
+        let cpus = match common::linux::cpus() {
+            Ok(cpus) => cpus.last().copied().unwrap_or(1023),
+            Err(_) => 1023,
+        };
+
         let (perf_threads_tx, perf_threads_rx) = sync_channel(cpus);
         let (perf_sync_tx, perf_sync_rx) = sync_channel(cpus);
 
@@ -193,11 +198,6 @@ where
                     CpuCounters::new(skel.map(name), totals, individual)
                 })
                 .collect();
-
-            let cpus = match common::linux::cpus() {
-                Ok(cpus) => cpus.last().copied().unwrap_or(1023),
-                Err(_) => 1023,
-            };
 
             let mut perf_counters = PerfCounters::new();
 
@@ -247,7 +247,7 @@ where
                 let perf_threads = perf_threads_tx.clone();
                 let perf_sync = perf_sync_tx.clone();
 
-                let pt_init = pt_init.clone();
+                let pt_pending = pt_init.clone();
 
                 perf_threads
                     .send(std::thread::spawn(move || {
@@ -255,11 +255,11 @@ where
                             unpinned
                                 .send(counters)
                                 .expect("failed to send unpinned perf counters");
-                            pt_init.fetch_sub(1, Ordering::Relaxed);
+                            pt_pending.fetch_sub(1, Ordering::Relaxed);
                             return;
                         }
 
-                        pt_init.fetch_sub(1, Ordering::Relaxed);
+                        pt_pending.fetch_sub(1, Ordering::Relaxed);
 
                         loop {
                             psync.wait_trigger();
