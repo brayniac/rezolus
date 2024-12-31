@@ -49,8 +49,8 @@ use sync_primitive::SyncPrimitive;
 pub struct AsyncBpf {
     thread: std::thread::JoinHandle<Result<(), libbpf_rs::Error>>,
     sync: SyncPrimitive,
-    perf_threads: Mutex<Vec<std::thread::JoinHandle<()>>>,
-    perf_sync: Mutex<Vec<SyncPrimitive>>,
+    perf_threads: Arc<Mutex<Vec<std::thread::JoinHandle<()>>>>,
+    perf_sync: Arc<Mutex<Vec<SyncPrimitive>>>,
 }
 
 #[async_trait]
