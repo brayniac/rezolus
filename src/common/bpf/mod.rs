@@ -66,7 +66,7 @@ impl Sampler for AsyncBpf {
         self.sync.wait_notify().await;
 
         // check that no perf threads have exited
-        for thread in perf_threads.iter() {
+        for thread in self.perf_threads.iter() {
             if thread.is_finished() {
                 panic!("perf thread exited early");
             }
