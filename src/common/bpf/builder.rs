@@ -285,6 +285,8 @@ where
                 std::thread::sleep(Duration::from_millis(50));
             }
 
+            debug!("checking for unpinned perf threads");
+
             let mut unpinned: Vec<_> = unpinned_rx.into_iter().collect();
 
             debug!("there are {} perf threads which could not be pinned", unpinned.len());
