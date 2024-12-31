@@ -198,6 +198,8 @@ where
                 })
                 .collect();
 
+            debug!("initializing perf counters for: {} events", self.perf_events.len());
+
             let mut perf_counters = PerfCounters::new();
 
             for (name, event, group) in self.perf_events.into_iter() {
@@ -238,6 +240,8 @@ where
 
             let pt_pending = Arc::new(AtomicUsize::new(perf_counters.inner.len()));
 
+            debug!("launching {} threads to read perf counters", pt_pending.load(Ordering::SeqCst));
+
             for (cpu, mut counters) in perf_counters.inner.into_iter() {
                 let psync = SyncPrimitive::new();
                 let psync2 = psync.clone();
@@ -275,11 +279,15 @@ where
                     .expect("failed to send perf thread sync primitive");
             }
 
+            debug!("waiting for perf threads to launch");
+
             while pt_pending.load(Ordering::Relaxed) > 0 {
                 std::thread::sleep(Duration::from_millis(50));
             }
 
             let mut unpinned: Vec<_> = unpinned_rx.into_iter().collect();
+
+            debug!("there are {} perf threads which could not be pinned", unpinned.len());
 
             if !unpinned.is_empty() {
                 let psync = SyncPrimitive::new();
@@ -304,6 +312,8 @@ where
                     .send(psync2)
                     .expect("failed to send perf thread sync primitive");
             }
+
+            debug!("all perf threads launched");
 
             let ringbuffer: Option<RingBuffer> = if self.ringbuf_handler.is_empty() {
                 None
@@ -383,9 +393,13 @@ where
             }
         });
 
+        debug!("gathering perf thread sync primitives and join handles");
+
         // gather perf thread sync primitives and join handles
         let perf_sync = perf_sync_rx.into_iter().collect();
         let perf_threads = perf_threads_rx.into_iter().collect();
+
+        debug!("waiting for sampler thread to finish initialization");
 
         // wait for the sampler thread to either error out or finish initializing
         loop {
@@ -402,6 +416,8 @@ where
                 break;
             }
         }
+
+        debug!("completed BPF sampler initialization");
 
         Ok(AsyncBpf {
             thread,
