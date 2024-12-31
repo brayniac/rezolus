@@ -4,7 +4,6 @@ use crate::common::*;
 use libbpf_rs::skel::{OpenSkel, Skel, SkelBuilder};
 use libbpf_rs::{MapCore, MapFlags, OpenObject, RingBuffer, RingBufferBuilder};
 use metriken::{LazyCounter, RwLockHistogram};
-use parking_lot::Mutex;
 use perf_event::ReadFormat;
 
 use std::collections::HashMap;
@@ -247,7 +246,7 @@ where
                 let perf_threads = perf_threads_tx.clone();
                 let perf_sync = perf_sync_tx.clone();
 
-                let pt_pending = pt_init.clone();
+                let pt_pending = pt_pending.clone();
 
                 perf_threads
                     .send(std::thread::spawn(move || {
