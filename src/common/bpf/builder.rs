@@ -279,7 +279,7 @@ where
                 std::thread::sleep(Duration::from_millis(50));
             }
 
-            let unpinned: Vec<_> = unpinned_rx.into_iter().collect();
+            let mut unpinned: Vec<_> = unpinned_rx.into_iter().collect();
 
             if !unpinned.is_empty() {
                 let psync = SyncPrimitive::new();

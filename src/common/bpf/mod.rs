@@ -9,8 +9,6 @@ pub use builder::PerfEvent;
 use crate::samplers::Sampler;
 use crate::*;
 
-use parking_lot::Mutex;
-
 pub trait OpenSkelExt {
     /// When called, the SkelBuilder should log instruction counts for each of
     /// the programs within the skeleton. Log level should be debug.
@@ -67,8 +65,14 @@ impl Sampler for AsyncBpf {
         // wait for notification that thread has finished
         self.sync.wait_notify().await;
 
-        // trigger and wait on all perf threads
+        // check that no perf threads have exited
+        for thread in perf_threads.iter() {
+            if thread.is_finished() {
+                panic!("perf thread exited early");
+            }
+        }
 
+        // trigger and wait on all perf threads
         let perf_futures: Vec<_> = self
             .perf_sync
             .iter()
