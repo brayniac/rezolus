@@ -291,7 +291,7 @@ where
                 perf_threads.push(std::thread::spawn(move || loop {
                     psync.wait_trigger();
 
-                    let unpinned = unpinned.lock();
+                    let mut unpinned = unpinned.lock();
 
                     for counters in unpinned.iter_mut() {
                         counters.refresh();
