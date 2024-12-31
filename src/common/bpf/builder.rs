@@ -395,13 +395,7 @@ where
                 // notify that we have finished running
                 sync.notify();
             }
-        });
-
-        debug!("gathering perf thread sync primitives and join handles");
-
-        // gather perf thread sync primitives and join handles
-        let perf_sync = perf_sync_rx.try_iter().collect();
-        let perf_threads = perf_threads_rx.try_iter().collect();
+        }); 
 
         debug!("waiting for sampler thread to finish initialization");
 
@@ -420,6 +414,12 @@ where
                 break;
             }
         }
+
+        debug!("gathering perf thread sync primitives and join handles");
+
+        // gather perf thread sync primitives and join handles
+        let perf_sync = perf_sync_rx.try_iter().collect();
+        let perf_threads = perf_threads_rx.try_iter().collect();
 
         debug!("completed BPF sampler initialization");
 
