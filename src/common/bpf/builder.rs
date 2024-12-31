@@ -244,7 +244,7 @@ where
 
             for (cpu, mut counters) in perf_counters.inner.into_iter() {
                 debug!("launching perf thread for cpu {}", cpu);
-                
+
                 let psync = SyncPrimitive::new();
                 let psync2 = psync.clone();
 
@@ -289,7 +289,7 @@ where
 
             debug!("checking for unpinned perf threads");
 
-            let mut unpinned: Vec<_> = unpinned_rx.into_iter().collect();
+            let mut unpinned: Vec<_> = unpinned_rx.try_iter().collect();
 
             debug!("there are {} perf threads which could not be pinned", unpinned.len());
 
@@ -400,8 +400,8 @@ where
         debug!("gathering perf thread sync primitives and join handles");
 
         // gather perf thread sync primitives and join handles
-        let perf_sync = perf_sync_rx.into_iter().collect();
-        let perf_threads = perf_threads_rx.into_iter().collect();
+        let perf_sync = perf_sync_rx.try_iter().collect();
+        let perf_threads = perf_threads_rx.try_iter().collect();
 
         debug!("waiting for sampler thread to finish initialization");
 
