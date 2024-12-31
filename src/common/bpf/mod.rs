@@ -69,7 +69,7 @@ impl Sampler for AsyncBpf {
 
         // trigger and wait on all perf threads
 
-        let perf_futures = {
+        let perf_futures: Vec<_> = {
             let perf_sync = self.perf_sync.lock();
 
             perf_sync
