@@ -13,6 +13,10 @@ path = "src/main.rs"
 name = "rezolus-recorder"
 path = "src/recorder.rs"
 
+[[bin]]
+name = "rezolus-blackbox"
+path = "src/blackbox.rs"
+
 [dependencies]
 anyhow = "1.0"
 async-trait = "0.1.81"
@@ -20,7 +24,7 @@ axum = { version = "0.7.5", features = ["http2"] }
 backtrace = "0.3.73"
 clap = { version = "4.5.17", features = ["derive"] }
 clocksource = "0.8.1"
-ctrlc = "3.4.5"
+ctrlc = { version = "3.4.5", features = ["termination"] }
 futures = "0.3.30"
 histogram = "0.11.0"
 humantime = "2.1.0"
@@ -49,6 +53,7 @@ thiserror = "1.0.63"
 walkdir = "2.5.0"
 plain = "0.2.3"
 core_affinity = "0.8.1"
+chrono = "0.4.39"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libbpf-rs = { version = "0.24.2" }

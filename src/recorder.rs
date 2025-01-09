@@ -1,3 +1,5 @@
+use chrono::Timelike;
+use chrono::Utc;
 use backtrace::Backtrace;
 use clap::Parser;
 use clap::ValueEnum;
@@ -211,19 +213,26 @@ async fn recorder(config: Config) {
     let mut temporary = config.temporary();
 
     // our http client
-    let mut client = None;
-
-    // sampling interval
-    let mut interval = tokio::time::interval(config.interval());
-
-    // start time
-    let start = std::time::Instant::now();
+    let client = match Client::builder().http1_only().build() {
+        Ok(c) => c,
+        Err(e) => {
+            error!("error connecting to Rezolus: {e}");
+            std::process::exit(1);
+        }
+    };
 
     // writer will be either the temporary file or the final destination file
     // depending on the output format
     let mut writer = temporary
         .take()
         .unwrap_or_else(|| destination.take().unwrap().into());
+
+    // get an aligned start time
+    let start = tokio::time::Instant::now() - Duration::from_nanos(Utc::now().nanosecond() as u64)
+        + config.interval();
+
+    // sampling interval
+    let mut interval = tokio::time::interval_at(start, config.interval());
 
     // sample in a loop until RUNNING is false or duration has completed
     while RUNNING.load(Ordering::Relaxed) {
@@ -234,29 +243,13 @@ async fn recorder(config: Config) {
             }
         }
 
-        // connect to rezolus
-        if client.is_none() {
-            debug!("connecting to Rezolus at: {url}");
-
-            match Client::builder().http1_only().build() {
-                Ok(c) => client = Some(c),
-                Err(e) => {
-                    error!("error connecting to Rezolus: {e}");
-                }
-            }
-
-            continue;
-        }
-
-        let c = client.take().unwrap();
-
         // wait to sample
         interval.tick().await;
 
         let start = Instant::now();
 
         // sample rezolus
-        if let Ok(response) = c.get(url.clone()).send().await {
+        if let Ok(response) = client.get(url.clone()).send().await {
             if let Ok(body) = response.bytes().await {
                 let latency = start.elapsed();
 
@@ -266,9 +259,13 @@ async fn recorder(config: Config) {
                     error!("error writing to temporary file: {e}");
                     std::process::exit(1);
                 }
-
-                client = Some(c);
+            } else {
+                error!("failed read response. terminating early");
+                break;
             }
+        } else {
+            error!("failed to get metrics. terminating early");
+            break;
         }
     }
 

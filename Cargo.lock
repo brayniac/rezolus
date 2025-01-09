@@ -2328,6 +2328,7 @@ dependencies = [
  "async-trait",
  "axum",
  "backtrace",
+ "chrono",
  "clap",
  "clocksource",
  "core_affinity",
