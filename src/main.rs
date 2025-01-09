@@ -50,8 +50,8 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
 
-    #[command(flatten)]
-    args: AgentArgs
+    #[arg(value_name = "CONFIG")]
+    config: String
 }
 
 #[derive(Subcommand)]
@@ -124,7 +124,7 @@ fn main() {
     match cli.command {
         // the default is to run as the telemetry agent
         None => {
-            agent(AgentArgs { config: cli.args.config })
+            agent(AgentArgs { config: cli.config })
         }
         Some(Command::Agent(a)) => {
             agent(a)
