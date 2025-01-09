@@ -50,15 +50,19 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
 
-    #[arg(value_name = "CONFIG")]
-    config: String
+    #[command(flatten)]
+    args: AgentArgs
 }
 
 #[derive(Subcommand)]
 #[command(args_conflicts_with_subcommands = true)]
 enum Command {
+    /// Run the Rezolus agent to gather and expose metrics. (Default)
     Agent(AgentArgs),
+    /// Run a flight recorder pulls data from a Rezolus agent into a local
+    /// on-disk ring buffer.
     FlightRecorder(FlightRecorderArgs),
+    /// Run ad-hoc collection of data from a Rezolus agent to disk.
     Record(RecordArgs),
 }
 
@@ -120,7 +124,7 @@ fn main() {
     match cli.command {
         // the default is to run as the telemetry agent
         None => {
-            agent(AgentArgs { config: cli.config })
+            agent(AgentArgs { config: cli.args.config })
         }
         Some(Command::Agent(a)) => {
             agent(a)
