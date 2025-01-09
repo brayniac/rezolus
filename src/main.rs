@@ -43,6 +43,7 @@ static CAPTURING: usize = 1;
 static TERMINATING: usize = 2;
 
 #[derive(Parser)]
+#[command(subcommand_negates_reqs = true)]
 #[command(version)]
 #[command(about = "High-resolution systems performance telemetry.", long_about = None)]
 struct Cli {
