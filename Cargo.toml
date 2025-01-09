@@ -9,14 +9,6 @@ description = "High resolution systems performance telemetry agent"
 name = "rezolus"
 path = "src/main.rs"
 
-[[bin]]
-name = "rezolus-recorder"
-path = "src/recorder.rs"
-
-[[bin]]
-name = "rezolus-blackbox"
-path = "src/blackbox.rs"
-
 [dependencies]
 anyhow = "1.0"
 async-trait = "0.1.81"
@@ -38,7 +30,7 @@ metriken = "0.7.0"
 metriken-exposition = "0.9.1"
 ouroboros = "0.18.4"
 parking_lot = "0.12.3"
-reqwest = "0.12.9"
+reqwest = { version = "0.12.9", features = ["blocking"] }
 ringlog = "0.8.0"
 rmp-serde = "1.1.2"
 serde = { version = "1.0.209", features = ["derive"] }
