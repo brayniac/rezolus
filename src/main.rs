@@ -44,6 +44,7 @@ static TERMINATING: usize = 2;
 
 #[derive(Parser)]
 #[command(subcommand_negates_reqs = true)]
+#[command(args_conflicts_with_subcommands = true)]
 #[command(version)]
 #[command(about = "High-resolution systems performance telemetry.", long_about = None)]
 struct Cli {
@@ -55,6 +56,7 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
+#[command(subcommand_negates_reqs = true)]
 #[command(args_conflicts_with_subcommands = true)]
 enum Command {
     /// Run the Rezolus agent to gather and expose metrics. (Default)
