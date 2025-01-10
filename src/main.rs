@@ -213,11 +213,8 @@ fn main() {
             duration: args.get_one::<humantime::Duration>("DURATION").copied(),
             format: Format::Parquet,
         }),
-        _ => {  
+        _ => {
             unimplemented!()
         }
     }
 }
-
-
-
