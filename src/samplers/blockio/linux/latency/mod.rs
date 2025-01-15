@@ -27,7 +27,6 @@ fn init(config: Arc<Config>) -> SamplerResult {
     }
 
     let bpf = BpfBuilder::new(ModSkelBuilder::default)
-        .histogram("latency", &BLOCKIO_LATENCY)
         .histogram("read_latency", &BLOCKIO_READ_LATENCY)
         .histogram("write_latency", &BLOCKIO_WRITE_LATENCY)
         .build()?;
@@ -38,7 +37,6 @@ fn init(config: Arc<Config>) -> SamplerResult {
 impl SkelExt for ModSkel<'_> {
     fn map(&self, name: &str) -> &libbpf_rs::Map {
         match name {
-            "latency" => &self.maps.latency,
             "read_latency" => &self.maps.read_latency,
             "write_latency" => &self.maps.write_latency,
             _ => unimplemented!(),

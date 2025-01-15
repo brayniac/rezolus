@@ -39,7 +39,6 @@ fn init(config: Arc<Config>) -> SamplerResult {
 
     let bpf = BpfBuilder::new(ModSkelBuilder::default)
         .counters("counters", counters)
-        .histogram("size", &BLOCKIO_SIZE)
         .histogram("read_size", &BLOCKIO_READ_SIZE)
         .histogram("write_size", &BLOCKIO_WRITE_SIZE)
         .build()?;
@@ -51,7 +50,6 @@ impl SkelExt for ModSkel<'_> {
     fn map(&self, name: &str) -> &libbpf_rs::Map {
         match name {
             "counters" => &self.maps.counters,
-            "size" => &self.maps.size,
             "read_size" => &self.maps.read_size,
             "write_size" => &self.maps.write_size,
             _ => unimplemented!(),
