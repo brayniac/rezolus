@@ -146,7 +146,12 @@ async fn prometheus(State(state): State<Arc<AppState>>) -> String {
                             // which is also free-running
                             let mut sum = 0;
 
-                            let mut entry = format!("# TYPE {name}_distribution histogram\n");
+                            let mut entry = if metadata.is_empty() {
+                                format!("# TYPE {name}_distribution histogram\n")
+                            } else {
+                                format!("# TYPE {name}_distribution{{{metadata}}} histogram\n")
+                            };
+
                             for bucket in histogram {
                                 // add this bucket's sum of observations
                                 sum += bucket.count() * bucket.end();
@@ -154,17 +159,34 @@ async fn prometheus(State(state): State<Arc<AppState>>) -> String {
                                 // add the count to the aggregate
                                 count += bucket.count();
 
-                                entry += &format!(
-                                    "{name}_distribution_bucket{{le=\"{}\"}} {count} {timestamp}\n",
-                                    bucket.end()
-                                );
+                                if metadata.is_empty() {
+                                    entry += &format!("{name}_distribution_bucket{{le=\"{}\"}} {count} {timestamp}", bucket.end())
+                                } else {
+                                    entry+= &format!(
+                                        "{name}_distribution_bucket{{le=\"{}\", {metadata}}} {count} {timestamp}",
+                                        bucket.end()
+                                    )
+                                }
                             }
 
-                            entry += &format!(
-                                "{name}_distribution_bucket{{le=\"+Inf\"}} {count} {timestamp}\n"
-                            );
-                            entry += &format!("{name}_distribution_count {count} {timestamp}\n");
-                            entry += &format!("{name}_distribution_sum {sum} {timestamp}");
+                            if metadata.is_empty() {
+                                entry +=
+                                    &format!("{name}_distribution_bucket{{le=\"{}\"}}", "+Inf");
+                                entry +=
+                                    &format!("{name}_distribution_count {count} {timestamp}\n");
+                                entry += &format!("{name}_distribution_sum {sum} {timestamp}");
+                            } else {
+                                entry += &format!(
+                                    "{name}_distribution_bucket{{le=\"{}\", {metadata}}}",
+                                    "+Inf"
+                                );
+                                entry += &format!(
+                                    "{name}_distribution_count{{{metadata}}} {count} {timestamp}\n"
+                                );
+                                entry += &format!(
+                                    "{name}_distribution_sum{{{metadata}}} {sum} {timestamp}"
+                                );
+                            };
 
                             data.push(entry);
                         }
