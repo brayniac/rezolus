@@ -160,24 +160,26 @@ async fn prometheus(State(state): State<Arc<AppState>>) -> String {
                                 count += bucket.count();
 
                                 if metadata.is_empty() {
-                                    entry += &format!("{name}_distribution_bucket{{le=\"{}\"}} {count} {timestamp}", bucket.end())
+                                    entry += &format!("{name}_distribution_bucket{{le=\"{}\"}} {count} {timestamp}\n", bucket.end())
                                 } else {
                                     entry+= &format!(
-                                        "{name}_distribution_bucket{{le=\"{}\", {metadata}}} {count} {timestamp}",
+                                        "{name}_distribution_bucket{{le=\"{}\", {metadata}}} {count} {timestamp}\n",
                                         bucket.end()
                                     )
                                 }
                             }
 
                             if metadata.is_empty() {
-                                entry +=
-                                    &format!("{name}_distribution_bucket{{le=\"{}\"}}", "+Inf");
+                                entry += &format!(
+                                    "{name}_distribution_bucket{{le=\"{}\"}} {count} {timestamp}\n",
+                                    "+Inf"
+                                );
                                 entry +=
                                     &format!("{name}_distribution_count {count} {timestamp}\n");
                                 entry += &format!("{name}_distribution_sum {sum} {timestamp}");
                             } else {
                                 entry += &format!(
-                                    "{name}_distribution_bucket{{le=\"{}\", {metadata}}}",
+                                    "{name}_distribution_bucket{{le=\"{}\", {metadata}}} {count} {timestamp}\n",
                                     "+Inf"
                                 );
                                 entry += &format!(
