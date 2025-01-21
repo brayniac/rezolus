@@ -99,49 +99,49 @@ int BPF_KPROBE(cpuacct_account_field_kprobe, struct task_struct *task, u32 index
 	}
 
 	if (index < 2 && bpf_core_field_exists(task->sched_task_group)) {
-		int cgroup_id = task->sched_task_group->css.id;
-		u64	serial_nr = task->sched_task_group->css.serial_nr;
+		// int cgroup_id = task->sched_task_group->css.id;
+		// u64	serial_nr = task->sched_task_group->css.serial_nr;
 
-		if (cgroup_id && cgroup_id < MAX_CGROUPS) {
-			u64 *elem;
+		// if (cgroup_id && cgroup_id < MAX_CGROUPS) {
+		// 	u64 *elem;
 
-			// we check to see if this is a new cgroup by checking the serial number
+		// 	// we check to see if this is a new cgroup by checking the serial number
 
-			elem = bpf_map_lookup_elem(&cgroup_serial_numbers, &cgroup_id);
+		// 	elem = bpf_map_lookup_elem(&cgroup_serial_numbers, &cgroup_id);
 
-			if (elem && *elem != serial_nr) {
-				// zero the counters, they will not be exported until they are non-zero
-				u64 zero = 0;
-				bpf_map_update_elem(&cgroup_user, &cgroup_id, &zero, BPF_ANY);
-				bpf_map_update_elem(&cgroup_system, &cgroup_id, &zero, BPF_ANY);
+		// 	if (elem && *elem != serial_nr) {
+		// 		// zero the counters, they will not be exported until they are non-zero
+		// 		u64 zero = 0;
+		// 		bpf_map_update_elem(&cgroup_user, &cgroup_id, &zero, BPF_ANY);
+		// 		bpf_map_update_elem(&cgroup_system, &cgroup_id, &zero, BPF_ANY);
 
-				// initialize the cgroup info
-				struct cgroup_info cginfo = {
-					.id = cgroup_id,
-				};
+		// 		// initialize the cgroup info
+		// 		struct cgroup_info cginfo = {
+		// 			.id = cgroup_id,
+		// 		};
 
-				// read the cgroup name
-				bpf_probe_read_kernel_str(&cginfo.name, CGROUP_NAME_LEN, task->sched_task_group->css.cgroup->kn->name);
+		// 		// read the cgroup name
+		// 		bpf_probe_read_kernel_str(&cginfo.name, CGROUP_NAME_LEN, task->sched_task_group->css.cgroup->kn->name);
 
-				// read the cgroup parent name
-				bpf_probe_read_kernel_str(&cginfo.pname, CGROUP_NAME_LEN, task->sched_task_group->css.cgroup->kn->parent->name);
+		// 		// read the cgroup parent name
+		// 		bpf_probe_read_kernel_str(&cginfo.pname, CGROUP_NAME_LEN, task->sched_task_group->css.cgroup->kn->parent->name);
 
-				// read the cgroup grandparent name
-				bpf_probe_read_kernel_str(&cginfo.gpname, CGROUP_NAME_LEN, task->sched_task_group->css.cgroup->kn->parent->parent->name);
+		// 		// read the cgroup grandparent name
+		// 		bpf_probe_read_kernel_str(&cginfo.gpname, CGROUP_NAME_LEN, task->sched_task_group->css.cgroup->kn->parent->parent->name);
 
-				// push the cgroup info into the ringbuf
-				bpf_ringbuf_output(&cgroup_info, &cginfo, sizeof(cginfo), 0);
+		// 		// push the cgroup info into the ringbuf
+		// 		bpf_ringbuf_output(&cgroup_info, &cginfo, sizeof(cginfo), 0);
 
-				// update the serial number in the local map
-				bpf_map_update_elem(&cgroup_serial_numbers, &cgroup_id, &serial_nr, BPF_ANY);
-			}
+		// 		// update the serial number in the local map
+		// 		bpf_map_update_elem(&cgroup_serial_numbers, &cgroup_id, &serial_nr, BPF_ANY);
+		// 	}
 
-			if (index == 0) {
-				array_add(&cgroup_user, cgroup_id, delta);
-			} else if (index == 1) {
-				array_add(&cgroup_system, cgroup_id, delta);
-			}
-		}
+		// 	if (index == 0) {
+		// 		array_add(&cgroup_user, cgroup_id, delta);
+		// 	} else if (index == 1) {
+		// 		array_add(&cgroup_system, cgroup_id, delta);
+		// 	}
+		// }
 	}
 
 	// we pack the counters by skipping over the index values for idle and iowait
