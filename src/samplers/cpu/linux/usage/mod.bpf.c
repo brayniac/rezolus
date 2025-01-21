@@ -111,8 +111,8 @@ int BPF_KPROBE(cpuacct_account_field_kprobe, task_struct *task, u32 index, u64 d
 			if (elem && *elem != serial_nr) {
 				// zero the counters, they will not be exported until they are non-zero
 				u64 zero = 0;
-				bpf_map_update_elem(&cgroup_cycles, &cgroup_id, &zero, BPF_ANY);
-				bpf_map_update_elem(&cgroup_instructions, &cgroup_id, &zero, BPF_ANY);
+				bpf_map_update_elem(&cgroup_user, &cgroup_id, &zero, BPF_ANY);
+				bpf_map_update_elem(&cgroup_system, &cgroup_id, &zero, BPF_ANY);
 
 				// initialize the cgroup info
 				struct cgroup_info cginfo = {
