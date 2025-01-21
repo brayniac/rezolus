@@ -72,6 +72,20 @@ struct {
 	__uint(max_entries, MAX_CGROUPS);
 } cgroup_system SEC(".maps");
 
+/**
+ * commit 2f064a59a1 ("sched: Change task_struct::state") changes
+ * the name of task_struct::state to task_struct::__state
+ * see:
+ *     https://github.com/torvalds/linux/commit/2f064a59a1
+ */
+struct task_struct___o {
+	volatile long int state;
+} __attribute__((preserve_access_index));
+
+struct task_struct___x {
+	unsigned int __state;
+} __attribute__((preserve_access_index));
+
 int account_delta(u64 delta, u32 usage_idx)
 {
 	u32 idx;
@@ -97,6 +111,8 @@ int BPF_KPROBE(cpuacct_account_field_kprobe, struct task_struct *task, u32 index
 	if (index == IDLE_STAT_INDEX || index == IOWAIT_STAT_INDEX) {
 		return 0;
 	}
+
+	// struct task_struct *prev = (struct task_struct *)ctx[1];
 
 	if (index < 2 && bpf_core_field_exists(task->sched_task_group)) {
 		int cgroup_id = task->sched_task_group->css.id;
