@@ -112,7 +112,7 @@ int BPF_KPROBE(cpuacct_account_field_kprobe, struct task_struct *task, u32 index
 		return 0;
 	}
 
-	// struct task_struct *prev = (struct task_struct *)ctx[1];
+	struct task_struct *task = (struct task_struct *)task;
 
 	if (index < 2 && bpf_core_field_exists(task->sched_task_group)) {
 		int cgroup_id = task->sched_task_group->css.id;
