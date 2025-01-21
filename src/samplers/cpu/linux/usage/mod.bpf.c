@@ -102,12 +102,12 @@ int BPF_KPROBE(cpuacct_account_field_kprobe, struct task_struct *task, u32 index
 		int cgroup_id = task->sched_task_group->css.id;
 		u64	serial_nr = task->sched_task_group->css.serial_nr;
 
-		// if (cgroup_id && cgroup_id < MAX_CGROUPS) {
-		// 	u64 *elem;
+		if (cgroup_id && cgroup_id < MAX_CGROUPS) {
+			u64 *elem;
 
-		// 	// we check to see if this is a new cgroup by checking the serial number
+			// we check to see if this is a new cgroup by checking the serial number
 
-		// 	elem = bpf_map_lookup_elem(&cgroup_serial_numbers, &cgroup_id);
+			elem = bpf_map_lookup_elem(&cgroup_serial_numbers, &cgroup_id);
 
 		// 	if (elem && *elem != serial_nr) {
 		// 		// zero the counters, they will not be exported until they are non-zero
@@ -141,7 +141,7 @@ int BPF_KPROBE(cpuacct_account_field_kprobe, struct task_struct *task, u32 index
 		// 	} else if (index == 1) {
 		// 		array_add(&cgroup_system, cgroup_id, delta);
 		// 	}
-		// }
+		}
 	}
 
 	// we pack the counters by skipping over the index values for idle and iowait
