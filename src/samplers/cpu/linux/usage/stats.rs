@@ -64,3 +64,19 @@ pub static CPU_USAGE_GUEST: CounterGroup = CounterGroup::new(MAX_CPUS);
     metadata = { state = "guest_nice", unit = "nanoseconds" }
 )]
 pub static CPU_USAGE_GUEST_NICE: CounterGroup = CounterGroup::new(MAX_CPUS);
+
+// per-cgroup metrics
+
+#[metric(
+    name = "cgroup_cpu_usage",
+    description = "The amount of CPU time used on a per-cgroup basis",
+    metadata = { state = "user", unit = "nanoseconds" }
+)]
+pub static CGROUP_CPU_USAGE_USER: CounterGroup = CounterGroup::new(MAX_CGROUPS);
+
+#[metric(
+    name = "cgroup_cpu_usage",
+    description = "The amount of CPU time used on a per-cgroup basis",
+    metadata = { state = "system", unit = "nanoseconds" }
+)]
+pub static CGROUP_CPU_USAGE_SYSTEM: CounterGroup = CounterGroup::new(MAX_CGROUPS);
