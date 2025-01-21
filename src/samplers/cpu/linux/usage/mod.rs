@@ -91,6 +91,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
         .cpu_counters("counters", counters)
         .packed_counters("cgroup_user", &CGROUP_CPU_USAGE_USER)
         .packed_counters("cgroup_system", &CGROUP_CPU_USAGE_SYSTEM)
+        .ringbuf_handler("cgroup_info", handle_event)
         .build()?;
 
     Ok(Some(Box::new(bpf)))
@@ -99,9 +100,10 @@ fn init(config: Arc<Config>) -> SamplerResult {
 impl SkelExt for ModSkel<'_> {
     fn map(&self, name: &str) -> &libbpf_rs::Map {
         match name {
-            "counters" => &self.maps.counters,
-            "cgroup_user" => &self.maps.cgroup_user,
+            "cgroup_info" => &self.maps.cgroup_info,
             "cgroup_system" => &self.maps.cgroup_system,
+            "cgroup_user" => &self.maps.cgroup_user,
+            "counters" => &self.maps.counters,
             _ => unimplemented!(),
         }
     }
