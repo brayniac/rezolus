@@ -90,7 +90,7 @@ int account_delta(u64 delta, u32 usage_idx)
 }
 
 SEC("kprobe/cpuacct_account_field")
-int BPF_KPROBE(cpuacct_account_field_kprobe, task_struct *task, u32 index, u64 delta)
+int BPF_KPROBE(cpuacct_account_field_kprobe, struct task_struct *task, u32 index, u64 delta)
 {
   // ignore both the idle and the iowait counting since both count the idle time
   // https://elixir.bootlin.com/linux/v6.9-rc4/source/kernel/sched/cputime.c#L227
@@ -103,6 +103,7 @@ int BPF_KPROBE(cpuacct_account_field_kprobe, task_struct *task, u32 index, u64 d
 		u64	serial_nr = task->sched_task_group->css.serial_nr;
 
 		if (cgroup_id && cgroup_id < MAX_CGROUPS) {
+			u64 *elem;
 
 			// we check to see if this is a new cgroup by checking the serial number
 
