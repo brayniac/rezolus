@@ -90,7 +90,7 @@ int account_delta(u64 delta, u32 usage_idx)
 }
 
 SEC("kprobe/cpuacct_account_field")
-int BPF_KPROBE(cpuacct_account_field_kprobe, void *task, u32 index, u64 delta)
+int BPF_KPROBE(cpuacct_account_field_kprobe, task_struct *task, u32 index, u64 delta)
 {
   // ignore both the idle and the iowait counting since both count the idle time
   // https://elixir.bootlin.com/linux/v6.9-rc4/source/kernel/sched/cputime.c#L227
