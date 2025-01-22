@@ -113,7 +113,7 @@ int BPF_KPROBE(cpuacct_account_field_kprobe, struct task_struct *task, u32 index
 	}
 
 	if (bpf_core_field_exists(task->sched_task_group)) {
-		int cgroup_id = bpf_core_read(task, sizeof(int), task->sched_task_group->css.id);
+		int cgroup_id = bpf_core_read(&task, sizeof(int), task->sched_task_group->css.id);
 
 		// int cgroup_id = task->sched_task_group->css.id;
 		// u64	serial_nr = task->sched_task_group->css.serial_nr;
