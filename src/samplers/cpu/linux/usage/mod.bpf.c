@@ -122,8 +122,8 @@ int BPF_KPROBE(cpuacct_account_field_kprobe, struct task_struct *task, u32 index
 			u64 *elem;
 
 			// we check to see if this is a new cgroup by checking the serial number
-
-			elem = bpf_map_lookup_elem(&cgroup_serial_numbers, &0);
+			u64 zero = 0;
+			elem = bpf_map_lookup_elem(&cgroup_serial_numbers, &zero);
 
 		// 	if (elem && *elem != serial_nr) {
 		// 		// zero the counters, they will not be exported until they are non-zero
