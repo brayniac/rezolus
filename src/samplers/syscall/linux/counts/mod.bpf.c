@@ -111,7 +111,7 @@ int sys_enter(struct trace_event_raw_sys_enter *args)
 	struct task_struct *task = bpf_get_current_task_btf();
 
 	if (bpf_core_field_exists(task->sched_task_group)) {
-		int cgroup_id = task->sched_task_group->css.id;
+		u32 cgroup_id = task->sched_task_group->css.id;
 		u64	serial_nr = task->sched_task_group->css.serial_nr;
 
 		if (cgroup_id && cgroup_id < MAX_CGROUPS) {
