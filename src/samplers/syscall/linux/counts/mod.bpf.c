@@ -110,15 +110,15 @@ int sys_enter(struct trace_event_raw_sys_enter *args)
 
 	struct task_struct *task = bpf_get_current_task_btf();
 
-	// if (bpf_core_field_exists(task->sched_task_group)) {
-	// 	int cgroup_id = task->sched_task_group->css.id;
-	// 	u64	serial_nr = task->sched_task_group->css.serial_nr;
+	if (bpf_core_field_exists(task->sched_task_group)) {
+		int cgroup_id = task->sched_task_group->css.id;
+		u64	serial_nr = task->sched_task_group->css.serial_nr;
 
-	// 	if (cgroup_id && cgroup_id < MAX_CGROUPS) {
+		if (cgroup_id && cgroup_id < MAX_CGROUPS) {
 
-	// 		// we check to see if this is a new cgroup by checking the serial number
+			// we check to see if this is a new cgroup by checking the serial number
 
-	// 		elem = bpf_map_lookup_elem(&cgroup_serial_numbers, &cgroup_id);
+			elem = bpf_map_lookup_elem(&cgroup_serial_numbers, &cgroup_id);
 
 	// 		if (elem && *elem != serial_nr) {
 	// 			// zero the counters, they will not be exported until they are non-zero
@@ -146,11 +146,11 @@ int sys_enter(struct trace_event_raw_sys_enter *args)
 	// 			// bpf_map_update_elem(&cgroup_serial_numbers, &cgroup_id, &serial_nr, BPF_ANY);
 	// 		}
 
-	// 		// update cgroup metrics
+			// update cgroup metrics
 
-	// 		array_incr(&cgroup_syscall_total, &cgroup_id);
-	// 	}
-	// }
+			array_incr(&cgroup_syscall_total, &cgroup_id);
+		}
+	}
 
 	return 0;
 }
