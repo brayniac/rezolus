@@ -118,7 +118,7 @@ int sys_enter(struct trace_event_raw_sys_enter *args)
 
 			// we check to see if this is a new cgroup by checking the serial number
 
-			elem = bpf_map_lookup_elem(&cgroup_serial_numbers, &cgroup_id);
+			// elem = bpf_map_lookup_elem(&cgroup_serial_numbers, &cgroup_id);
 
 	// 		if (elem && *elem != serial_nr) {
 	// 			// zero the counters, they will not be exported until they are non-zero
