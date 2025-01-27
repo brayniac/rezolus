@@ -61,8 +61,7 @@ fn handle_event(data: &[u8]) -> i32 {
         let id = cgroup_info.id;
 
         if !name.is_empty() {
-            CGROUP_CPU_CYCLES.insert_metadata(id as usize, "name".to_string(), name.clone());
-            CGROUP_CPU_INSTRUCTIONS.insert_metadata(id as usize, "name".to_string(), name);
+            CGROUP_SYSCALL_TOTAL.insert_metadata(id as usize, "name".to_string(), name);
         }
     }
 
