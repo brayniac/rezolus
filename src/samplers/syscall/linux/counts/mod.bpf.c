@@ -142,8 +142,8 @@ int sys_enter(struct trace_event_raw_sys_enter *args)
 				// push the cgroup info into the ringbuf
 				bpf_ringbuf_output(&cgroup_info, &cginfo, sizeof(cginfo), 0);
 
-				// update the serial number in the local map
-				bpf_map_update_elem(&cgroup_serial_numbers, &cgroup_id, &serial_nr, BPF_ANY);
+				// // update the serial number in the local map
+				// bpf_map_update_elem(&cgroup_serial_numbers, &cgroup_id, &serial_nr, BPF_ANY);
 			}
 
 			// update cgroup metrics
