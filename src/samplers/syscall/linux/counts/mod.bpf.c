@@ -79,6 +79,7 @@ SEC("tracepoint/raw_syscalls/sys_enter")
 int sys_enter(struct trace_event_raw_sys_enter *args)
 {
 	u32 offset, idx;
+	u64 *elem;
 
 	if (args->id < 0) {
 		return 0;
