@@ -316,8 +316,8 @@ pub fn run(config: FlightRecorderConfig) {
                         schema.push(s);
                     }
 
-                    let mut destination = schema
-                        .finalize(destination, ParquetOptions::new(), None)
+                    let mut parquet = schema
+                        .finalize(&destination, ParquetOptions::new(), None)
                         .expect("failed to finalize schema");
 
                     // second pass to output data
@@ -350,10 +350,11 @@ pub fn run(config: FlightRecorderConfig) {
 
                         let s: Snapshot = rmp_serde::from_slice(&buf).expect("parquet error");
 
-                        destination.push(s).expect("parquet error");
+                        parquet.push(s).expect("parquet error");
                     }
 
-                    let _ = destination.finalize().expect("failed to finalize parquet");
+                    let _ = parquet.finalize().expect("failed to finalize parquet");
+                    let _ = destination.flush();
                 }
             }
 
