@@ -8,6 +8,7 @@ User=root
 Group=root
 ExecStart=/usr/bin/rezolus flight-recorder http://localhost:4242 /tmp/rezolus-flight-recorder.parquet
 KillMode=control-group
+KillSignal=SIGQUIT
 Restart=on-failure
 
 [Install]
