@@ -1,2 +1,3 @@
 bin/rezolus usr/bin/
 config.toml etc/rezolus/
+debian/rezolus-flight-recorder.preset usr/lib/systemd/system-preset/90-rezolus-flight-recorder.preset
