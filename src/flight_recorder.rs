@@ -1,3 +1,6 @@
+use crate::exposition::parquet::ParquetOptions;
+use crate::exposition::parquet::ParquetSchema;
+use crate::exposition::snapshot::Snapshot;
 use super::*;
 
 /// Runs the Rezolus `flight-recorder` which is a Rezolus client that pulls data
@@ -276,27 +279,10 @@ pub fn run(config: FlightRecorderConfig) {
                 Format::Parquet => {
                     debug!("capturing ringbuffer and writing to parquet");
 
-                    let _ = writer.rewind();
+                    // this process requires two passes through the ring buffer
 
-                    // we need another temporary file to consume the empty space
-                    // between snapshots
-
-                    // TODO(bmartin): we can probably remove this by using our
-                    // own msgpack -> parquet conversion
-
-                    // our writer will always be a temporary file
-                    let mut packed = {
-                        let mut path: PathBuf = config.output.clone();
-                        path.pop();
-
-                        match tempfile_in(path.clone()) {
-                            Ok(t) => t,
-                            Err(error) => {
-                                eprintln!("could not open temporary file in: {:?}\n{error}", path);
-                                std::process::exit(1);
-                            }
-                        }
-                    };
+                    // first pass to build schema
+                    let mut schema = ParquetSchema::new();
 
                     for offset in 1..=snapshot_count {
                         // we start at the last recorded index + 1 to get the oldest
@@ -325,22 +311,49 @@ pub fn run(config: FlightRecorderConfig) {
                             .read_exact(&mut buf)
                             .expect("failed to read snapshot");
 
-                        // write the contents of the snapshot to the packed file
-                        packed
-                            .write_all(&buf)
-                            .expect("failed to write to packed file");
+                        let s: Snapshot = rmp_serde::from_slice(&buf).expect("parquet error");
+
+                        schema.push(s);
                     }
 
-                    let _ = packed.flush();
-                    let _ = packed.rewind();
+                    let mut destination = schema
+                        .finalize(destination, ParquetOptions::new(), None)
+                        .expect("failed to finalize schema");
 
-                    if let Err(e) = MsgpackToParquet::with_options(ParquetOptions::new())
-                        .convert_file_handle(packed, &destination)
-                    {
-                        eprintln!("error saving parquet file: {e}");
+                    // second pass to output data
+                    for offset in 1..=snapshot_count {
+                        // we start at the last recorded index + 1 to get the oldest
+                        // record first
+                        let mut i = idx + offset;
+
+                        // handle wrap-around in the ring-buffer
+                        if i >= snapshot_count {
+                            i -= snapshot_count;
+                        }
+
+                        // seek to the start of the snapshot slot
+                        writer
+                            .seek(SeekFrom::Start(i * snapshot_len))
+                            .expect("failed to seek");
+
+                        // read the size of the snapshot
+                        let mut len = [0, 0, 0, 0, 0, 0, 0, 0];
+                        writer
+                            .read_exact(&mut len)
+                            .expect("failed to read snapshot len");
+
+                        // read the contents of the snapshot
+                        let mut buf = vec![0; u64::from_be_bytes(len) as usize];
+                        writer
+                            .read_exact(&mut buf)
+                            .expect("failed to read snapshot");
+
+                        let s: Snapshot = rmp_serde::from_slice(&buf).expect("parquet error");
+
+                        destination.push(s).expect("parquet error");
                     }
 
-                    let _ = destination.flush();
+                    let _ = destination.finalize().expect("failed to finalize parquet");
                 }
             }
 

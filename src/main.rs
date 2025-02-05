@@ -6,8 +6,6 @@ use clap::value_parser;
 use clap::Command;
 use clap::ValueEnum;
 use linkme::distributed_slice;
-use metriken_exposition::MsgpackToParquet;
-use metriken_exposition::ParquetOptions;
 use reqwest::blocking::Client;
 use reqwest::Url;
 use ringlog::*;

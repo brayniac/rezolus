@@ -1,3 +1,9 @@
+use parquet::errors::ParquetError;
+use crate::exposition::parquet::ParquetOptions;
+use std::io::BufRead;
+use crate::exposition::snapshot::Snapshot;
+use crate::exposition::parquet::ParquetSchema;
+use std::io::BufReader;
 use super::*;
 
 /// Runs the Rezolus `recorder` which is a Rezolus client that pulls data from
@@ -167,11 +173,25 @@ pub fn run(config: RecorderConfig) {
 
                 let _ = writer.rewind();
 
-                if let Err(e) = MsgpackToParquet::with_options(ParquetOptions::new())
-                    .convert_file_handle(writer, destination.unwrap())
-                {
-                    eprintln!("error saving parquet file: {e}");
+                let mut reader = BufReader::new(writer);
+                let mut schema = ParquetSchema::new();
+
+                // first pass to build schema
+                while !reader.fill_buf().unwrap().is_empty() {
+                    let s: Snapshot = rmp_serde::from_read(&mut reader)
+                        .map_err(|x| ParquetError::External(Box::new(x))).expect("error saving parquet");
+                    schema.push(s);
                 }
+                let mut writer = schema.finalize(destination.unwrap(), ParquetOptions::new(), None).expect("error saving parquet");
+
+                // second pass to output the data
+                reader.rewind().unwrap();
+                while !reader.fill_buf().unwrap().is_empty() {
+                    let s: Snapshot = rmp_serde::from_read(&mut reader)
+                        .map_err(|x| ParquetError::External(Box::new(x))).expect("error saving parquet");
+                    writer.push(s).expect("error saving parquet");
+                }
+                let _ = writer.finalize().expect("error saving parquet");
             }
         }
     })

@@ -1,3 +1,4 @@
+use crate::exposition::snapshot::Snapshot;
 use crate::common::*;
 use crate::debug;
 use crate::{Arc, Config, Sampler};
@@ -10,9 +11,9 @@ use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::{compression::CompressionLayer, decompression::RequestDecompressionLayer};
 
-mod snapshot;
+// mod snapshot;
 
-use snapshot::Snapshot;
+// pub use snapshot::Snapshot;
 
 struct AppState {
     config: Arc<Config>,

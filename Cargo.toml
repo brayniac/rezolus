@@ -11,14 +11,17 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
+arrow = "54.1.0"
 async-trait = "0.1.81"
 axum = { version = "0.7.5", features = ["http2"] }
 backtrace = "0.3.73"
+chrono = { version = "0.4.39", features = ["serde"] }
 clap = { version = "4.5.17", features = ["derive"] }
 clocksource = "0.8.1"
+core_affinity = "0.8.1"
 ctrlc = { version = "3.4.5", features = ["termination"] }
 futures = "0.3.30"
-histogram = "0.11.0"
+histogram = { version = "0.11.0", features = ["serde"] }
 humantime = "2.1.0"
 h2 = "0.4.6"
 http = "1.1.0"
@@ -27,9 +30,10 @@ libc = "0.2.158"
 linkme = "0.3.28"
 memmap2 = "0.9.4"
 metriken = "0.7.0"
-metriken-exposition = "0.10.0"
 ouroboros = "0.18.4"
 parking_lot = "0.12.3"
+parquet = "54.1.0"
+plain = "0.2.3"
 reqwest = { version = "0.12.9", default-features = false, features = ["blocking"] }
 ringlog = "0.8.0"
 rmp-serde = "1.1.2"
@@ -43,9 +47,6 @@ tower = { version = "0.5.0", features = ["tokio"] }
 tower-http = { version = "0.5.2", features = ["compression-full", "decompression-full"] }
 thiserror = "1.0.63"
 walkdir = "2.5.0"
-plain = "0.2.3"
-core_affinity = "0.8.1"
-chrono = "0.4.39"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libbpf-rs = { version = "0.24.8" }
