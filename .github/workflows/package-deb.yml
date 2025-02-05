@@ -48,7 +48,7 @@ jobs:
     strategy:
       matrix:
         include:
-          # minimum kernel version is 5.5
+          # minimum kernel version is 5.8
 
           # debian kernels supported from bullseye and up
           - { distro: debian, release: bullseye, arch: x86_64 }
