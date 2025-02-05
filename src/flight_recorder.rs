@@ -323,10 +323,12 @@ pub fn run(config: FlightRecorderConfig) {
                     let _ = packed.rewind();
 
                     if let Err(e) = MsgpackToParquet::with_options(ParquetOptions::new())
-                        .convert_file_handle(packed, destination)
+                        .convert_file_handle(packed, &destination)
                     {
                         eprintln!("error saving parquet file: {e}");
                     }
+
+                    let _ = destination.flush();
                 }
             }
 
