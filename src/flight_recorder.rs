@@ -154,6 +154,9 @@ pub fn run(config: FlightRecorderConfig) {
         std::process::exit(1);
     });
 
+    // flush the extended file to disk
+    let _ = writer.flush();
+
     let mut idx = 0;
 
     rt.block_on(async move {
