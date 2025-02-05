@@ -305,8 +305,14 @@ pub fn run(config: FlightRecorderConfig) {
                             .read_exact(&mut len)
                             .expect("failed to read snapshot len");
 
+                        let len = u64::from_be_bytes(len) as usize;
+
+                        if len == 0 {
+                            continue;
+                        }
+
                         // read the contents of the snapshot
-                        let mut buf = vec![0; u64::from_be_bytes(len) as usize];
+                        let mut buf = vec![0; len];
                         writer
                             .read_exact(&mut buf)
                             .expect("failed to read snapshot");
@@ -342,8 +348,14 @@ pub fn run(config: FlightRecorderConfig) {
                             .read_exact(&mut len)
                             .expect("failed to read snapshot len");
 
+                        let len = u64::from_be_bytes(len) as usize;
+
+                        if len == 0 {
+                            continue;
+                        }
+
                         // read the contents of the snapshot
-                        let mut buf = vec![0; u64::from_be_bytes(len) as usize];
+                        let mut buf = vec![0; len];
                         writer
                             .read_exact(&mut buf)
                             .expect("failed to read snapshot");
