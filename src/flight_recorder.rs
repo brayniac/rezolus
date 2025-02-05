@@ -157,6 +157,14 @@ pub fn run(config: FlightRecorderConfig) {
     // flush the extended file to disk
     let _ = writer.flush();
 
+    // create the destination file and exit if it cannot be created
+    let _ = std::fs::File::create(config.output.clone())
+        .map_err(|e| {
+            error!("failed to open destination file: {e}");
+            std::process::exit(1);
+        })
+        .unwrap();
+
     let mut idx = 0;
 
     rt.block_on(async move {
@@ -168,13 +176,6 @@ pub fn run(config: FlightRecorderConfig) {
         // sampling interval
         let mut interval = tokio::time::interval_at(start, config.interval.into());
         while STATE.load(Ordering::Relaxed) < TERMINATING {
-            let mut destination = std::fs::File::create(config.output.clone())
-                .map_err(|e| {
-                    error!("failed to open destination file: {e}");
-                    std::process::exit(1);
-                })
-                .unwrap();
-
             // sample in a loop until RUNNING is false or duration has completed
             while STATE.load(Ordering::Relaxed) == RUNNING {
                 // wait to sample
@@ -221,6 +222,14 @@ pub fn run(config: FlightRecorderConfig) {
 
             debug!("flushing writer");
             let _ = writer.flush();
+
+            // create the destination file
+            let mut destination = std::fs::File::create(config.output.clone())
+                .map_err(|e| {
+                    error!("failed to open destination file: {e}");
+                    std::process::exit(1);
+                })
+                .unwrap();
 
             // handle any output format specific transforms
             match config.format {
