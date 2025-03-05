@@ -28,6 +28,9 @@ pub const MAX_CPUS: usize = 1024;
 // This is the maximum number of cgroups we track with BPF counters.
 pub const MAX_CGROUPS: usize = 4096;
 
+// This is the maximum number of IRQs we track with BPF counters.
+pub const MAX_IRQS: usize = 4096;
+
 const COUNTER_SIZE: usize = std::mem::size_of::<u64>();
 
 const COUNTERS_PER_CACHELINE: usize = CACHELINE_SIZE / COUNTER_SIZE;

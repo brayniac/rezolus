@@ -3,10 +3,12 @@ use async_trait::async_trait;
 mod blockio;
 mod cpu;
 mod gpu;
+mod irq;
 mod memory;
 mod network;
 mod rezolus;
 mod scheduler;
+mod softirq;
 mod syscall;
 mod tcp;
 
