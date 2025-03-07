@@ -1,7 +1,5 @@
 use async_trait::async_trait;
 use backtrace::Backtrace;
-use chrono::Timelike;
-use chrono::Utc;
 use clap::value_parser;
 use clap::Command;
 use clap::ValueEnum;
@@ -29,7 +27,7 @@ use std::sync::Arc;
 mod agent;
 mod flight_recorder;
 mod recorder;
-mod summarize;
+mod prometheus_exporter;
 
 /// general modules for core functionality
 mod common;
@@ -37,11 +35,11 @@ mod config;
 mod exposition;
 mod samplers;
 
-use config::Config;
+use config::{AgentConfig};
 use samplers::{Sampler, SamplerResult};
 
 #[distributed_slice]
-pub static SAMPLERS: [fn(config: Arc<Config>) -> SamplerResult] = [..];
+pub static SAMPLERS: [fn(config: Arc<AgentConfig>) -> SamplerResult] = [..];
 
 static STATE: AtomicUsize = AtomicUsize::new(RUNNING);
 
@@ -78,7 +76,7 @@ fn main() {
         )
         .subcommand(flight_recorder::command())
         .subcommand(recorder::command())
-        .subcommand(summarize::command())
+        .subcommand(prometheus_exporter::command())
         .get_matches();
 
     match cli.subcommand() {
@@ -98,10 +96,10 @@ fn main() {
 
             recorder::run(config)
         }
-        Some(("summarize", args)) => {
-            let config = summarize::Config::try_from(args.clone()).expect("failed to configure");
+        Some(("prometheus-exporter", args)) => {
+            let config = prometheus_exporter::Config::try_from(args.clone()).expect("failed to configure");
 
-            summarize::run(config)
+            prometheus_exporter::run(config)
         }
         _ => {
             unimplemented!()

@@ -17,7 +17,7 @@ const MB: i64 = 1024 * KB;
 const MHZ: i64 = 1_000_000;
 
 #[distributed_slice(SAMPLERS)]
-fn init(config: Arc<Config>) -> SamplerResult {
+fn init(config: Arc<AgentConfig>) -> SamplerResult {
     if !config.enabled(NAME) {
         return Ok(None);
     }
