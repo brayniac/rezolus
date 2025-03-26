@@ -6,8 +6,6 @@ Standards-Version: 4.6.2
 Build-Depends: 
     debhelper (>= 10),
     pkg-config,
-    libelf-dev,
-    libelf-dev:native,
     clang:native
 
 Package: rezolus
