@@ -34,8 +34,6 @@ fn init(config: Arc<Config>) -> SamplerResult {
         return Ok(None);
     }
 
-    set_name(1, "/".to_string());
-
     let bpf = BpfBuilder::new(ModSkelBuilder::default)
         .perf_event("l3_access", PerfEvent::l3_access(), &CPU_L3_ACCESS)
         .perf_event("l3_miss", PerfEvent::l3_miss(), &CPU_L3_MISS)
