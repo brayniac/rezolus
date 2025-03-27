@@ -42,26 +42,26 @@ impl Sampler for CpuL3 {
 }
 
 struct CpuL3Inner {
-    l3_caches: Vec<L3Cache>,
+    caches: Vec<L3Cache>,
 }
 
 impl CpuL3Inner {
     pub fn new() -> Result<Self, std::io::Error> {
-        let l3_caches = get_l3_caches()?;
+        let caches = get_l3_caches()?;
 
-        Ok(Self { l3_caches })
+        Ok(Self { caches })
     }
 
     pub async fn refresh(&mut self) -> Result<(), std::io::Error> {
-        for l3_cache in self.l3_caches {
-            if let Ok(group_data) = l3_cache.l3_access.read_group() {
-                if let (Some(l3_access), Some(l3_miss)) = (group_data.get(l3_cache.l3_access), group_data.get(l3_cache.l3_miss)) {
-                    let l3_access = l3_access.value();
-                    let l3_miss = l3_miss.value();
+        for cache in self.caches {
+            if let Ok(group) = caches.access.read_group() {
+                if let (Some(access), Some(miss)) = (group.get(&cache.access), group.get(&cache.miss)) {
+                    let access = access.value();
+                    let miss = miss.value();
 
-                    for cpu in l3_cache.siblings {
-                        CPU_L3_ACCESS.set(cpu, l3_access);
-                        CPU_L3_MISS.set(cpu, l3_miss);
+                    for cpu in cache.siblings {
+                        CPU_L3_ACCESS.set(cpu, access);
+                        CPU_L3_MISS.set(cpu, miss);
                     }
                 }
             }
@@ -72,8 +72,9 @@ impl CpuL3Inner {
 }
 
 struct L3Cache {
-    l3_access: perf_event::Counter,
-    l3_miss: perf_event::Counter,
+    /// perf events for this cache
+    access: perf_event::Counter,
+    miss: perf_event::Counter,
     /// all cores which share this cache
     siblings: Vec<usize>,
 }
@@ -139,7 +140,7 @@ pub fn get_l3_caches() -> Result<Vec<L3Cache>, std::io::Error> {
     for l3_domain in l3_domains {
         let cpu = *l3_domain.first().expect("empty l3 domain");
 
-        if let Ok(mut l3_access) = perf_event::Builder::new(perf_event::events::Raw::new(0xFF04))
+        if let Ok(mut access) = perf_event::Builder::new(perf_event::events::Raw::new(0xFF04))
             .one_cpu(cpu)
             .any_pid()
             .exclude_hv(false)
@@ -150,18 +151,18 @@ pub fn get_l3_caches() -> Result<Vec<L3Cache>, std::io::Error> {
             )
             .build()
         {
-            if let Ok(mut l3_miss) = perf_event::Builder::new(perf_event::events::Raw::new(0x104))
+            if let Ok(mut miss) = perf_event::Builder::new(perf_event::events::Raw::new(0x104))
                 .one_cpu(cpu)
                 .any_pid()
                 .exclude_hv(false)
                 .exclude_kernel(false)
                 .build_with_group(&mut l3_access)
             {
-                match l3_access.enable_group() {
+                match access.enable_group() {
                     Ok(_) => {
                         l3_caches.push(L3Cache {
-                            l3_access,
-                            l3_miss,
+                            access,
+                            miss,
                             siblings: l3_domain,
                         })
                     }
