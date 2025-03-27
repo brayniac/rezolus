@@ -99,7 +99,7 @@ pub fn get_l3_caches() -> Result<Vec<L3Cache>, std::io::Error> {
                             .unwrap_or_default()
                             .trim()
                             == "3"
-                })
+                }).expect("no l3 index found")
             });
 
         if let Some(l3_index) = l3_index_path {
@@ -123,7 +123,7 @@ pub fn get_l3_caches() -> Result<Vec<L3Cache>, std::io::Error> {
     let l3_caches = Vec::new();
 
     for l3_domain in l3_domains {
-        let cpu = l3_domain.first().expect("empty l3 domain");
+        let cpu = *l3_domain.first().expect("empty l3 domain");
 
         if let Ok(mut l3_access) = perf_event::Builder::new(perf_event::events::Raw::new(0xFF04))
             .one_cpu(cpu)
