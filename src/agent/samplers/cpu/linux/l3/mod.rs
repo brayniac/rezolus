@@ -13,7 +13,6 @@ use tokio::sync::Mutex;
 use walkdir::WalkDir;
 
 use std::collections::HashSet;
-use std::path::Path;
 
 mod stats;
 
