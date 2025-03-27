@@ -64,7 +64,7 @@ impl CpuL3Inner {
                     let access = access.value();
                     let miss = miss.value();
 
-                    for cpu in &cache.siblings {
+                    for cpu in &cache.shared_cores {
                         let _ = CPU_L3_ACCESS.set(*cpu, access);
                         let _ = CPU_L3_MISS.set(*cpu, miss);
                     }
@@ -88,7 +88,7 @@ struct L3Cache {
 
 impl L3Cache {
     pub fn new(shared_cores: Vec<usize>) -> Result<Self, ()> {
-        let cpu = *l3_domain.first().expect("empty l3 domain");
+        let cpu = *shared_cores.first().expect("empty l3 domain");
 
         if let Ok(mut access) = perf_event::Builder::new(perf_event::events::Raw::new(0xFF04))
             .one_cpu(cpu)
@@ -113,7 +113,7 @@ impl L3Cache {
                         return Ok(L3Cache {
                             access,
                             miss,
-                            siblings: l3_domain,
+                            shared_cores,
                         });
                     }
                     Err(e) => {
@@ -179,6 +179,8 @@ fn l3_domains() -> Result<Vec<Vec<usize>>, std::io::Error> {
             }
         }
     }
+
+    Ok(l3_domains)
 }
 
 fn get_l3_caches() -> Result<Vec<L3Cache>, std::io::Error> {
@@ -187,7 +189,7 @@ fn get_l3_caches() -> Result<Vec<L3Cache>, std::io::Error> {
     let mut l3_caches = Vec::new();
 
     for l3_domain in l3_domains.drain(..) {
-        if let Ok(l3_cache) = L3Cahcne::new(l3_domain) {
+        if let Ok(l3_cache) = L3Cache::new(l3_domain) {
             l3_caches.push(l3_cache);
         }
     }
