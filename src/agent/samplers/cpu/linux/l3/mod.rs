@@ -101,7 +101,7 @@ impl L3Cache {
             )
             .build()
         {
-            if let Ok(miss) = perf_event::Builder::new(perf_event::events::Raw::new(0x106))
+            if let Ok(miss) = perf_event::Builder::new(perf_event::events::Raw::new(0x104))
                 .one_cpu(cpu)
                 .any_pid()
                 .exclude_hv(false)
