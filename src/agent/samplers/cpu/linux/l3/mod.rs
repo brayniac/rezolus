@@ -55,7 +55,7 @@ impl CpuL3Inner {
     pub async fn refresh(&mut self) -> Result<(), std::io::Error> {
         for l3_cache in self.l3_caches {
             if let Ok(group_data) = l3_cache.l3_access.read_group() {
-                if let (Some(l3_access), Some(l3_miss) = (group_data.get(self.l3_access), group_data.get(self.l3_miss)) {
+                if let (Some(l3_access), Some(l3_miss)) = (group_data.get(self.l3_access), group_data.get(self.l3_miss)) {
                     let l3_access = l3_access.value();
                     let l3_miss = l3_miss.value();
 
