@@ -3,6 +3,7 @@ const NAME: &str = "cpu_l3";
 use crate::agent::*;
 
 use metriken::LazyGauge;
+use perf_event::*;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::sync::Mutex;
@@ -67,7 +68,7 @@ pub fn get_l3_caches() -> Result<Vec<L3Cache>, Box<dyn Error>> {
     let sys_cpu_path = Path::new("/sys/devices/system/cpu");
 
     // Find all CPU directories
-    let cpu_dirs: Vec<PathBuf> = fs::read_dir(sys_cpu_path)?
+    let cpu_dirs: Vec<PathBuf> = std::fs::read_dir(sys_cpu_path)?
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
         .filter(|path| {
@@ -93,7 +94,7 @@ pub fn get_l3_caches() -> Result<Vec<L3Cache>, Box<dyn Error>> {
                 entry.path().file_name().to_str().map(|name| {
                     name.starts_with("index")
                         && entry.path().join("level").exists()
-                        && fs::read_to_string(entry.path().join("level"))
+                        && std::fs::read_to_string(entry.path().join("level"))
                             .unwrap_or_default()
                             .trim()
                             == "3"
@@ -104,7 +105,7 @@ pub fn get_l3_caches() -> Result<Vec<L3Cache>, Box<dyn Error>> {
             let shared_cpu_list_path = l3_index.path().join("shared_cpu_list");
 
             // Read shared CPU list
-            if let Ok(shared_cpu_content) = fs::read_to_string(&shared_cpu_list_path) {
+            if let Ok(shared_cpu_content) = std::fs::read_to_string(&shared_cpu_list_path) {
                 let shared_cores = parse_cpu_list(&shared_cpu_content);
 
                 // Avoid processing duplicate L3 cache domains
