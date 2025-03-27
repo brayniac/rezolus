@@ -56,7 +56,7 @@ impl CpuL3Inner {
                     let access = access.value();
                     let miss = miss.value();
 
-                    for cpu in cache.siblings {
+                    for cpu in &cache.siblings {
                         CPU_L3_ACCESS.set(cpu, access);
                         CPU_L3_MISS.set(cpu, miss);
                     }
@@ -148,7 +148,7 @@ pub fn get_l3_caches() -> Result<Vec<L3Cache>, std::io::Error> {
             )
             .build()
         {
-            if let Ok(mut miss) = perf_event::Builder::new(perf_event::events::Raw::new(0x104))
+            if let Ok(miss) = perf_event::Builder::new(perf_event::events::Raw::new(0x104))
                 .one_cpu(cpu)
                 .any_pid()
                 .exclude_hv(false)
