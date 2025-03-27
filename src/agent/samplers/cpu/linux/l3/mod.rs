@@ -92,7 +92,7 @@ pub fn get_l3_caches() -> Result<Vec<L3Cache>, std::io::Error> {
             .read_dir()?
             .filter_map(|entry| entry.ok())
             .find(|entry| {
-                entry.path().file_name().to_str().map(|name| {
+                entry.path().file_name().expect("no filename").to_str().map(|name| {
                     name.starts_with("index")
                         && entry.path().join("level").exists()
                         && std::fs::read_to_string(entry.path().join("level"))
@@ -123,7 +123,7 @@ pub fn get_l3_caches() -> Result<Vec<L3Cache>, std::io::Error> {
     let l3_caches = Vec::new();
 
     for l3_domain in l3_domains {
-        let cpu = l3_domain.first();
+        let cpu = l3_domain.first().expect("empty l3 domain");
 
         if let Ok(mut l3_access) = perf_event::Builder::new(perf_event::events::Raw::new(0xFF04))
             .one_cpu(cpu)
@@ -141,17 +141,20 @@ pub fn get_l3_caches() -> Result<Vec<L3Cache>, std::io::Error> {
                 .any_pid()
                 .exclude_hv(false)
                 .exclude_kernel(false)
-                .build_with_group(l3_access)
+                .build_with_group(&mut l3_access)
             {
-                let _ = l3_access.enable_group().map_err(|e| {
-                    error!("failed to enable the perf group on CPU{cpu}: {e}");
-                })?;
-
-                l3_caches.push(L3Cache {
-                    l3_access,
-                    l3_miss,
-                    siblings: l3_domain,
-                })
+                match l3_access.enable_group() {
+                    Ok(_) => {
+                        l3_caches.push(L3Cache {
+                            l3_access,
+                            l3_miss,
+                            siblings: l3_domain,
+                        })
+                    }
+                    Err(e) => {
+                        error!("failed to enable the perf group on CPU{cpu}: {e}");
+                    }
+                }                
             }
         }
     }
