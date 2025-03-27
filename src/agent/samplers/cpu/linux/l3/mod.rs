@@ -3,12 +3,13 @@ const NAME: &str = "cpu_l3";
 use crate::agent::*;
 
 use metriken::LazyGauge;
-use perf_event::*;
+use perf_event::ReadFormat;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::sync::Mutex;
 
-use std::collections::HashMap;
+use std::collections::{HashSet, HashMap};
+use std::path::Path;
 
 mod stats;
 
@@ -63,7 +64,7 @@ struct L3Cache {
     siblings: Vec<usize>,
 }
 
-pub fn get_l3_caches() -> Result<Vec<L3Cache>, Box<dyn Error>> {
+pub fn get_l3_caches() -> Result<Vec<L3Cache>, std::io::Error> {
     let mut l3_domains = Vec::new();
     let sys_cpu_path = Path::new("/sys/devices/system/cpu");
 
