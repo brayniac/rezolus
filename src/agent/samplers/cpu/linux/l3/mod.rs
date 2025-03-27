@@ -10,6 +10,7 @@ use crate::agent::*;
 
 use perf_event::ReadFormat;
 use tokio::sync::Mutex;
+use walkdir::WalkDir;
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -129,7 +130,7 @@ impl L3Cache {
 
 fn l3_domains() -> Result<Vec<Vec<usize>>, std::io::Error> {
     let mut l3_domains = Vec::new();
-    let mut processed_l3_domains = HashSet::new();
+    let mut processed = HashSet::new();
 
     // walk the cpu devices directory
     for entry in WalkDir::new("/sys/devices/system/cpu")
@@ -184,7 +185,7 @@ fn l3_domains() -> Result<Vec<Vec<usize>>, std::io::Error> {
 }
 
 fn get_l3_caches() -> Result<Vec<L3Cache>, std::io::Error> {
-    let l3_domains = l3_domains()?;
+    let mut l3_domains = l3_domains()?;
 
     let mut l3_caches = Vec::new();
 
