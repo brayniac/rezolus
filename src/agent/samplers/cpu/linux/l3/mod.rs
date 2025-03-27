@@ -50,7 +50,7 @@ impl CpuL3Inner {
     }
 
     pub async fn refresh(&mut self) -> Result<(), std::io::Error> {
-        for cache in self.caches {
+        for cache in &mut self.caches {
             if let Ok(group) = cache.access.read_group() {
                 if let (Some(access), Some(miss)) = (group.get(&cache.access), group.get(&cache.miss)) {
                     let access = access.value();
@@ -153,7 +153,7 @@ pub fn get_l3_caches() -> Result<Vec<L3Cache>, std::io::Error> {
                 .any_pid()
                 .exclude_hv(false)
                 .exclude_kernel(false)
-                .build_with_group(&mut l3_access)
+                .build_with_group(&mut access)
             {
                 match access.enable_group() {
                     Ok(_) => {
