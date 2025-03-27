@@ -14,6 +14,7 @@ mod bpf {
         ("blockio", "latency"),
         ("blockio", "requests"),
         ("cpu", "frequency"),
+        ("cpu", "l3"),
         ("cpu", "perf"),
         ("cpu", "tlb_flush"),
         ("cpu", "usage"),
