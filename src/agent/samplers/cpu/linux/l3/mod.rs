@@ -120,7 +120,7 @@ pub fn get_l3_caches() -> Result<Vec<L3Cache>, std::io::Error> {
         }
     }
 
-    let l3_caches = Vec::new();
+    let mut l3_caches = Vec::new();
 
     for l3_domain in l3_domains {
         let cpu = *l3_domain.first().expect("empty l3 domain");
