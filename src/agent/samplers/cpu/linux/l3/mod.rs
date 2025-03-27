@@ -5,7 +5,7 @@ use crate::agent::*;
 use perf_event::ReadFormat;
 use tokio::sync::Mutex;
 
-use std::collections::{HashSet};
+use std::collections::HashSet;
 use std::path::Path;
 
 mod stats;
@@ -52,7 +52,9 @@ impl CpuL3Inner {
     pub async fn refresh(&mut self) -> Result<(), std::io::Error> {
         for cache in &mut self.caches {
             if let Ok(group) = cache.access.read_group() {
-                if let (Some(access), Some(miss)) = (group.get(&cache.access), group.get(&cache.miss)) {
+                if let (Some(access), Some(miss)) =
+                    (group.get(&cache.access), group.get(&cache.miss))
+                {
                     let access = access.value();
                     let miss = miss.value();
 
@@ -104,14 +106,20 @@ fn get_l3_caches() -> Result<Vec<L3Cache>, std::io::Error> {
             .read_dir()?
             .filter_map(|entry| entry.ok())
             .find(|entry| {
-                entry.path().file_name().expect("no filename").to_str().map(|name| {
-                    name.starts_with("index")
-                        && entry.path().join("level").exists()
-                        && std::fs::read_to_string(entry.path().join("level"))
-                            .unwrap_or_default()
-                            .trim()
-                            == "3"
-                }).expect("no l3 index found")
+                entry
+                    .path()
+                    .file_name()
+                    .expect("no filename")
+                    .to_str()
+                    .map(|name| {
+                        name.starts_with("index")
+                            && entry.path().join("level").exists()
+                            && std::fs::read_to_string(entry.path().join("level"))
+                                .unwrap_or_default()
+                                .trim()
+                                == "3"
+                    })
+                    .expect("no l3 index found")
             });
 
         if let Some(l3_index) = l3_index_path {
@@ -156,17 +164,15 @@ fn get_l3_caches() -> Result<Vec<L3Cache>, std::io::Error> {
                 .build_with_group(&mut access)
             {
                 match access.enable_group() {
-                    Ok(_) => {
-                        l3_caches.push(L3Cache {
-                            access,
-                            miss,
-                            siblings: l3_domain,
-                        })
-                    }
+                    Ok(_) => l3_caches.push(L3Cache {
+                        access,
+                        miss,
+                        siblings: l3_domain,
+                    }),
                     Err(e) => {
                         error!("failed to enable the perf group on CPU{cpu}: {e}");
                     }
-                }                
+                }
             }
         }
     }
