@@ -75,7 +75,6 @@ impl PerfCounters {
 enum Event {
     Hardware(perf_event::events::Hardware),
     Msr(perf_event::events::x86::Msr),
-    Raw(perf_event::events::Raw),
 }
 
 impl Event {
@@ -83,7 +82,6 @@ impl Event {
         match self {
             Self::Hardware(e) => perf_event::Builder::new(*e),
             Self::Msr(m) => perf_event::Builder::new(*m),
-            Self::Raw(v) => perf_event::Builder::new(*v),
         }
     }
 }
@@ -107,18 +105,6 @@ impl PerfEvent {
         Ok(Self {
             inner: Event::Msr(msr),
         })
-    }
-
-    pub fn l3_access() -> Self {
-        Self {
-            inner: Event::Raw(perf_event::events::Raw::new(0xFF04)),
-        }
-    }
-
-    pub fn l3_miss() -> Self {
-        Self {
-            inner: Event::Raw(perf_event::events::Raw::new(0x104)),
-        }
     }
 }
 

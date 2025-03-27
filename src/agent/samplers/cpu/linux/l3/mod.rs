@@ -57,8 +57,8 @@ impl CpuL3Inner {
                     let miss = miss.value();
 
                     for cpu in &cache.siblings {
-                        CPU_L3_ACCESS.set(*cpu, access);
-                        CPU_L3_MISS.set(*cpu, miss);
+                        let _ = CPU_L3_ACCESS.set(*cpu, access);
+                        let _ = CPU_L3_MISS.set(*cpu, miss);
                     }
                 }
             }
@@ -76,7 +76,7 @@ struct L3Cache {
     siblings: Vec<usize>,
 }
 
-pub fn get_l3_caches() -> Result<Vec<L3Cache>, std::io::Error> {
+fn get_l3_caches() -> Result<Vec<L3Cache>, std::io::Error> {
     let mut l3_domains = Vec::new();
     let sys_cpu_path = Path::new("/sys/devices/system/cpu");
 
