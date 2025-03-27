@@ -57,8 +57,8 @@ impl CpuL3Inner {
                     let miss = miss.value();
 
                     for cpu in &cache.siblings {
-                        CPU_L3_ACCESS.set(cpu, access);
-                        CPU_L3_MISS.set(cpu, miss);
+                        CPU_L3_ACCESS.set(*cpu, access);
+                        CPU_L3_MISS.set(*cpu, miss);
                     }
                 }
             }
