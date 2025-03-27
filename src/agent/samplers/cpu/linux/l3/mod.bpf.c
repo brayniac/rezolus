@@ -30,4 +30,12 @@ struct {
 	__type(value, u32);
 } l3_miss SEC(".maps");
 
+// attach a tracepoint on sched_switch for per-cgroup accounting
+
+SEC("tp_btf/sched_switch")
+int handle__sched_switch(u64 *ctx)
+{
+	return 0;
+}
+
 char LICENSE[] SEC("license") = "GPL";
