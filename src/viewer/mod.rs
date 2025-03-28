@@ -39,219 +39,12 @@ pub fn command() -> clap::Command {
         )
 }
 
-async fn index(State(templates): State<Arc<Tera>>) -> Html<String> {
-    let mut context = Context::new();
-
-    // Generate example data with groups
-    let groups = generate_example_metric_groups();
-    context.insert("metric_groups", &groups);
-
-    let rendered = templates
-        .render("dashboard.html", &context)
-        .expect("Failed to render template");
-
-    Html(rendered)
-}
-
-#[derive(Serialize)]
-struct SeriesInfo {
-    name: String,
-    values: Vec<f64>,
-    color: String,
-}
-
-#[derive(Serialize)]
-struct TimeSeriesData {
-    timestamps: Vec<f64>,
-    title: String,
-    y_units: String,
-    series: Vec<SeriesInfo>,
-}
-
-#[derive(Serialize)]
-struct MetricGroup {
-    name: String,
-    description: String,
-    series: Vec<TimeSeriesData>,
-}
-
 // Helper function to create sine wave data with offset and amplitude
 fn create_sine_wave(timestamps: &[f64], freq: f64, amp: f64, phase: f64, offset: f64) -> Vec<f64> {
     timestamps
         .iter()
         .map(|&t| amp * ((t * freq) + phase).sin() + offset)
         .collect()
-}
-
-fn create_time_series(
-    timestamps: &[f64],
-    title: &str,
-    units: &str,
-    series_data: Vec<(&str, f64, f64, f64, &str)>,
-) -> TimeSeriesData {
-    let mut series_vec = Vec::new();
-    
-    // Create each series
-    for (name, freq, amp, phase, color) in series_data {
-        let values = timestamps
-            .iter()
-            .map(|&t| amp * ((t * freq) + phase).sin())
-            .collect();
-            
-        series_vec.push(SeriesInfo {
-            name: name.to_string(),
-            values,
-            color: color.to_string(),
-        });
-    }
-    
-    TimeSeriesData {
-        timestamps: timestamps.to_owned(),
-        title: title.to_string(),
-        y_units: units.to_string(),
-        series: series_vec,
-    }
-}
-
-fn create_time_series_with_offset(
-    timestamps: &[f64],
-    title: &str,
-    units: &str,
-    series_data: Vec<(&str, f64, f64, f64, f64, &str)>,
-) -> TimeSeriesData {
-    let mut series_vec = Vec::new();
-    
-    // Create each series with offset
-    // Parameters: (name, freq, amp, phase, offset, color)
-    for (name, freq, amp, phase, offset, color) in series_data {
-        let values = timestamps
-            .iter()
-            .map(|&t| amp * ((t * freq) + phase).sin() + offset)
-            .collect();
-            
-        series_vec.push(SeriesInfo {
-            name: name.to_string(),
-            values,
-            color: color.to_string(),
-        });
-    }
-    
-    TimeSeriesData {
-        timestamps: timestamps.to_owned(),
-        title: title.to_string(),
-        y_units: units.to_string(),
-        series: series_vec,
-    }
-}
-
-fn generate_example_metric_groups() -> Vec<MetricGroup> {
-    // Base timestamps for all series
-    let timestamps: Vec<f64> = (0..3600).map(|i| (i as f64) * 1.0).collect();
-
-    // Define our groups and their metrics
-    let groups = vec![
-        MetricGroup {
-            name: "CPU".to_string(),
-            description: "CPU utilization metrics".to_string(),
-            series: vec![
-                create_time_series_with_offset(
-                    &timestamps,
-                    "CPU Utilization",
-                    "%",
-                    vec![
-                        ("System", 0.1, 10.0, 0.0, 30.0, "#569CD6"),
-                        ("User", 0.1, 15.0, 1.0, 20.0, "#4EC9B0"),
-                        ("IO Wait", 0.2, 5.0, 0.5, 5.0, "#CE9178"),
-                    ]
-                ),
-                create_time_series_with_offset(
-                    &timestamps,
-                    "CPU Load Average",
-                    "load",
-                    vec![
-                        ("1min", 0.05, 0.8, 0.0, 2.0, "#569CD6"),
-                        ("5min", 0.03, 0.6, 1.0, 1.8, "#4EC9B0"),
-                        ("15min", 0.02, 0.4, 2.0, 1.5, "#CE9178"),
-                    ]
-                ),
-            ],
-        },
-        MetricGroup {
-            name: "Memory".to_string(),
-            description: "Memory usage metrics".to_string(),
-            series: vec![
-                create_time_series_with_offset(
-                    &timestamps,
-                    "Memory Usage",
-                    "GB",
-                    vec![
-                        ("Used", 0.01, 1.0, 0.0, 8.0, "#CE9178"),
-                        ("Cached", 0.02, 0.5, 1.0, 4.0, "#DCDCAA"),
-                        ("Free", 0.015, 0.8, 0.5, 4.0, "#569CD6"),
-                    ]
-                ),
-                create_time_series_with_offset(
-                    &timestamps,
-                    "Swap Usage",
-                    "MB",
-                    vec![
-                        ("Used", 0.08, 100.0, 0.5, 250.0, "#DCDCAA"),
-                    ]
-                ),
-            ],
-        },
-        MetricGroup {
-            name: "Network".to_string(),
-            description: "Network throughput metrics".to_string(),
-            series: vec![
-                create_time_series_with_offset(
-                    &timestamps,
-                    "Network Throughput",
-                    "Mbps",
-                    vec![
-                        ("Ingress", 0.05, 200.0, 0.0, 500.0, "#9CDCFE"),
-                        ("Egress", 0.05, 150.0, 1.0, 300.0, "#B5CEA8"),
-                    ]
-                ),
-                create_time_series_with_offset(
-                    &timestamps,
-                    "Latency",
-                    "ms",
-                    vec![
-                        ("p50", 0.1, 2.0, 0.0, 8.0, "#9CDCFE"),
-                        ("p90", 0.1, 4.0, 0.5, 15.0, "#CE9178"),
-                        ("p99", 0.1, 8.0, 1.0, 25.0, "#CC6666"),
-                    ]
-                ),
-            ],
-        },
-        MetricGroup {
-            name: "Disk".to_string(),
-            description: "Disk performance metrics".to_string(),
-            series: vec![
-                create_time_series_with_offset(
-                    &timestamps,
-                    "Disk I/O",
-                    "IOPS",
-                    vec![
-                        ("Read", 0.15, 500.0, 3.0, 1500.0, "#CC6666"),
-                        ("Write", 0.1, 300.0, 0.0, 800.0, "#C586C0"),
-                    ]
-                ),
-                create_time_series_with_offset(
-                    &timestamps,
-                    "Disk Latency",
-                    "ms",
-                    vec![
-                        ("Read", 0.1, 0.5, 0.0, 1.2, "#CC6666"),
-                        ("Write", 0.15, 0.8, 2.5, 1.8, "#C586C0"),
-                    ]
-                ),
-            ],
-        }
-    ];
-
-    groups
 }
 
 fn setup_files() -> std::io::Result<()> {
@@ -276,6 +69,335 @@ fn setup_files() -> std::io::Result<()> {
 
     println!("Template and static files created successfully.");
     Ok(())
+}
+
+// Add these new struct definitions in the mod.rs file 
+// alongside the existing struct definitions
+
+// Enum to represent different chart types
+#[derive(Serialize)]
+#[serde(rename_all = "lowercase")]
+enum ChartType {
+    Line,
+    Scatter,
+    Heatmap,
+}
+
+// Series info is the same for line and scatter charts
+#[derive(Serialize)]
+struct SeriesInfo {
+    name: String,
+    values: Vec<f64>,
+    color: String,
+    id: Option<String>, // For special identification, e.g., CPU core 
+}
+
+// Base structure for all chart types
+#[derive(Serialize)]
+struct TimeSeriesData {
+    chart_type: ChartType,
+    timestamps: Vec<f64>,
+    title: String,
+    y_units: String,
+    series: Vec<SeriesInfo>,
+}
+
+// Keep the existing MetricGroup struct but use the new TimeSeriesData type
+#[derive(Serialize)]
+struct MetricGroup {
+    name: String,
+    description: String,
+    series: Vec<TimeSeriesData>,
+}
+
+// Helper function to create a line chart configuration
+fn create_line_chart(
+    timestamps: &[f64],
+    title: &str,
+    units: &str,
+    series_data: Vec<(&str, f64, f64, f64, &str)>,
+) -> TimeSeriesData {
+    let mut series_vec = Vec::new();
+    
+    // Create each series
+    for (name, freq, amp, phase, color) in series_data {
+        let values = timestamps
+            .iter()
+            .map(|&t| amp * ((t * freq) + phase).sin())
+            .collect();
+            
+        series_vec.push(SeriesInfo {
+            name: name.to_string(),
+            values,
+            color: color.to_string(),
+            id: None,
+        });
+    }
+    
+    TimeSeriesData {
+        chart_type: ChartType::Line,
+        timestamps: timestamps.to_owned(),
+        title: title.to_string(),
+        y_units: units.to_string(),
+        series: series_vec,
+    }
+}
+
+// Helper function to create a line chart with offset
+fn create_line_chart_with_offset(
+    timestamps: &[f64],
+    title: &str,
+    units: &str,
+    series_data: Vec<(&str, f64, f64, f64, f64, &str)>,
+) -> TimeSeriesData {
+    let mut series_vec = Vec::new();
+    
+    // Create each series with offset
+    // Parameters: (name, freq, amp, phase, offset, color)
+    for (name, freq, amp, phase, offset, color) in series_data {
+        let values = timestamps
+            .iter()
+            .map(|&t| amp * ((t * freq) + phase).sin() + offset)
+            .collect();
+            
+        series_vec.push(SeriesInfo {
+            name: name.to_string(),
+            values,
+            color: color.to_string(),
+            id: None,
+        });
+    }
+    
+    TimeSeriesData {
+        chart_type: ChartType::Line,
+        timestamps: timestamps.to_owned(),
+        title: title.to_string(),
+        y_units: units.to_string(),
+        series: series_vec,
+    }
+}
+
+// Helper function to create a scatter chart
+fn create_scatter_chart(
+    timestamps: &[f64],
+    title: &str,
+    units: &str,
+    series_data: Vec<(&str, f64, f64, f64, f64, &str)>,
+) -> TimeSeriesData {
+    let mut series_vec = Vec::new();
+    
+    // Create each series with noise for scatter effect
+    // Parameters: (name, freq, amp, phase, noise_factor, color)
+    for (name, freq, amp, phase, noise_factor, color) in series_data {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        
+        let values = timestamps
+            .iter()
+            .map(|&t| {
+                let base = amp * ((t * freq) + phase).sin();
+                let noise = rng.gen_range(-noise_factor..noise_factor);
+                base + noise
+            })
+            .collect();
+            
+        series_vec.push(SeriesInfo {
+            name: name.to_string(),
+            values,
+            color: color.to_string(),
+            id: None,
+        });
+    }
+    
+    TimeSeriesData {
+        chart_type: ChartType::Scatter,
+        timestamps: timestamps.to_owned(),
+        title: title.to_string(),
+        y_units: units.to_string(),
+        series: series_vec,
+    }
+}
+
+// Helper function to create a heatmap chart for per-CPU data
+fn create_cpu_heatmap(
+    timestamps: &[f64],
+    title: &str,
+    units: &str,
+    num_cpus: usize,
+) -> TimeSeriesData {
+    let mut series_vec = Vec::new();
+    
+    // Create data for each CPU
+    for cpu_idx in 0..num_cpus {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        
+        // Generate different patterns for each CPU
+        let freq = 0.05 + (cpu_idx as f64 * 0.01); // Slightly different frequency per CPU
+        let phase = (cpu_idx as f64) * 0.5;  // Different phase per CPU
+        let amplitude = 25.0 + (cpu_idx as f64 * 2.0);  // Different amplitude per CPU
+        let offset = 20.0 + (cpu_idx as f64 * 3.0);     // Different offset per CPU
+        
+        // Create the CPU's utilization pattern
+        let values = timestamps
+            .iter()
+            .map(|&t| {
+                // Base sine wave for periodic behavior
+                let base = offset + amplitude * ((t * freq) + phase).sin();
+                
+                // Add some randomness for more realistic data
+                let noise = rng.gen::<f64>() * 15.0;
+                
+                // Add occasional spikes for some CPUs
+                let spike = if rng.gen::<f64>() < 0.01 && cpu_idx % 2 == 0 {
+                    30.0
+                } else {
+                    0.0
+                };
+                
+                // Combine and clamp to 0-100 range
+                (base + noise + spike).max(0.0).min(100.0)
+            })
+            .collect();
+        
+        // Each CPU gets its own series with a unique ID
+        series_vec.push(SeriesInfo {
+            name: format!("CPU {}", cpu_idx),
+            values,
+            color: "#4EC9B0".to_string(), // Default color (will be overridden by heatmap colorscale)
+            id: Some(format!("cpu{}", cpu_idx)),
+        });
+    }
+    
+    TimeSeriesData {
+        chart_type: ChartType::Heatmap,
+        timestamps: timestamps.to_owned(),
+        title: title.to_string(),
+        y_units: units.to_string(),
+        series: series_vec,
+    }
+}
+
+fn generate_example_metric_groups() -> Vec<MetricGroup> {
+    // Base timestamps for all series
+    let timestamps: Vec<f64> = (0..3600).map(|i| (i as f64) * 1.0).collect();
+
+    // Define our groups and their metrics
+    let groups = vec![
+        MetricGroup {
+            name: "CPU".to_string(),
+            description: "CPU utilization metrics".to_string(),
+            series: vec![
+                create_line_chart_with_offset(
+                    &timestamps,
+                    "CPU Utilization",
+                    "%",
+                    vec![
+                        ("System", 0.1, 10.0, 0.0, 30.0, "#569CD6"),
+                        ("User", 0.1, 15.0, 1.0, 20.0, "#4EC9B0"),
+                        ("IO Wait", 0.2, 5.0, 0.5, 5.0, "#CE9178"),
+                    ]
+                ),
+                create_cpu_heatmap(
+                    &timestamps,
+                    "Per-CPU Utilization",
+                    "%",
+                    8 // 8 CPU cores
+                ),
+                // Removed CPU Load Average chart
+            ],
+        },
+        // Other metric groups remain the same
+        MetricGroup {
+            name: "Memory".to_string(),
+            description: "Memory usage metrics".to_string(),
+            series: vec![
+                create_line_chart_with_offset(
+                    &timestamps,
+                    "Memory Usage",
+                    "GB",
+                    vec![
+                        ("Used", 0.01, 1.0, 0.0, 8.0, "#CE9178"),
+                        ("Cached", 0.02, 0.5, 1.0, 4.0, "#DCDCAA"),
+                        ("Free", 0.015, 0.8, 0.5, 4.0, "#569CD6"),
+                    ]
+                ),
+                create_line_chart_with_offset(
+                    &timestamps,
+                    "Swap Usage",
+                    "MB",
+                    vec![
+                        ("Used", 0.08, 100.0, 0.5, 250.0, "#DCDCAA"),
+                    ]
+                ),
+            ],
+        },
+        MetricGroup {
+            name: "Network".to_string(),
+            description: "Network throughput metrics".to_string(),
+            series: vec![
+                create_line_chart_with_offset(
+                    &timestamps,
+                    "Network Throughput",
+                    "Mbps",
+                    vec![
+                        ("Ingress", 0.05, 200.0, 0.0, 500.0, "#9CDCFE"),
+                        ("Egress", 0.05, 150.0, 1.0, 300.0, "#B5CEA8"),
+                    ]
+                ),
+                create_scatter_chart(
+                    &timestamps,
+                    "Network Latency",
+                    "ms",
+                    vec![
+                        ("p50", 0.1, 2.0, 0.0, 1.0, "#9CDCFE"),
+                        ("p90", 0.1, 4.0, 0.5, 2.0, "#CE9178"),
+                        ("p99", 0.1, 8.0, 1.0, 5.0, "#CC6666"),
+                    ]
+                ),
+            ],
+        },
+        MetricGroup {
+            name: "Disk".to_string(),
+            description: "Disk performance metrics".to_string(),
+            series: vec![
+                create_line_chart_with_offset(
+                    &timestamps,
+                    "Disk I/O",
+                    "IOPS",
+                    vec![
+                        ("Read", 0.15, 500.0, 3.0, 1500.0, "#CC6666"),
+                        ("Write", 0.1, 300.0, 0.0, 800.0, "#C586C0"),
+                    ]
+                ),
+                create_scatter_chart(
+                    &timestamps,
+                    "Disk Latency",
+                    "ms",
+                    vec![
+                        ("Read", 0.1, 0.5, 0.0, 0.5, "#CC6666"),
+                        ("Write", 0.15, 0.8, 2.5, 1.0, "#C586C0"),
+                    ]
+                ),
+            ],
+        }
+    ];
+
+    groups
+}
+
+async fn index(State(templates): State<Arc<Tera>>) -> Html<String> {
+    let mut context = Context::new();
+
+    // Generate example data with groups
+    let groups = generate_example_metric_groups();
+    context.insert("metric_groups", &groups);
+
+    let rendered = templates
+        .render("dashboard.html", &context)
+        .expect("Failed to render template");
+
+    Html(rendered)
 }
 
 pub fn run(config: Config) {

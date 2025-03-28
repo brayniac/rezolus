@@ -23,15 +23,21 @@
         </div>
     </div>
 
+    <!-- Load supporting scripts -->
     <script src="/static/zoom-controller.js"></script>
     <script src="/static/time-axis-formatter.js"></script>
+    <script src="/static/chart-utils.js"></script>
+    <script src="/static/line-scatter-charts.js"></script>
+    <script src="/static/heatmap-chart.js"></script>
+    
+    <!-- Dashboard initialization with embedded Jinja2 -->
     <script>
-        // Dashboard initialization
+        // Dashboard Initialization Script
         document.addEventListener('DOMContentLoaded', () => {
             debug('🚀 Initializing dashboard');
             
-            // Create zoom controller
-            const zoomController = new ZoomController();
+            // Create zoom controller and make it globally available immediately
+            window.zoomController = new ZoomController();
             
             // Get the groups container
             const groupsContainer = document.getElementById('dashboard-groups');
@@ -47,6 +53,7 @@
                 series: [
                     {% for series in group.series %}
                     {
+                        chart_type: "{{ series.chart_type }}",
                         title: "{{ series.title | safe }}",
                         timestamps: {{ series.timestamps | json_encode | safe }},
                         yUnits: "{{ series.y_units | safe }}",
@@ -56,6 +63,9 @@
                                 name: "{{ s.name | safe }}",
                                 values: {{ s.values | json_encode | safe }},
                                 color: "{{ s.color | safe }}"
+                                {% if s.id %},
+                                id: "{{ s.id }}"
+                                {% endif %}
                             }{% if not loop.last %},{% endif %}
                             {% endfor %}
                         ]
@@ -66,6 +76,33 @@
             {% endfor %}
             
             // Create all group HTML elements
+            createDashboardGroups(groupData);
+            
+            // Setup group toggle functionality
+            setupGroupToggles();
+            
+            // Create all plots
+            createAllPlots(groupData, window.zoomController);
+            
+            // Set the initial range flag after all plots are created
+            window.zoomController.setInitialized();
+            
+            // Reset zoom button
+            document.getElementById('reset-zoom').addEventListener('click', () => {
+                debug(`👆 Reset button clicked`);
+                window.zoomController.resetZoom();
+            });
+            
+            // Make plots responsive with optimized resize handler
+            setupResizeHandlers();
+            
+            debug('✅ Dashboard initialization complete');
+        });
+        
+        // Function to create dashboard groups
+        function createDashboardGroups(groupData) {
+            const groupsContainer = document.getElementById('dashboard-groups');
+            
             groupData.forEach((group, groupIdx) => {
                 const groupElement = document.createElement('div');
                 groupElement.className = 'metric-group';
@@ -103,7 +140,13 @@
                 // Add plots to group
                 group.series.forEach((series, seriesIdx) => {
                     const plotContainer = document.createElement('div');
-                    plotContainer.className = 'plot-container';
+                    
+                    // Give full width for heatmaps
+                    if (series.chart_type === 'heatmap') {
+                        plotContainer.className = 'plot-container full-width';
+                    } else {
+                        plotContainer.className = 'plot-container';
+                    }
                     
                     const plotElement = document.createElement('div');
                     plotElement.id = `plot-${groupIdx}-${seriesIdx}`;
@@ -119,15 +162,13 @@
                 // Add to page
                 groupsContainer.appendChild(groupElement);
             });
-            
-            // Setup group toggle functionality
-            setupGroupToggles();
-            
-            // Create all plots
+        }
+        
+        // Function to create all plots
+        function createAllPlots(groupData, zoomController) {
             groupData.forEach((group, groupIdx) => {
                 debug(`📊 Creating plots for group: ${group.name}`);
                 
-                // Replace the plot creation section in your dashboard.html with this code
                 group.series.forEach((seriesData, seriesIdx) => {
                     const plotId = `plot-${groupIdx}-${seriesIdx}`;
                     const plotElement = document.getElementById(plotId);
@@ -143,142 +184,107 @@
                     debug(`📊 Plot ${plotId} data range: ${seriesData.timestamps[0].toFixed(2)} to ${seriesData.timestamps[seriesData.timestamps.length - 1].toFixed(2)}`);
                     debug(`📅 Plot ${plotId} time range: ${formatTimeOnly(seriesData.timestamps[0])} to ${formatTimeOnly(seriesData.timestamps[seriesData.timestamps.length - 1])}`);
                     debug(`🔤 Plot ${plotId} title: "${seriesData.title}", units: "${seriesData.yUnits}"`);
+                    debug(`🔧 Plot ${plotId} chart type: "${seriesData.chart_type}"`);
                     debug(`📐 Plot ${plotId} container width: ${containerWidth}px`);
                     
-                    // Create tooltip plugin
-                    const tooltipPlugin = createTooltipPlugin();
-                    
-                    // Create series options
-                    const seriesOptions = createSeriesOptions(seriesData.series);
-                    
-                    // Create data array
-                    const data = createDataArray(seriesData.timestamps, seriesData.series);
-                    
-                    // Create static legend plugin
-                    const staticLegend = createStaticLegendPlugin(seriesData.series);
-                    
-                    const opts = {
-                        width: containerWidth,
-                        height: 350,
-                        gutters: {
-                            y: 15,
-                            x: 8
-                        },
-                        scales: {
-                            x: {
-                                time: false
-                            }
-                        },
-                        title: seriesData.title,
-                        
-                        background: '#1E1E1E',
-                        
-                        plugins: [
-                            tooltipPlugin,
-                            staticLegend
-                        ],
-                        
-                        select: {
-                            show: true,
-                            stroke: 'rgba(86, 156, 214, 0.5)',
-                            fill: 'rgba(86, 156, 214, 0.2)',
-                        },
-                        
-                        hooks: {
-                            setSelect: [],
-                        },
-                        
-                        series: seriesOptions,
-                        
-                        axes: [
-                            {
-                                stroke: '#888888',
-                                grid: {
-                                    stroke: 'rgba(136, 136, 136, 0.1)',
-                                },
-                                values: createTimeAxisFormatter(),
-                                space: 60, // More space for time labels
-                                ticks: {
-                                    show: true,
-                                    stroke: 'rgba(136, 136, 136, 0.5)',
-                                    width: 1,
-                                    size: 5,
-                                },
-                                splits: createTimeSplitsFn()
-                            },
-                            {
-                                label: seriesData.yUnits ? seriesData.yUnits : '',
-                                stroke: '#888888',
-                                grid: {
-                                    stroke: 'rgba(136, 136, 136, 0.1)',
-                                },
-                            }
-                        ],
-                        
-                        cursor: {
-                            focus: {
-                                prox: 16,
-                            },
-                            points: {
-                                size: 6,
-                                width: 2,
-                                fill: "#1E1E1E",
-                            },
-                            lock: false,
-                            sync: {
-                                key: group.name, // Sync cursors within the same group
-                                scales: ['x']
-                            }
-                        },
-                        
-                        legend: {
-                            show: false  // We'll use our custom static legend instead
-                        }
-                    };
-                    
                     try {
-                        debug(`🔨 Creating plot ${plotId}: ${seriesData.title}`);
-                        const plot = new uPlot(opts, data, document.getElementById(plotId));
+                        let plot;
+                        
+                        // Create the appropriate chart type
+                        if (seriesData.chart_type === 'heatmap') {
+                            // Create a heatmap chart 
+                            const heatmapData = prepareHeatmapData(seriesData);
+                            plot = createCpuHeatmap(plotId, heatmapData, {
+                                title: seriesData.title,
+                                width: containerWidth,
+                                height: 400,
+                                colorScale: [
+                                    "#100060", "#4000A0", "#8000C0", "#A000E0", 
+                                    "#C000FF", "#FF2000", "#FF6000", "#FFA000", "#FFE000"
+                                ],
+                                minValue: 0,
+                                maxValue: 100,
+                                units: seriesData.yUnits
+                            });
+                        } else {
+                            // For line and scatter charts
+                            plot = createLineOrScatterChart(
+                                plotId, 
+                                seriesData, 
+                                containerWidth,
+                                group.name
+                            );
+                        }
                         
                         // Register plot with zoom controller
                         plot._id = plotId;
                         plot._group = groupIdx;
+                        plot._chart_type = seriesData.chart_type;
                         zoomController.registerPlot(plot);
+                        
+                        debug(`✅ Plot ${plotId} created successfully`);
                     } catch (err) {
                         debug(`❌ Error creating plot ${plotId}: ${err.message}`);
                         console.error(err);
                     }
                 });
             });
+        }
+        
+        // Function to set up improved resize handlers - updated to use window.zoomController
+        function setupResizeHandlers() {
+            // Debounced resize handler for smoother resizing
+            let resizeTimeout;
+            let isResizing = false;
             
-            // Set the initial range flag after all plots are created
-            zoomController.setInitialized();
-            
-            // Reset zoom button
-            document.getElementById('reset-zoom').addEventListener('click', () => {
-                debug(`👆 Reset button clicked`);
-                zoomController.resetZoom();
-            });
-            
-            // Make plots responsive with optimized resize handler
             window.addEventListener('resize', () => {
-                // Use requestAnimationFrame to avoid too many resize calls
-                if (window.resizeTimeout) {
-                    cancelAnimationFrame(window.resizeTimeout);
+                if (resizeTimeout) {
+                    clearTimeout(resizeTimeout);
                 }
                 
-                window.resizeTimeout = requestAnimationFrame(() => {
-                    zoomController.handleResize();
-                });
+                // Set a flag to indicate we're in a resize operation
+                isResizing = true;
+                
+                // Immediately adjust plot sizes, using the global reference
+                if (window.zoomController) {
+                    window.zoomController.handleResize();
+                }
+                
+                // After resize is complete, make sure everything is properly redrawn
+                resizeTimeout = setTimeout(() => {
+                    debug('📏 Resize complete, forcing redraw');
+                    isResizing = false;
+                    
+                    // Force redraw of all plots, using the global reference
+                    if (window.zoomController && window.zoomController.plots) {
+                        window.zoomController.plots.forEach(plot => {
+                            // Special handling for heatmaps
+                            if (plot._chart_type === 'heatmap') {
+                                // Find the canvas and redraw
+                                const canvas = plot.root.querySelector('.cpu-heatmap-canvas');
+                                if (canvas) {
+                                    const ctx = canvas.getContext('2d');
+                                    // Make sure the canvas is sized correctly
+                                    canvas.width = plot.width;
+                                    canvas.height = plot.height;
+                                    // Trigger a redraw via the hooks
+                                    plot.hooks.drawClear.forEach(fn => fn(plot));
+                                }
+                            }
+                            
+                            // Force a redraw for all plot types
+                            plot.redraw();
+                        });
+                    }
+                }, 250); // Wait for 250ms after last resize event
             });
             
-            // When all plots have been created, force a resize
+            // Also set up a resize check on window load for initial sizing
             window.addEventListener('load', () => {
                 // Force resize once everything is loaded
                 setTimeout(() => {
+                    debug('📏 Initial layout, forcing resize');
                     window.dispatchEvent(new Event('resize'));
-                    
-                    debug('📏 Forced resize on load');
                     
                     // Additional resize after a bit to ensure proper layout
                     setTimeout(() => {
@@ -286,322 +292,6 @@
                     }, 500);
                 }, 200);
             });
-            
-            debug('✅ Dashboard initialization complete');
-        });
-        
-        // Setup group toggle functionality
-        function setupGroupToggles() {
-            const toggleButtons = document.querySelectorAll('.group-toggle');
-            
-            toggleButtons.forEach(button => {
-                button.addEventListener('click', () => {
-                    const groupId = button.getAttribute('data-group');
-                    const groupElement = document.getElementById(`group-${groupId}`);
-                    
-                    groupElement.classList.toggle('collapsed');
-                    
-                    // Resize plots in group after toggling with a delay
-                    setTimeout(() => {
-                        if (!groupElement.classList.contains('collapsed')) {
-                            const groupIndex = groupId - 1; // Convert to 0-based index
-                            resizePlotsInGroup(groupIndex);
-                            
-                            // Force resize after a slight delay to ensure proper layout
-                            setTimeout(() => {
-                                window.dispatchEvent(new Event('resize'));
-                            }, 100);
-                        }
-                    }, 50);
-                });
-            });
-            
-            // Toggle all groups button
-            document.getElementById('toggle-all-groups').addEventListener('click', () => {
-                const groups = document.querySelectorAll('.metric-group');
-                const allCollapsed = Array.from(groups).every(g => g.classList.contains('collapsed'));
-                
-                groups.forEach(group => {
-                    if (allCollapsed) {
-                        group.classList.remove('collapsed');
-                    } else {
-                        group.classList.add('collapsed');
-                    }
-                });
-                
-                // Resize plots in all groups after toggling
-                if (allCollapsed) {
-                    setTimeout(() => {
-                        resizeAllPlots();
-                        
-                        // Force resize after a slight delay to ensure proper layout
-                        setTimeout(() => {
-                            window.dispatchEvent(new Event('resize'));
-                        }, 100);
-                    }, 50);
-                }
-            });
-        }
-        
-        function resizePlotsInGroup(groupIndex) {
-            const plots = Array.from(window.uPlotInstances || [])
-                .filter(plot => plot._group === groupIndex);
-                
-            plots.forEach(plot => {
-                const container = plot.root.parentElement;
-                if (!container) return;
-                
-                const newWidth = container.clientWidth;
-                if (Math.abs(plot.width - newWidth) > 5) {
-                    plot.setSize({width: newWidth, height: plot.height});
-                }
-            });
-        }
-        
-        function resizeAllPlots() {
-            const plots = Array.from(window.uPlotInstances || []);
-            
-            plots.forEach(plot => {
-                const container = plot.root.parentElement;
-                if (!container) return;
-                
-                const newWidth = container.clientWidth;
-                if (Math.abs(plot.width - newWidth) > 5) {
-                    plot.setSize({width: newWidth, height: plot.height});
-                }
-            });
-        }
-
-        // Updated series creation for the uPlot options
-        function createSeriesOptions(seriesArray) {
-            // First series is always time
-            const seriesOptions = [
-                {
-                    label: 'Time'
-                }
-            ];
-            
-            // Add each data series
-            seriesArray.forEach(s => {
-                seriesOptions.push({
-                    label: s.name,
-                    stroke: s.color,
-                    width: 2,
-                    fill: `rgba(${hexToRgb(s.color)}, 0.1)`,
-                });
-            });
-            
-            return seriesOptions;
-        }
-
-        // Create the data array for uPlot
-        function createDataArray(timestamps, seriesArray) {
-            // First series is timestamps
-            const data = [timestamps];
-            
-            // Add each data series values
-            seriesArray.forEach(s => {
-                data.push(s.values);
-            });
-            
-            return data;
-        }
-        
-        // Utility functions
-        function debug(message) {
-            const timestamp = new Date().toISOString().substr(11, 12);
-            const formattedMessage = `[${timestamp}] ${message}`;
-            
-            console.log(formattedMessage);
-        }
-        
-        function formatTime(timestamp) {
-            const date = new Date(timestamp * 1000);
-            return date.toLocaleTimeString([], {
-                hour: '2-digit', 
-                minute: '2-digit', 
-                second: '2-digit', 
-                hour12: false
-            });
-        }
-
-        // Time-only formatting for axis labels (HH:MM:SS)
-        function formatTimeOnly(timestamp) {
-            const date = new Date(timestamp * 1000);
-            return date.toLocaleTimeString([], {
-                hour: '2-digit', 
-                minute: '2-digit', 
-                second: '2-digit', 
-                hour12: false
-            });
-        }
-
-        
-        
-        // Convert hex color to rgb for opacity support
-        function hexToRgb(hex) {
-            // Remove # if present
-            hex = hex.replace('#', '');
-            
-            // Parse the hex values
-            const r = parseInt(hex.substring(0, 2), 16);
-            const g = parseInt(hex.substring(2, 4), 16);
-            const b = parseInt(hex.substring(4, 6), 16);
-            
-            return `${r}, ${g}, ${b}`;
-        }
-
-        // Add this function to format the date in YYYY-MM-DD HH:MM:SS format
-        function formatDateTimeISO(timestamp) {
-            const date = new Date(timestamp * 1000);
-            
-            const year = date.getFullYear();
-            const month = String(date.getMonth() + 1).padStart(2, '0');
-            const day = String(date.getDate()).padStart(2, '0');
-            const hours = String(date.getHours()).padStart(2, '0');
-            const minutes = String(date.getMinutes()).padStart(2, '0');
-            const seconds = String(date.getSeconds()).padStart(2, '0');
-            
-            return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-        }
-
-
-        // Create a plugin for the static series legend
-        function createStaticLegendPlugin(seriesArray) {
-            let legendEl;
-            
-            function init(u, opts) {
-                // Create legend container
-                legendEl = document.createElement('div');
-                legendEl.className = 'static-legend';
-                
-                // Add an item for each series
-                seriesArray.forEach(series => {
-                    const item = document.createElement('div');
-                    item.className = 'static-legend-item';
-                    
-                    const colorDot = document.createElement('span');
-                    colorDot.className = 'static-legend-color';
-                    colorDot.style.backgroundColor = series.color;
-                    
-                    const labelText = document.createElement('span');
-                    labelText.textContent = series.name;
-                    
-                    item.appendChild(colorDot);
-                    item.appendChild(labelText);
-                    legendEl.appendChild(item);
-                });
-                
-                // Add legend below the plot
-                u.root.appendChild(legendEl);
-            }
-            
-            return {
-                hooks: {
-                    init: init
-                }
-            };
-        }
-
-        // Create a custom tooltip with values in descending order
-        function createTooltipPlugin() {
-            let tooltipEl;
-            
-            function init(u, opts) {
-                // Create tooltip element if it doesn't exist
-                tooltipEl = document.createElement('div');
-                tooltipEl.className = 'u-tooltip';
-                
-                u.over.appendChild(tooltipEl);
-            }
-            
-            function update(u) {
-                if (!u.cursor.idx) {
-                    tooltipEl.style.display = 'none';
-                    return;
-                }
-                
-                // Get timestamp at cursor position
-                const timestamp = u.data[0][u.cursor.idx];
-                const formattedDate = formatDateTimeISO(timestamp);
-                
-                // Collect all series values
-                const seriesValues = [];
-                for (let i = 1; i < u.series.length; i++) {
-                    const series = u.series[i];
-                    if (!series.show) continue;
-                    
-                    const value = u.data[i][u.cursor.idx];
-                    
-                    // Skip null or undefined values
-                    if (value === null || value === undefined) continue;
-                    
-                    // Format the value with 4 decimal places for smaller numbers, 
-                    // or regular formatting for larger numbers
-                    const formattedValue = Math.abs(value) < 0.01 
-                        ? value.toFixed(4) 
-                        : value.toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2
-                          });
-                    
-                    seriesValues.push({
-                        name: series.label || `Series ${i}`,
-                        value: formattedValue,
-                        color: series.stroke,
-                        rawValue: value
-                    });
-                }
-                
-                // Sort values in descending order
-                seriesValues.sort((a, b) => b.rawValue - a.rawValue);
-                
-                // Create HTML content
-                let html = `<div class="header">${formattedDate}</div>`;
-                
-                seriesValues.forEach(sv => {
-                    html += `
-                        <div class="value-row">
-                            <span class="label">
-                                <span class="color-dot" style="background-color: ${sv.color};"></span>
-                                ${sv.name}:
-                            </span>
-                            <span class="value">${sv.value}</span>
-                        </div>
-                    `;
-                });
-                
-                tooltipEl.innerHTML = html;
-                tooltipEl.style.display = 'block';
-                
-                // Position the tooltip
-                const rect = u.over.getBoundingClientRect();
-                const cursorLeft = u.cursor.left;
-                const cursorTop = u.cursor.top;
-                
-                let left = cursorLeft + 10;
-                let top = cursorTop + 10;
-                
-                // Make sure tooltip stays within plot
-                const tooltipRect = tooltipEl.getBoundingClientRect();
-                if (left + tooltipRect.width > rect.width) {
-                    left = cursorLeft - tooltipRect.width - 10;
-                }
-                
-                if (top + tooltipRect.height > rect.height) {
-                    top = cursorTop - tooltipRect.height - 10;
-                }
-                
-                tooltipEl.style.left = left + 'px';
-                tooltipEl.style.top = top + 'px';
-            }
-            
-            return {
-                hooks: {
-                    init: init,
-                    setCursor: update
-                }
-            };
         }
     </script>
 </body>

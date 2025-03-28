@@ -158,7 +158,7 @@ class ZoomController {
         });
     }
 
-    // Function to sync all plots to a specific range
+    // Method to sync all plots to a specific range
     syncZoom(sourcePlot, xMin, xMax) {
         if (this.syncLock) {
             this.debug(`⚠️ Sync lock active, skipping sync from plot ${sourcePlot._id}`);
@@ -183,70 +183,77 @@ class ZoomController {
                     });
                 }
                 
-                // Get the current min/max for validation
-                const oldMin = plot.scales.x.min;
-                const oldMax = plot.scales.x.max;
-                
-                // IMPORTANT: Use batch updates to ensure all changes apply at once
-                plot.batch(() => {
-                    // Force a complete redraw with new scales
-                    plot.setScale("x", {
-                        min: xMin,
-                        max: xMax,
-                        auto: false          // Disable auto-scaling
-                    });
-                    
-                    // Override the axes explicitly
-                    plot.axes[0]._min = xMin;
-                    plot.axes[0]._max = xMax;
-                });
-                
-                // Verify the update worked
-                const newMin = plot.scales.x.min;
-                const newMax = plot.scales.x.max;
-                
-                if (Math.abs(newMin - xMin) > 0.01 || Math.abs(newMax - xMax) > 0.01) {
-                    this.debug(`⚠️ Plot ${plot._id} scale update failed!`);
-                    this.debug(`  Requested: ${xMin.toFixed(2)}-${xMax.toFixed(2)}`);
-                    this.debug(`  Actual: ${newMin.toFixed(2)}-${newMax.toFixed(2)}`);
-                    
-                    // Extreme fallback - recreate the plot with the desired range
-                    const opts = Object.assign({}, plot.opts, {
-                        scales: {
-                            x: {
-                                min: xMin,
-                                max: xMax,
-                                auto: false
-                            },
-                            y: {
-                                min: plot.scales.y.min !== null ? plot.scales.y.min : undefined,
-                                max: plot.scales.y.max !== null ? plot.scales.y.max : undefined,
-                                auto: plot.scales.y.min === null && plot.scales.y.max === null,
-                            }
-                        }
-                    });
-                    
-                    // Capture the parent element
-                    const parent = plot.root.parentElement;
-                    const id = parent.id;
-                    this.debug(`🔄 Last resort: Recreating plot ${plot._id} in ${id}`);
-                    
-                    // Clean up old plot
-                    plot.destroy();
-                    
-                    // Create a new plot
-                    const newPlot = new uPlot(opts, plot.data, document.getElementById(id));
-                    newPlot._id = plot._id;
-                    
-                    // Replace in the array
-                    const idx = this.plots.indexOf(plot);
-                    if (idx !== -1) {
-                        this.plots[idx] = newPlot;
-                    }
-                    
-                    this.debug(`✅ Plot ${plot._id} recreated with fixed bounds`);
+                // Special handling for heatmap charts
+                if (plot._chart_type === 'heatmap' && typeof plot.updateZoom === 'function') {
+                    // Use the heatmap's special updateZoom method
+                    plot.updateZoom(xMin, xMax);
+                    this.debug(`✅ Heatmap ${plot._id} updated via custom zoom method`);
                 } else {
-                    this.debug(`✅ Plot ${plot._id} updated: ${oldMin.toFixed(2)}->${newMin.toFixed(2)}, ${oldMax.toFixed(2)}->${newMax.toFixed(2)}`);
+                    // Get the current min/max for validation
+                    const oldMin = plot.scales.x.min;
+                    const oldMax = plot.scales.x.max;
+                    
+                    // IMPORTANT: Use batch updates to ensure all changes apply at once
+                    plot.batch(() => {
+                        // Force a complete redraw with new scales
+                        plot.setScale("x", {
+                            min: xMin,
+                            max: xMax,
+                            auto: false          // Disable auto-scaling
+                        });
+                        
+                        // Override the axes explicitly
+                        plot.axes[0]._min = xMin;
+                        plot.axes[0]._max = xMax;
+                    });
+                    
+                    // Verify the update worked
+                    const newMin = plot.scales.x.min;
+                    const newMax = plot.scales.x.max;
+                    
+                    if (Math.abs(newMin - xMin) > 0.01 || Math.abs(newMax - xMax) > 0.01) {
+                        this.debug(`⚠️ Plot ${plot._id} scale update failed!`);
+                        this.debug(`  Requested: ${xMin.toFixed(2)}-${xMax.toFixed(2)}`);
+                        this.debug(`  Actual: ${newMin.toFixed(2)}-${newMax.toFixed(2)}`);
+                        
+                        // Extreme fallback - recreate the plot with the desired range
+                        const opts = Object.assign({}, plot.opts, {
+                            scales: {
+                                x: {
+                                    min: xMin,
+                                    max: xMax,
+                                    auto: false
+                                },
+                                y: {
+                                    min: plot.scales.y.min !== null ? plot.scales.y.min : undefined,
+                                    max: plot.scales.y.max !== null ? plot.scales.y.max : undefined,
+                                    auto: plot.scales.y.min === null && plot.scales.y.max === null,
+                                }
+                            }
+                        });
+                        
+                        // Capture the parent element
+                        const parent = plot.root.parentElement;
+                        const id = parent.id;
+                        this.debug(`🔄 Last resort: Recreating plot ${plot._id} in ${id}`);
+                        
+                        // Clean up old plot
+                        plot.destroy();
+                        
+                        // Create a new plot
+                        const newPlot = new uPlot(opts, plot.data, document.getElementById(id));
+                        newPlot._id = plot._id;
+                        
+                        // Replace in the array
+                        const idx = this.plots.indexOf(plot);
+                        if (idx !== -1) {
+                            this.plots[idx] = newPlot;
+                        }
+                        
+                        this.debug(`✅ Plot ${plot._id} recreated with fixed bounds`);
+                    } else {
+                        this.debug(`✅ Plot ${plot._id} updated: ${oldMin.toFixed(2)}->${newMin.toFixed(2)}, ${oldMax.toFixed(2)}->${newMax.toFixed(2)}`);
+                    }
                 }
             } catch (err) {
                 this.debug(`❌ Error updating plot ${plot._id}: ${err.message}`);
@@ -289,27 +296,34 @@ class ZoomController {
                     height: 0
                 });
                 
-                // Use batch updates for consistency
-                plot.batch(() => {
-                    plot.setScale('x', {
-                        min: this.globalXMin,
-                        max: this.globalXMax,
-                        auto: false
+                // Special handling for heatmap charts
+                if (plot._chart_type === 'heatmap' && typeof plot.updateZoom === 'function') {
+                    // Use the heatmap's special updateZoom method
+                    plot.updateZoom(this.globalXMin, this.globalXMax);
+                    this.debug(`✅ Heatmap ${plot._id} reset via custom zoom method`);
+                } else {
+                    // Use batch updates for consistency
+                    plot.batch(() => {
+                        plot.setScale('x', {
+                            min: this.globalXMin,
+                            max: this.globalXMax,
+                            auto: false
+                        });
+                        
+                        // Override the axes explicitly
+                        plot.axes[0]._min = this.globalXMin;
+                        plot.axes[0]._max = this.globalXMax;
                     });
                     
-                    // Override the axes explicitly
-                    plot.axes[0]._min = this.globalXMin;
-                    plot.axes[0]._max = this.globalXMax;
-                });
-                
-                // Verify the update worked
-                const newMin = plot.scales.x.min;
-                const newMax = plot.scales.x.max;
-                
-                this.debug(`✅ Plot ${plot._id} reset: ${oldMin.toFixed(2)}->${newMin.toFixed(2)}, ${oldMax.toFixed(2)}->${newMax.toFixed(2)}`);
-                
-                // Force redraw
-                plot.redraw();
+                    // Verify the update worked
+                    const newMin = plot.scales.x.min;
+                    const newMax = plot.scales.x.max;
+                    
+                    this.debug(`✅ Plot ${plot._id} reset: ${oldMin.toFixed(2)}->${newMin.toFixed(2)}, ${oldMax.toFixed(2)}->${newMax.toFixed(2)}`);
+                    
+                    // Force redraw
+                    plot.redraw();
+                }
             } catch (err) {
                 this.debug(`❌ Error resetting plot ${plot._id}: ${err.message}`);
                 console.error(`Error resetting plot ${plot._id}:`, err);
@@ -322,9 +336,22 @@ class ZoomController {
         }, 500); // Increased timeout for reset
     }
     
-    // Handle resize for all plots - improved version with debouncing
+    // Handle resize for all plots with proper data scaling
     handleResize() {
-        this.debug(`📐 Window resize detected, updating plot dimensions`);
+        if (this.syncLock) {
+            this.debug(`⚠️ Resize attempted while sync lock active, deferring resize`);
+            
+            // Queue the resize for after the sync lock is released
+            setTimeout(() => {
+                if (!this.syncLock) {
+                    this.handleResize();
+                }
+            }, 100);
+            
+            return;
+        }
+        
+        this.debug(`📐 Window resize detected, updating plots`);
         
         // Use requestAnimationFrame for smoother resize handling
         if (this.resizeTimeout) {
@@ -332,6 +359,13 @@ class ZoomController {
         }
         
         this.resizeTimeout = requestAnimationFrame(() => {
+            // Get current global X range before resize
+            const currentMin = this.plots.length > 0 ? this.plots[0].scales.x.min : null;
+            const currentMax = this.plots.length > 0 ? this.plots[0].scales.x.max : null;
+            const isZoomed = currentMin !== this.globalXMin || currentMax !== this.globalXMax;
+            
+            this.syncLock = true;
+            
             this.plots.forEach(plot => {
                 try {
                     const container = plot.root.closest('.plot-container');
@@ -342,16 +376,56 @@ class ZoomController {
                     // Only resize if the width has changed significantly
                     if (Math.abs(plot.width - width) > 5) {
                         this.debug(`📐 Resizing plot ${plot._id} to width ${width}px`);
-                        plot.setSize({
-                            width: width,
-                            height: plot.height // Keep the same height
+                        
+                        plot.batch(() => {
+                            // First resize the plot
+                            plot.setSize({
+                                width: width,
+                                height: plot.height
+                            });
+                            
+                            // Then ensure the zoom state is maintained
+                            if (isZoomed) {
+                                plot.setScale("x", {
+                                    min: currentMin,
+                                    max: currentMax,
+                                    auto: false
+                                });
+                                
+                                // Override the axes explicitly
+                                plot.axes[0]._min = currentMin;
+                                plot.axes[0]._max = currentMax;
+                            } else {
+                                // If not zoomed, maintain full data view
+                                plot.setScale("x", {
+                                    min: this.globalXMin,
+                                    max: this.globalXMax,
+                                    auto: false
+                                });
+                                
+                                // Override the axes explicitly
+                                plot.axes[0]._min = this.globalXMin;
+                                plot.axes[0]._max = this.globalXMax;
+                            }
                         });
+                        
+                        // Check if resize worked correctly
+                        const newMin = plot.scales.x.min;
+                        const newMax = plot.scales.x.max;
+                        
+                        this.debug(`✅ Plot ${plot._id} resize: x=${newMin.toFixed(2)}-${newMax.toFixed(2)}`);
                     }
                 } catch (err) {
                     this.debug(`❌ Error during resize of plot ${plot._id}: ${err.message}`);
                     console.error(err);
                 }
             });
+            
+            // Release the lock
+            setTimeout(() => {
+                this.syncLock = false;
+                this.debug(`🔓 Resize complete, sync lock released`);
+            }, 200);
         });
     }
     
