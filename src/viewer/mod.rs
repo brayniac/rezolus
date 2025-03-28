@@ -39,25 +39,6 @@ pub fn command() -> clap::Command {
         )
 }
 
-#[derive(Serialize)]
-struct TimeSeriesData {
-    timestamps: Vec<f64>,
-    values: Vec<f64>,
-    title: String,
-    y_units: String,
-    color: String,
-    y_min: Option<f64>,
-    y_max: Option<f64>,
-    group: String, // Added group field
-}
-
-#[derive(Serialize)]
-struct MetricGroup {
-    name: String,
-    description: String,
-    series: Vec<TimeSeriesData>,
-}
-
 async fn index(State(templates): State<Arc<Tera>>) -> Html<String> {
     let mut context = Context::new();
 
@@ -72,6 +53,97 @@ async fn index(State(templates): State<Arc<Tera>>) -> Html<String> {
     Html(rendered)
 }
 
+#[derive(Serialize)]
+struct SeriesInfo {
+    name: String,
+    values: Vec<f64>,
+    color: String,
+}
+
+#[derive(Serialize)]
+struct TimeSeriesData {
+    timestamps: Vec<f64>,
+    title: String,
+    y_units: String,
+    series: Vec<SeriesInfo>,
+}
+
+#[derive(Serialize)]
+struct MetricGroup {
+    name: String,
+    description: String,
+    series: Vec<TimeSeriesData>,
+}
+
+// Helper function to create sine wave data with offset and amplitude
+fn create_sine_wave(timestamps: &[f64], freq: f64, amp: f64, phase: f64, offset: f64) -> Vec<f64> {
+    timestamps
+        .iter()
+        .map(|&t| amp * ((t * freq) + phase).sin() + offset)
+        .collect()
+}
+
+fn create_time_series(
+    timestamps: &[f64],
+    title: &str,
+    units: &str,
+    series_data: Vec<(&str, f64, f64, f64, &str)>,
+) -> TimeSeriesData {
+    let mut series_vec = Vec::new();
+    
+    // Create each series
+    for (name, freq, amp, phase, color) in series_data {
+        let values = timestamps
+            .iter()
+            .map(|&t| amp * ((t * freq) + phase).sin())
+            .collect();
+            
+        series_vec.push(SeriesInfo {
+            name: name.to_string(),
+            values,
+            color: color.to_string(),
+        });
+    }
+    
+    TimeSeriesData {
+        timestamps: timestamps.to_owned(),
+        title: title.to_string(),
+        y_units: units.to_string(),
+        series: series_vec,
+    }
+}
+
+fn create_time_series_with_offset(
+    timestamps: &[f64],
+    title: &str,
+    units: &str,
+    series_data: Vec<(&str, f64, f64, f64, f64, &str)>,
+) -> TimeSeriesData {
+    let mut series_vec = Vec::new();
+    
+    // Create each series with offset
+    // Parameters: (name, freq, amp, phase, offset, color)
+    for (name, freq, amp, phase, offset, color) in series_data {
+        let values = timestamps
+            .iter()
+            .map(|&t| amp * ((t * freq) + phase).sin() + offset)
+            .collect();
+            
+        series_vec.push(SeriesInfo {
+            name: name.to_string(),
+            values,
+            color: color.to_string(),
+        });
+    }
+    
+    TimeSeriesData {
+        timestamps: timestamps.to_owned(),
+        title: title.to_string(),
+        y_units: units.to_string(),
+        series: series_vec,
+    }
+}
+
 fn generate_example_metric_groups() -> Vec<MetricGroup> {
     // Base timestamps for all series
     let timestamps: Vec<f64> = (0..3600).map(|i| (i as f64) * 1.0).collect();
@@ -82,25 +154,25 @@ fn generate_example_metric_groups() -> Vec<MetricGroup> {
             name: "CPU".to_string(),
             description: "CPU utilization metrics".to_string(),
             series: vec![
-                create_time_series(
+                create_time_series_with_offset(
                     &timestamps,
-                    0.1,
-                    1.0,
-                    0.0,
                     "CPU Utilization",
                     "%",
-                    "#569CD6",
-                    "CPU",
+                    vec![
+                        ("System", 0.1, 10.0, 0.0, 30.0, "#569CD6"),
+                        ("User", 0.1, 15.0, 1.0, 20.0, "#4EC9B0"),
+                        ("IO Wait", 0.2, 5.0, 0.5, 5.0, "#CE9178"),
+                    ]
                 ),
-                create_time_series(
+                create_time_series_with_offset(
                     &timestamps,
-                    0.2,
-                    0.8,
-                    0.3,
                     "CPU Load Average",
                     "load",
-                    "#4EC9B0",
-                    "CPU",
+                    vec![
+                        ("1min", 0.05, 0.8, 0.0, 2.0, "#569CD6"),
+                        ("5min", 0.03, 0.6, 1.0, 1.8, "#4EC9B0"),
+                        ("15min", 0.02, 0.4, 2.0, 1.5, "#CE9178"),
+                    ]
                 ),
             ],
         },
@@ -108,25 +180,23 @@ fn generate_example_metric_groups() -> Vec<MetricGroup> {
             name: "Memory".to_string(),
             description: "Memory usage metrics".to_string(),
             series: vec![
-                create_time_series(
+                create_time_series_with_offset(
                     &timestamps,
-                    0.05,
-                    2.0,
-                    1.0,
                     "Memory Usage",
-                    "MB",
-                    "#CE9178",
-                    "Memory",
+                    "GB",
+                    vec![
+                        ("Used", 0.01, 1.0, 0.0, 8.0, "#CE9178"),
+                        ("Cached", 0.02, 0.5, 1.0, 4.0, "#DCDCAA"),
+                        ("Free", 0.015, 0.8, 0.5, 4.0, "#569CD6"),
+                    ]
                 ),
-                create_time_series(
+                create_time_series_with_offset(
                     &timestamps,
-                    0.08,
-                    1.2,
-                    0.5,
                     "Swap Usage",
                     "MB",
-                    "#DCDCAA",
-                    "Memory",
+                    vec![
+                        ("Used", 0.08, 100.0, 0.5, 250.0, "#DCDCAA"),
+                    ]
                 ),
             ],
         },
@@ -134,25 +204,24 @@ fn generate_example_metric_groups() -> Vec<MetricGroup> {
             name: "Network".to_string(),
             description: "Network throughput metrics".to_string(),
             series: vec![
-                create_time_series(
+                create_time_series_with_offset(
                     &timestamps,
-                    0.2,
-                    0.5,
-                    2.0,
                     "Network Throughput",
                     "Mbps",
-                    "#9CDCFE",
-                    "Network",
+                    vec![
+                        ("Ingress", 0.05, 200.0, 0.0, 500.0, "#9CDCFE"),
+                        ("Egress", 0.05, 150.0, 1.0, 300.0, "#B5CEA8"),
+                    ]
                 ),
-                create_time_series(
+                create_time_series_with_offset(
                     &timestamps,
-                    0.15,
-                    0.7,
-                    1.5,
-                    "Packet Rate",
-                    "pps",
-                    "#B5CEA8",
-                    "Network",
+                    "Latency",
+                    "ms",
+                    vec![
+                        ("p50", 0.1, 2.0, 0.0, 8.0, "#9CDCFE"),
+                        ("p90", 0.1, 4.0, 0.5, 15.0, "#CE9178"),
+                        ("p99", 0.1, 8.0, 1.0, 25.0, "#CC6666"),
+                    ]
                 ),
             ],
         },
@@ -160,58 +229,29 @@ fn generate_example_metric_groups() -> Vec<MetricGroup> {
             name: "Disk".to_string(),
             description: "Disk performance metrics".to_string(),
             series: vec![
-                create_time_series(
+                create_time_series_with_offset(
                     &timestamps,
-                    0.15,
-                    1.5,
-                    3.0,
                     "Disk I/O",
                     "IOPS",
-                    "#CC6666",
-                    "Disk",
+                    vec![
+                        ("Read", 0.15, 500.0, 3.0, 1500.0, "#CC6666"),
+                        ("Write", 0.1, 300.0, 0.0, 800.0, "#C586C0"),
+                    ]
                 ),
-                create_time_series(
+                create_time_series_with_offset(
                     &timestamps,
-                    0.1,
-                    1.3,
-                    2.5,
                     "Disk Latency",
                     "ms",
-                    "#C586C0",
-                    "Disk",
+                    vec![
+                        ("Read", 0.1, 0.5, 0.0, 1.2, "#CC6666"),
+                        ("Write", 0.15, 0.8, 2.5, 1.8, "#C586C0"),
+                    ]
                 ),
             ],
-        },
+        }
     ];
 
     groups
-}
-
-fn create_time_series(
-    timestamps: &Vec<f64>,
-    freq: f64,
-    amp: f64,
-    phase: f64,
-    title: &str,
-    units: &str,
-    color: &str,
-    group: &str,
-) -> TimeSeriesData {
-    let values: Vec<f64> = timestamps
-        .iter()
-        .map(|&t| amp * ((t * freq) + phase).sin())
-        .collect();
-
-    TimeSeriesData {
-        timestamps: timestamps.clone(),
-        values,
-        title: title.to_string(),
-        y_units: units.to_string(),
-        color: color.to_string(),
-        y_min: None,
-        y_max: None,
-        group: group.to_string(),
-    }
 }
 
 fn setup_files() -> std::io::Result<()> {

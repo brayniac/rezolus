@@ -206,3 +206,127 @@ button:hover {
         margin-bottom: 15px;
     }
 }
+
+/* Tooltip styling */
+.u-tooltip {
+    position: absolute;
+    background: rgba(40, 40, 40, 0.95);
+    color: #eee;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 8px 12px;
+    pointer-events: none;
+    z-index: 100;
+    font-size: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
+    display: none;
+    white-space: nowrap;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(2px);
+    transition: opacity 0.1s ease;
+    max-width: 300px;
+}
+
+.u-tooltip .header {
+    margin-bottom: 6px;
+    font-weight: bold;
+    color: #ddd;
+    border-bottom: 1px solid #555;
+    padding-bottom: 4px;
+}
+
+.u-tooltip .value-row {
+    display: flex;
+    justify-content: space-between;
+    margin: 3px 0;
+    align-items: center;
+}
+
+.u-tooltip .label {
+    margin-right: 16px;
+    display: flex;
+    align-items: center;
+}
+
+.u-tooltip .color-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 5px;
+}
+
+.u-tooltip .value {
+    font-weight: bold;
+    font-variant-numeric: tabular-nums;
+}
+
+.uplot .u-legend {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 10px;
+    position: absolute;
+    left: 10px;
+    bottom: 5px;
+    background: rgba(30, 30, 30, 0.7) !important;
+    padding: 5px 8px !important;
+    border-radius: 4px;
+    border: 1px solid #333 !important;
+}
+
+.uplot .u-legend .u-legend-div {
+    display: flex;
+    align-items: center;
+    margin-right: 10px;
+}
+
+.uplot .u-legend .u-legend-div .u-legend-line {
+    width: 12px;
+    margin-right: 5px;
+}
+
+.uplot .u-legend .u-legend-div .u-legend-text {
+    color: #CCC;
+    font-size: 12px;
+}
+
+.uplot .u-legend .u-legend-div .u-legend-value {
+    display: none; /* Hide the values */
+}
+
+.uplot .u-legend .u-legend-div .u-legend-time {
+    display: none; /* Hide the time */
+}
+
+/* Add a custom legend class for static series labels */
+.static-legend {
+    display: flex;
+    justify-content: flex-start;
+    padding: 5px 8px;
+    gap: 12px;
+    margin-top: 5px;
+    font-size: 12px;
+}
+
+.static-legend-item {
+    display: flex;
+    align-items: center;
+}
+
+.static-legend-color {
+    width: 12px;
+    height: 3px;
+    margin-right: 5px;
+    display: inline-block;
+}
+
+/* Updated cursor styling */
+.uplot .u-cursor-x {
+    border-left: 1px dashed rgba(255, 255, 255, 0.3);
+}
+
+.uplot .u-cursor-y {
+    border-top: 1px dashed rgba(255, 255, 255, 0.3);
+}
