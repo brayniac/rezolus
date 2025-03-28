@@ -1,10 +1,4 @@
-use axum::{
-    extract::State,
-    response::Html,
-    routing::get,
-    Router, 
-    http::StatusCode,
-};
+use axum::{extract::State, http::StatusCode, response::Html, routing::get, Router};
 use clap::ArgMatches;
 use ringlog::{Level, LogBuilder, MultiLogBuilder, Output, Stderr};
 use serde::Serialize;
@@ -54,14 +48,22 @@ struct TimeSeriesData {
     color: String,
     y_min: Option<f64>,
     y_max: Option<f64>,
+    group: String, // Added group field
+}
+
+#[derive(Serialize)]
+struct MetricGroup {
+    name: String,
+    description: String,
+    series: Vec<TimeSeriesData>,
 }
 
 async fn index(State(templates): State<Arc<Tera>>) -> Html<String> {
     let mut context = Context::new();
 
-    // Generate some example time series data
-    let time_series = generate_example_time_series();
-    context.insert("time_series", &time_series);
+    // Generate example data with groups
+    let groups = generate_example_metric_groups();
+    context.insert("metric_groups", &groups);
 
     let rendered = templates
         .render("dashboard.html", &context)
@@ -70,47 +72,153 @@ async fn index(State(templates): State<Arc<Tera>>) -> Html<String> {
     Html(rendered)
 }
 
-fn generate_example_time_series() -> Vec<TimeSeriesData> {
-    // Generate several different time series with various patterns
-    let mut series = Vec::new();
-
-    // Base sine wave
+fn generate_example_metric_groups() -> Vec<MetricGroup> {
+    // Base timestamps for all series
     let timestamps: Vec<f64> = (0..3600).map(|i| (i as f64) * 1.0).collect();
 
-    // Create 5 different patterns with titles and units
-    let patterns = [
-        (0.1, 1.0, 0.0, "CPU Utilization", "%"), // Standard sine
-        (0.05, 2.0, 1.0, "Memory Usage", "MB"),  // Slower, higher amplitude
-        (0.2, 0.5, 2.0, "Network Throughput", "Mbps"), // Faster, lower amplitude
-        (0.15, 1.5, 3.0, "Disk I/O", "IOPS"),    // Medium frequency, higher amplitude
-        (0.07, 1.8, 4.0, "Request Latency", "ms"), // Unique pattern
+    // Define our groups and their metrics
+    let groups = vec![
+        MetricGroup {
+            name: "CPU".to_string(),
+            description: "CPU utilization metrics".to_string(),
+            series: vec![
+                create_time_series(
+                    &timestamps,
+                    0.1,
+                    1.0,
+                    0.0,
+                    "CPU Utilization",
+                    "%",
+                    "#569CD6",
+                    "CPU",
+                ),
+                create_time_series(
+                    &timestamps,
+                    0.2,
+                    0.8,
+                    0.3,
+                    "CPU Load Average",
+                    "load",
+                    "#4EC9B0",
+                    "CPU",
+                ),
+            ],
+        },
+        MetricGroup {
+            name: "Memory".to_string(),
+            description: "Memory usage metrics".to_string(),
+            series: vec![
+                create_time_series(
+                    &timestamps,
+                    0.05,
+                    2.0,
+                    1.0,
+                    "Memory Usage",
+                    "MB",
+                    "#CE9178",
+                    "Memory",
+                ),
+                create_time_series(
+                    &timestamps,
+                    0.08,
+                    1.2,
+                    0.5,
+                    "Swap Usage",
+                    "MB",
+                    "#DCDCAA",
+                    "Memory",
+                ),
+            ],
+        },
+        MetricGroup {
+            name: "Network".to_string(),
+            description: "Network throughput metrics".to_string(),
+            series: vec![
+                create_time_series(
+                    &timestamps,
+                    0.2,
+                    0.5,
+                    2.0,
+                    "Network Throughput",
+                    "Mbps",
+                    "#9CDCFE",
+                    "Network",
+                ),
+                create_time_series(
+                    &timestamps,
+                    0.15,
+                    0.7,
+                    1.5,
+                    "Packet Rate",
+                    "pps",
+                    "#B5CEA8",
+                    "Network",
+                ),
+            ],
+        },
+        MetricGroup {
+            name: "Disk".to_string(),
+            description: "Disk performance metrics".to_string(),
+            series: vec![
+                create_time_series(
+                    &timestamps,
+                    0.15,
+                    1.5,
+                    3.0,
+                    "Disk I/O",
+                    "IOPS",
+                    "#CC6666",
+                    "Disk",
+                ),
+                create_time_series(
+                    &timestamps,
+                    0.1,
+                    1.3,
+                    2.5,
+                    "Disk Latency",
+                    "ms",
+                    "#C586C0",
+                    "Disk",
+                ),
+            ],
+        },
     ];
 
-    for (freq, amp, phase, title, units) in patterns {
-        let values: Vec<f64> = timestamps
-            .iter()
-            .map(|&t| amp * ((t * freq) + phase).sin())
-            .collect();
+    groups
+}
 
-        series.push(TimeSeriesData {
-            timestamps: timestamps.clone(),
-            values,
-            title: title.to_string(),
-            y_units: units.to_string(),
-            color: "#569CD6".to_string(),
-            y_min: None,
-            y_max: None,
-        });
+fn create_time_series(
+    timestamps: &Vec<f64>,
+    freq: f64,
+    amp: f64,
+    phase: f64,
+    title: &str,
+    units: &str,
+    color: &str,
+    group: &str,
+) -> TimeSeriesData {
+    let values: Vec<f64> = timestamps
+        .iter()
+        .map(|&t| amp * ((t * freq) + phase).sin())
+        .collect();
+
+    TimeSeriesData {
+        timestamps: timestamps.clone(),
+        values,
+        title: title.to_string(),
+        y_units: units.to_string(),
+        color: color.to_string(),
+        y_min: None,
+        y_max: None,
+        group: group.to_string(),
     }
-
-    series
 }
 
 fn setup_files() -> std::io::Result<()> {
     // Create directory structure if it doesn't exist
     let template_dir = Path::new("src/viewer/assets/templates");
     let static_dir = Path::new("src/viewer/assets/static");
-    
+
     fs::create_dir_all(template_dir)?;
     fs::create_dir_all(static_dir)?;
 
