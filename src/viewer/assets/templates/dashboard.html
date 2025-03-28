@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Rezolus Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.iife.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.min.css">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Rezolus Time Series Dashboard</h1>
+        
+        <div class="instructions">
+            <p>Click and drag on any chart to zoom all charts. Double-click to reset zoom.</p>
+        </div>
+
+        <button id="reset-zoom">Reset Zoom</button>
+
+        {% for series in time_series %}
+        <div class="plot-container">
+            <div id="plot-{{ loop.index }}"></div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <script src="/static/zoom-controller.js"></script>
+    <script>
+        // Dashboard initialization
+        document.addEventListener('DOMContentLoaded', () => {
+            debug('🚀 Initializing dashboard');
+            
+            // Create zoom controller
+            const zoomController = new ZoomController();
+            
+            // Create all plots
+            {% for series in time_series %}
+            (function() {
+                const timestamps = {{ series.timestamps | json_encode | safe }};
+                const values = {{ series.values | json_encode | safe }};
+                const title = "{{ series.title | safe }}";
+                const yUnits = "{{ series.y_units | safe }}";
+                
+                debug(`📊 Plot {{ loop.index }} data range: ${timestamps[0].toFixed(2)} to ${timestamps[timestamps.length - 1].toFixed(2)}`);
+                debug(`📅 Plot {{ loop.index }} time range: ${formatTime(timestamps[0])} to ${formatTime(timestamps[timestamps.length - 1])}`);
+                debug(`🔤 Plot {{ loop.index }} title: "${title}", units: "${yUnits}"`);
+
+                const opts = {
+                    width: document.getElementById('plot-{{ loop.index }}').parentElement.clientWidth,
+                    height: 400,
+                    title: title,
+                    
+                    background: '#1E1E1E',
+                    
+                    select: {
+                        show: true,
+                        stroke: 'rgba(86, 156, 214, 0.5)',
+                        fill: 'rgba(86, 156, 214, 0.2)',
+                    },
+                    
+                    hooks: {
+                        setSelect: [],
+                    },
+                    
+                    series: [
+                        {
+                            label: 'Time'
+                        },
+                        {
+                            label: 'Value',
+                            stroke: '#569CD6',
+                            width: 2,
+                            fill: 'rgba(86, 156, 214, 0.1)',
+                        }
+                    ],
+                    
+                    axes: [
+                        {
+                            stroke: '#888888',
+                            grid: {
+                                stroke: 'rgba(136, 136, 136, 0.1)',
+                            },
+                            values: (u, vals) => vals.map(v => formatTime(v))
+                        },
+                        {
+                            label: 'Value' + (yUnits ? ` (${yUnits})` : ''),
+                            stroke: '#888888',
+                            grid: {
+                                stroke: 'rgba(136, 136, 136, 0.1)',
+                            },
+                        }
+                    ],
+                    
+                    cursor: {
+                        focus: {
+                            prox: 16,
+                        },
+                        points: {
+                            size: 10,
+                            width: 2,
+                            stroke: '#569CD6',
+                            fill: '#1E1E1E',
+                        }
+                    }
+                };
+
+                const data = [
+                    timestamps,
+                    values
+                ];
+
+                try {
+                    debug(`🔨 Creating plot {{ loop.index }}: ${title}`);
+                    const plot = new uPlot(opts, data, document.getElementById('plot-{{ loop.index }}'));
+                    
+                    // Register plot with zoom controller
+                    plot._id = {{ loop.index }};
+                    zoomController.registerPlot(plot);
+                } catch (err) {
+                    debug(`❌ Error creating plot {{ loop.index }}: ${err.message}`);
+                    console.error(err);
+                }
+            })();
+            {% endfor %}
+
+            // Set the initial range flag after all plots are created
+            zoomController.setInitialized();
+
+            // Reset zoom button
+            document.getElementById('reset-zoom').addEventListener('click', () => {
+                debug(`👆 Reset button clicked`);
+                zoomController.resetZoom();
+            });
+
+            // Make plots responsive
+            window.addEventListener('resize', () => {
+                zoomController.handleResize();
+            });
+            
+            debug('✅ Dashboard initialization complete');
+        });
+        
+        // Utility functions
+        function debug(message) {
+            const timestamp = new Date().toISOString().substr(11, 12);
+            const formattedMessage = `[${timestamp}] ${message}`;
+            
+            console.log(formattedMessage);
+        }
+        
+        function formatTime(timestamp) {
+            const date = new Date(timestamp * 1000);
+            return date.toLocaleTimeString([], {
+                hour: '2-digit', 
+                minute: '2-digit', 
+                second: '2-digit', 
+                hour12: false
+            });
+        }
+    </script>
+</body>
+</html>

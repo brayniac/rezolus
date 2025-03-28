@@ -1,4 +1,10 @@
-use axum::{extract::State, response::Html, routing::get, Router};
+use axum::{
+    extract::State,
+    response::Html,
+    routing::get,
+    Router, 
+    http::StatusCode,
+};
 use clap::ArgMatches;
 use ringlog::{Level, LogBuilder, MultiLogBuilder, Output, Stderr};
 use serde::Serialize;
@@ -7,6 +13,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tera::{Context, Tera};
+use tower_http::services::ServeDir;
 
 // Define constants for application state
 static RUNNING: usize = 0;
@@ -99,17 +106,27 @@ fn generate_example_time_series() -> Vec<TimeSeriesData> {
     series
 }
 
-// Function to ensure template files exist
-fn setup_template_files() -> std::io::Result<()> {
+fn setup_files() -> std::io::Result<()> {
     // Create directory structure if it doesn't exist
-    let template_dir = Path::new("src/viewer/assets");
+    let template_dir = Path::new("src/viewer/assets/templates");
+    let static_dir = Path::new("src/viewer/assets/static");
+    
     fs::create_dir_all(template_dir)?;
+    fs::create_dir_all(static_dir)?;
 
-    // Write the dashboard.html template
-    let dashboard_html = include_str!("./assets/dashboard.html");
+    // Write the dashboard.html template (assuming we store the content in assets/templates/dashboard.html during build)
+    let dashboard_html = include_str!("./assets/templates/dashboard.html");
     fs::write(template_dir.join("dashboard.html"), dashboard_html)?;
 
-    println!("Template files created successfully.");
+    // Write the CSS file (assuming we store the content in assets/static/styles.css during build)
+    let styles_css = include_str!("./assets/static/styles.css");
+    fs::write(static_dir.join("styles.css"), styles_css)?;
+
+    // Write the JS file (assuming we store the content in assets/static/zoom-controller.js during build)
+    let zoom_controller_js = include_str!("./assets/static/zoom-controller.js");
+    fs::write(static_dir.join("zoom-controller.js"), zoom_controller_js)?;
+
+    println!("Template and static files created successfully.");
     Ok(())
 }
 
@@ -167,14 +184,14 @@ pub fn run(config: Config) {
 
     // Run the server
     rt.block_on(async move {
-        // Ensure template files exist (create if not)
-        if let Err(e) = setup_template_files() {
-            eprintln!("Error setting up template files: {}", e);
+        // Ensure template and static files exist (create if not)
+        if let Err(e) = setup_files() {
+            eprintln!("Error setting up files: {}", e);
             return;
         }
 
         // Create Tera template engine
-        let templates = match Tera::new("src/viewer/assets/**/*") {
+        let templates = match Tera::new("src/viewer/assets/templates/**/*") {
             Ok(t) => t,
             Err(e) => {
                 eprintln!("Error parsing templates: {}", e);
@@ -184,9 +201,11 @@ pub fn run(config: Config) {
 
         let shared_templates = Arc::new(templates);
 
-        // Create router with endpoint
+        // Create router with endpoints
         let app = Router::new()
             .route("/", get(index))
+            // Serve static files
+            .nest_service("/static", ServeDir::new("src/viewer/assets/static"))
             .with_state(shared_templates);
 
         // Start the server
