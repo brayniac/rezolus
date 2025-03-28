@@ -83,20 +83,12 @@
         <div class="instructions">
             <p>Click and drag on any chart to zoom all charts. Double-click to reset zoom.</p>
         </div>
-        
-        <div id="controls">
-            <button id="reset-zoom">Reset Zoom</button>
-            <button id="toggle-debug">Debug Console</button>
-            <button id="clear-debug">Clear Console</button>
-        </div>
 
         {% for series in time_series %}
         <div class="plot-container">
             <div id="plot-{{ loop.index }}"></div>
         </div>
         {% endfor %}
-        
-        <div class="debug-area" id="debug"></div>
     </div>
 
     <script>
@@ -105,7 +97,6 @@
         let globalXMin = null;
         let globalXMax = null;
         let syncLock = false;
-        let isDebugging = true; // Enable debugging by default
         let initialRangeSet = false; // Flag to track if we've set initial range
         
         // Debug functions
@@ -114,26 +105,7 @@
             const formattedMessage = `[${timestamp}] ${message}`;
             
             console.log(formattedMessage);
-            
-            if (isDebugging) {
-                const debugArea = document.getElementById('debug');
-                debugArea.textContent += formattedMessage + '\n';
-                debugArea.scrollTop = debugArea.scrollHeight;
-            }
         }
-        
-        document.getElementById('toggle-debug').addEventListener('click', function() {
-            const debugArea = document.getElementById('debug');
-            isDebugging = debugArea.style.display === 'none';
-            debugArea.style.display = isDebugging ? 'block' : 'none';
-            debug(`Debug console ${isDebugging ? 'enabled' : 'disabled'}`);
-        });
-        
-        document.getElementById('clear-debug').addEventListener('click', function() {
-            const debugArea = document.getElementById('debug');
-            debugArea.textContent = '';
-            debug('Debug console cleared');
-        });
         
         // Format time for display
         function formatTime(timestamp) {
