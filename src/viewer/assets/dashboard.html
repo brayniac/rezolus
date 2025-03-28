@@ -84,6 +84,8 @@
             <p>Click and drag on any chart to zoom all charts. Double-click to reset zoom.</p>
         </div>
 
+        <button id="reset-zoom">Reset Zoom</button>
+
         {% for series in time_series %}
         <div class="plot-container">
             <div id="plot-{{ loop.index }}"></div>
@@ -177,6 +179,11 @@
                                     min: xMin,
                                     max: xMax,
                                     auto: false
+                                },
+                                y: {
+                                    min: yMin !== null ? yMin : undefined,
+                                    max: yMax !== null ? yMax : undefined,
+                                    auto: yMin === null && yMax === null,
                                 }
                             }
                         });
@@ -285,6 +292,8 @@
             (function() {
                 const timestamps = {{ series.timestamps | json_encode | safe }};
                 const values = {{ series.values | json_encode | safe }};
+                const title = "{{ series.title | safe }}";
+                const yUnits = "{{ series.y_units | safe }}";
                 
                 // Update global min/max
                 if (globalXMin === null || timestamps[0] < globalXMin) {
@@ -296,11 +305,12 @@
                 
                 debug(`📊 Plot {{ loop.index }} data range: ${timestamps[0].toFixed(2)} to ${timestamps[timestamps.length - 1].toFixed(2)}`);
                 debug(`📅 Plot {{ loop.index }} time range: ${formatTime(timestamps[0])} to ${formatTime(timestamps[timestamps.length - 1])}`);
+                debug(`🔤 Plot {{ loop.index }} title: "${title}", units: "${yUnits}"`);
 
                 const opts = {
                     width: document.getElementById('plot-{{ loop.index }}').parentElement.clientWidth,
                     height: 400,
-                    title: "Time Series {{ loop.index }}",
+                    title: title,
                     
                     background: '#1E1E1E',
                     
@@ -331,7 +341,7 @@
                             values: (u, vals) => vals.map(v => formatTime(v))
                         },
                         {
-                            label: 'Value',
+                            label: 'Value' + (yUnits ? ` (${yUnits})` : ''),
                             stroke: '#888888',
                             grid: {
                                 stroke: 'rgba(136, 136, 136, 0.1)',
@@ -382,7 +392,7 @@
                 ];
 
                 try {
-                    debug(`🔨 Creating plot {{ loop.index }}`);
+                    debug(`🔨 Creating plot {{ loop.index }}: ${title}`);
                     const plot = new uPlot(opts, data, document.getElementById('plot-{{ loop.index }}'));
                     
                     // Store plot ID and add to array

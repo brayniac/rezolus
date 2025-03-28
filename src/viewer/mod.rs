@@ -1,9 +1,4 @@
-use axum::{
-    extract::State,
-    response::Html,
-    routing::get,
-    Router,
-};
+use axum::{extract::State, response::Html, routing::get, Router};
 use clap::ArgMatches;
 use ringlog::{Level, LogBuilder, MultiLogBuilder, Output, Stderr};
 use serde::Serialize;
@@ -47,11 +42,16 @@ pub fn command() -> clap::Command {
 struct TimeSeriesData {
     timestamps: Vec<f64>,
     values: Vec<f64>,
+    title: String,
+    y_units: String,
+    color: String,
+    y_min: Option<f64>,
+    y_max: Option<f64>,
 }
 
 async fn index(State(templates): State<Arc<Tera>>) -> Html<String> {
     let mut context = Context::new();
-    
+
     // Generate some example time series data
     let time_series = generate_example_time_series();
     context.insert("time_series", &time_series);
@@ -59,37 +59,43 @@ async fn index(State(templates): State<Arc<Tera>>) -> Html<String> {
     let rendered = templates
         .render("dashboard.html", &context)
         .expect("Failed to render template");
-    
+
     Html(rendered)
 }
 
 fn generate_example_time_series() -> Vec<TimeSeriesData> {
     // Generate several different time series with various patterns
     let mut series = Vec::new();
-    
+
     // Base sine wave
-    let timestamps: Vec<f64> = (0..3600)
-        .map(|i| (i as f64) * 1.0)
-        .collect();
-    
-    // Create 5 different patterns
+    let timestamps: Vec<f64> = (0..3600).map(|i| (i as f64) * 1.0).collect();
+
+    // Create 5 different patterns with titles and units
     let patterns = [
-        (0.1, 1.0, 0.0),    // Standard sine
-        (0.05, 2.0, 1.0),   // Slower, higher amplitude
-        (0.2, 0.5, 2.0),    // Faster, lower amplitude
-        (0.15, 1.5, 3.0),   // Medium frequency, higher amplitude
-        (0.07, 1.8, 4.0),   // Unique pattern
+        (0.1, 1.0, 0.0, "CPU Utilization", "%"), // Standard sine
+        (0.05, 2.0, 1.0, "Memory Usage", "MB"),  // Slower, higher amplitude
+        (0.2, 0.5, 2.0, "Network Throughput", "Mbps"), // Faster, lower amplitude
+        (0.15, 1.5, 3.0, "Disk I/O", "IOPS"),    // Medium frequency, higher amplitude
+        (0.07, 1.8, 4.0, "Request Latency", "ms"), // Unique pattern
     ];
-    
-    for (freq, amp, phase) in patterns {
+
+    for (freq, amp, phase, title, units) in patterns {
         let values: Vec<f64> = timestamps
             .iter()
             .map(|&t| amp * ((t * freq) + phase).sin())
             .collect();
-        
-        series.push(TimeSeriesData { timestamps: timestamps.clone(), values });
+
+        series.push(TimeSeriesData {
+            timestamps: timestamps.clone(),
+            values,
+            title: title.to_string(),
+            y_units: units.to_string(),
+            color: "#569CD6".to_string(),
+            y_min: None,
+            y_max: None,
+        });
     }
-    
+
     series
 }
 
@@ -98,11 +104,11 @@ fn setup_template_files() -> std::io::Result<()> {
     // Create directory structure if it doesn't exist
     let template_dir = Path::new("src/viewer/assets");
     fs::create_dir_all(template_dir)?;
-    
+
     // Write the dashboard.html template
     let dashboard_html = include_str!("./assets/dashboard.html");
     fs::write(template_dir.join("dashboard.html"), dashboard_html)?;
-    
+
     println!("Template files created successfully.");
     Ok(())
 }
@@ -175,7 +181,7 @@ pub fn run(config: Config) {
                 return;
             }
         };
-        
+
         let shared_templates = Arc::new(templates);
 
         // Create router with endpoint
@@ -187,7 +193,7 @@ pub fn run(config: Config) {
         let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
         println!("Listening on: http://localhost:8080");
         println!("Press Ctrl+C to stop the server");
-        
+
         axum::serve(listener, app).await.unwrap();
     });
 }
