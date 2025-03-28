@@ -1,4 +1,4 @@
-/* General styles */
+/* ========== GENERAL STYLES ========== */
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
     background-color: #1E1E1E;
@@ -14,9 +14,9 @@ body {
 }
 
 .full-width {
-    max-width: 100% !important;
-    padding: 20px 30px;
+    max-width: 100%;
     width: 100%;
+    padding: 20px 30px;
     box-sizing: border-box;
 }
 
@@ -42,7 +42,7 @@ button:hover {
     background-color: #1177BB;
 }
 
-/* Instructions */
+/* ========== INSTRUCTIONS BOX ========== */
 .instructions {
     background-color: #252526;
     border: 1px solid #333333;
@@ -56,28 +56,7 @@ button:hover {
     color: #BBBBBB;
 }
 
-/* Plot and Group styles */
-.plot-container {
-    background-color: #1E1E1E;
-    border-radius: 4px;
-    overflow: hidden;
-    width: 100%;
-    box-sizing: border-box; /* Include padding in width calculation */
-    padding: 0; /* Remove any potential padding */
-}
-
-/* Make sure uPlot takes up the full width of its container */
-.plot-container .u-over,
-.plot-container canvas {
-    width: 100% !important;
-    box-sizing: border-box;
-}
-
-/* Ensure charts don't overflow their containers on any screen size */
-.u-over {
-    max-width: 100% !important;
-}
-
+/* ========== METRIC GROUPS ========== */
 .metric-group {
     margin: 30px 0;
     border: 1px solid #333;
@@ -91,6 +70,7 @@ button:hover {
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
 }
 
+/* Group Header */
 .group-header {
     padding: 10px 15px;
     background-color: #2D2D2D;
@@ -115,6 +95,7 @@ button:hover {
     margin: 5px 0 0;
 }
 
+/* Group Toggle Button */
 .group-toggle {
     background: none;
     border: none;
@@ -135,11 +116,19 @@ button:hover {
     border-radius: 50%;
 }
 
+.group-toggle::after {
+    content: '▲';
+}
+
+.collapsed .group-toggle::after {
+    content: '▼';
+}
+
+/* Group Content */
 .group-content {
     padding: 15px;
-    transition: max-height 0.3s ease-in-out;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); /* Better responsive grid */
+    grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
     grid-gap: 20px;
     width: 100%;
     box-sizing: border-box;
@@ -149,481 +138,201 @@ button:hover {
     display: none;
 }
 
-.collapsed .group-toggle::after {
-    content: '▼';
-}
-
-.group-toggle::after {
-    content: '▲';
-}
-
-/* uPlot custom styling */
-.u-title {
-    font-size: 16px !important;
-    font-weight: 500 !important;
-    color: #CCCCCC !important;
-}
-
-.u-legend {
-    background-color: rgba(30, 30, 30, 0.8) !important;
-    border: 1px solid #333333 !important;
-    border-radius: 4px !important;
-}
-
-.u-legend th {
-    color: #BBBBBB !important;
-}
-
-.u-select {
-    background-color: rgba(86, 156, 214, 0.1) !important;
-    border: 1px solid rgba(86, 156, 214, 0.5) !important;
-}
-
-/* Responsive adjustments */
-@media (max-width: 950px) {
-    .container, .full-width {
-        padding: 10px 15px;
-    }
-    
-    h1 {
-        font-size: 1.5em;
-    }
-    
-    .instructions {
-        padding: 10px;
-    }
-    
-    .group-header {
-        padding: 8px 10px;
-    }
-    
-    .group-content {
-        padding: 10px;
-        grid-template-columns: 1fr; /* Force single column on narrower screens */
-    }
-    
-    .plot-container {
-        margin-bottom: 15px;
-    }
-}
-
-/* Tooltip styling */
-.u-tooltip {
-    position: absolute;
-    background: rgba(40, 40, 40, 0.95);
-    color: #eee;
-    border: 1px solid #555;
-    border-radius: 4px;
-    padding: 8px 12px;
-    pointer-events: none;
-    z-index: 100;
-    font-size: 12px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
-    display: none;
-    white-space: nowrap;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-    backdrop-filter: blur(2px);
-    transition: opacity 0.1s ease;
-    max-width: 300px;
-}
-
-.u-tooltip .header {
-    margin-bottom: 6px;
-    font-weight: bold;
-    color: #ddd;
-    border-bottom: 1px solid #555;
-    padding-bottom: 4px;
-}
-
-.u-tooltip .value-row {
-    display: flex;
-    justify-content: space-between;
-    margin: 3px 0;
-    align-items: center;
-}
-
-.u-tooltip .label {
-    margin-right: 16px;
-    display: flex;
-    align-items: center;
-}
-
-.u-tooltip .color-dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    margin-right: 5px;
-}
-
-.u-tooltip .value {
-    font-weight: bold;
-    font-variant-numeric: tabular-nums;
-}
-
-.uplot .u-legend {
-    display: flex;
-    flex-direction: row;
-    justify-content: flex-start;
-    align-items: center;
-    gap: 10px;
-    position: absolute;
-    left: 10px;
-    bottom: 5px;
-    background: rgba(30, 30, 30, 0.7) !important;
-    padding: 5px 8px !important;
-    border-radius: 4px;
-    border: 1px solid #333 !important;
-}
-
-.uplot .u-legend .u-legend-div {
-    display: flex;
-    align-items: center;
-    margin-right: 10px;
-}
-
-.uplot .u-legend .u-legend-div .u-legend-line {
-    width: 12px;
-    margin-right: 5px;
-}
-
-.uplot .u-legend .u-legend-div .u-legend-text {
-    color: #CCC;
-    font-size: 12px;
-}
-
-.uplot .u-legend .u-legend-div .u-legend-value {
-    display: none; /* Hide the values */
-}
-
-.uplot .u-legend .u-legend-div .u-legend-time {
-    display: none; /* Hide the time */
-}
-
-/* Add a custom legend class for static series labels */
-.static-legend {
-    display: flex;
-    justify-content: flex-start;
-    padding: 5px 8px;
-    gap: 12px;
-    margin-top: 5px;
-    font-size: 12px;
-}
-
-.static-legend-item {
-    display: flex;
-    align-items: center;
-}
-
-.static-legend-color {
-    width: 12px;
-    height: 3px;
-    margin-right: 5px;
-    display: inline-block;
-}
-
-/* CPU Heatmap specific styles */
-.cpu-heatmap-canvas {
-    image-rendering: pixelated; /* Makes the heatmap cells crisp */
-}
-
-.cpu-heatmap-container {
-    position: relative;
-    width: 100%;
-    height: 100%;
-}
-
-/* Make heatmaps take full width */
-.plot-container.full-width {
-    grid-column: 1 / -1;
-}
-
-/* Ensure uPlot heatmap layout looks good */
-.cpu-heatmap .u-over,
-.cpu-heatmap canvas {
-    width: 100% !important;
-    box-sizing: border-box;
-}
-
-/* Scatter plot styles */
-.u-scatter-point {
-    opacity: 0.8;
-    transition: opacity 0.2s ease;
-}
-
-.u-scatter-point:hover {
-    opacity: 1;
-}
-
-/* Chart type indicator in top-right corner */
-.chart-type-badge {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    padding: 3px 8px;
-    font-size: 10px;
-    font-weight: bold;
-    text-transform: uppercase;
-    background-color: rgba(0, 0, 0, 0.6);
-    color: #ccc;
-    border-radius: 4px;
-    z-index: 10;
-    pointer-events: none;
-}
-
-/* Tooltip styling */
-.u-tooltip {
-    position: absolute;
-    background: rgba(40, 40, 40, 0.95);
-    color: #eee;
-    border: 1px solid #555;
-    border-radius: 4px;
-    padding: 8px 12px;
-    pointer-events: none;
-    z-index: 100;
-    font-size: 12px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
-    display: none;
-    white-space: nowrap;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-    backdrop-filter: blur(2px);
-    transition: opacity 0.1s ease;
-    max-width: 300px;
-}
-
-.u-tooltip .header {
-    margin-bottom: 6px;
-    font-weight: bold;
-    color: #ddd;
-    border-bottom: 1px solid #555;
-    padding-bottom: 4px;
-}
-
-.u-tooltip .value-row {
-    display: flex;
-    justify-content: space-between;
-    margin: 3px 0;
-    align-items: center;
-}
-
-.u-tooltip .label {
-    margin-right: 16px;
-    display: flex;
-    align-items: center;
-}
-
-.u-tooltip .color-dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    margin-right: 5px;
-}
-
-.u-tooltip .value {
-    font-weight: bold;
-    font-variant-numeric: tabular-nums;
-}
-
-/* Static legend */
-.static-legend {
-    display: flex;
-    justify-content: flex-start;
-    padding: 5px 8px;
-    gap: 12px;
-    margin-top: 5px;
-    font-size: 12px;
-}
-
-.static-legend-item {
-    display: flex;
-    align-items: center;
-}
-
-.static-legend-color {
-    width: 12px;
-    height: 3px;
-    margin-right: 5px;
-    display: inline-block;
-}
-
-/* Additional styles for improved responsiveness and heatmap fixes */
-
-/* General spacing improvement */
-.container.full-width {
-    padding: 0 15px;
-    max-width: 100% !important;
-    box-sizing: border-box;
-}
-
-/* Improve responsive layout for plots */
-.group-content {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 20px;
-    padding: 15px;
-    width: 100%;
-}
-
-/* Make standard plots more responsive */
+/* ========== PLOT CONTAINERS ========== */
 .plot-container {
+    background-color: #1E1E1E;
+    border-radius: 4px;
+    overflow: hidden;
     flex: 1 1 600px;
     min-width: 400px;
     margin-bottom: 20px;
     position: relative;
 }
 
-/* Ensure heatmaps take full width */
 .plot-container.full-width {
     flex-basis: 100%;
     width: 100%;
     min-height: 400px;
 }
 
-/* Ensure plots are properly sized */
-.plot-container .uplot,
-.plot-container canvas {
-    width: 100% !important;
-    max-width: 100%;
+/* ========== UPLOT STYLING ========== */
+/* Chart titles */
+.u-title {
+    font-size: 16px !important;
+    font-weight: 500 !important;
+    color: #CCCCCC !important;
+    padding-top: 10px !important;
+    padding-bottom: 5px !important;
+    margin-top: 0 !important;
 }
 
-/* Allow plots to use more vertical space */
+/* Default chart height */
 .uplot {
-    height: 400px !important;
+    height: 350px !important;
+    box-sizing: border-box !important;
 }
 
-/* CPU Heatmap specific styles - updated */
-.cpu-heatmap-canvas {
-    image-rendering: pixelated; /* Makes the heatmap cells crisp */
+/* Selection area */
+.u-select {
+    background-color: rgba(86, 156, 214, 0.1) !important;
+    border: 1px solid rgba(86, 156, 214, 0.5) !important;
 }
 
-/* Heatmap legend container */
-.heatmap-legend-container {
-    background-color: rgba(30, 30, 30, 0.7);
-    border: 1px solid #333;
-    border-radius: 4px;
-    padding: 5px;
+/* Axes */
+.u-axis {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+    font-size: 11px !important;
 }
 
-/* Chart type indicator */
-.chart-type-badge {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    padding: 3px 8px;
-    font-size: 10px;
-    font-weight: bold;
-    text-transform: uppercase;
-    background-color: rgba(0, 0, 0, 0.6);
-    color: #ccc;
-    border-radius: 4px;
-    z-index: 10;
-    pointer-events: none;
-}
-
-/* Improve tooltip appearance */
-.u-tooltip {
-    position: absolute;
-    background: rgba(40, 40, 40, 0.95);
-    color: #eee;
-    border: 1px solid #555;
-    border-radius: 4px;
-    padding: 8px 12px;
-    pointer-events: none;
-    z-index: 100;
-    font-size: 12px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
-    white-space: nowrap;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-    backdrop-filter: blur(2px);
-    max-width: 300px;
-}
-
-/* Media queries for better responsive behavior */
-@media (max-width: 768px) {
-    .plot-container {
-        flex: 1 1 100%;
-        min-width: 100%;
-    }
-    
-    .uplot {
-        height: 350px !important;
-    }
-}
-
-/* For large screens, allow plots to be bigger */
-@media (min-width: 1600px) {
-    .plot-container {
-        flex: 1 1 800px;
-    }
-    
-    .uplot {
-        height: 450px !important;
-    }
-}
-
-.heatmap-legend-container {
-    background-color: rgba(30, 30, 30, 0.7);
-    border: 1px solid #333;
-    border-radius: 4px;
-    padding: 5px;
-    bottom: 25px;
-    left: 10px;
-    position: absolute;
-    z-index: 5;
-}
-
-.chart-type-badge {
-    display: none; /* Hide all chart type badges */
-}
-
-.cpu-heatmap {
-    padding-left: 40px; /* Add space for CPU labels */
-}
-
-.u-tooltip {
-    position: absolute;
-    background: rgba(40, 40, 40, 0.95);
-    color: #eee;
-    border: 1px solid #555;
-    border-radius: 4px;
-    padding: 8px 12px;
-    pointer-events: none;
-    z-index: 100;
-    font-size: 12px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
-    white-space: nowrap;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-    backdrop-filter: blur(2px);
-    max-width: 300px;
-    display: none; /* Initially hidden */
-}
-
-/* Fix heatmap positioning and overlapping elements */
-.cpu-heatmap {
-    position: relative;
-    padding-left: 60px !important; /* Add space for CPU labels */
-}
-
-/* Fix heatmap legend positioning */
-.heatmap-legend-container {
-    position: absolute;
-    bottom: 30px !important;
-    left: 10px !important;
-    z-index: 100 !important;
+/* Legend */
+.u-legend {
     background-color: rgba(30, 30, 30, 0.8) !important;
-    border: 1px solid #333 !important;
+    border: 1px solid #333333 !important;
     border-radius: 4px !important;
-    padding: 5px !important;
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: flex-start !important;
+    align-items: center !important;
+    gap: 10px !important;
+    position: absolute !important;
+    left: 10px !important;
+    bottom: 5px !important;
+    padding: 5px 8px !important;
 }
 
-/* Hide the dummy and time labels */
+.u-legend .u-legend-div {
+    display: flex !important;
+    align-items: center !important;
+    margin-right: 10px !important;
+}
+
+.u-legend .u-legend-div .u-legend-line {
+    width: 12px !important;
+    margin-right: 5px !important;
+}
+
+.u-legend .u-legend-div .u-legend-text {
+    color: #CCC !important;
+    font-size: 12px !important;
+}
+
+/* Hide Time and Dummy labels */
 .u-legend [data-idx="0"],
 .u-legend [data-idx="1"] {
     display: none !important;
 }
 
-/* Custom tooltip styles */
+/* Hide values and time in legend */
+.u-legend .u-legend-div .u-legend-value,
+.u-legend .u-legend-div .u-legend-time {
+    display: none !important;
+}
+
+/* ========== STATIC LEGEND ========== */
+.static-legend {
+    display: flex;
+    justify-content: flex-start;
+    padding: 5px 8px;
+    gap: 12px;
+    margin-top: 5px;
+    font-size: 12px;
+}
+
+.static-legend-item {
+    display: flex;
+    align-items: center;
+}
+
+.static-legend-color {
+    width: 12px;
+    height: 3px;
+    margin-right: 5px;
+    display: inline-block;
+}
+
+/* ========== TOOLTIP STYLING ========== */
+.u-tooltip {
+    position: absolute;
+    background: rgba(40, 40, 40, 0.95);
+    color: #eee;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 8px 12px;
+    pointer-events: none;
+    z-index: 1000;
+    font-size: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
+    white-space: nowrap;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(2px);
+    max-width: 300px;
+    display: none;
+}
+
+.u-tooltip .header {
+    margin-bottom: 6px;
+    font-weight: bold;
+    color: #ddd;
+    border-bottom: 1px solid #555;
+    padding-bottom: 4px;
+}
+
+.u-tooltip .value-row {
+    display: flex;
+    justify-content: space-between;
+    margin: 3px 0;
+    align-items: center;
+}
+
+.u-tooltip .label {
+    margin-right: 16px;
+    display: flex;
+    align-items: center;
+}
+
+.u-tooltip .color-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 5px;
+}
+
+.u-tooltip .value {
+    font-weight: bold;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ========== HEATMAP SPECIFIC STYLES ========== */
+/* Main heatmap container */
+.cpu-heatmap {
+    position: relative;
+    padding-bottom: 30px !important;
+    margin-bottom: 0 !important;
+}
+
+/* Heatmap canvas */
+.cpu-heatmap-canvas {
+    position: absolute;
+    pointer-events: none;
+    z-index: 10;
+    image-rendering: pixelated; /* Makes heatmap cells crisp */
+}
+
+/* Heatmap legend container */
+.heatmap-legend-container {
+    position: absolute;
+    bottom: 45px;
+    left: 70px;
+    z-index: 100;
+    background-color: rgba(30, 30, 30, 0.8);
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 5px;
+    font-size: 10px;
+}
+
+/* Heatmap tooltip */
 .heatmap-tooltip {
     position: absolute;
     background: rgba(40, 40, 40, 0.95);
@@ -642,103 +351,185 @@ button:hover {
     display: none;
 }
 
-/* Custom selection styles */
+/* Heatmap selection */
 .heatmap-selection {
     background-color: rgba(86, 156, 214, 0.2);
     border: 1px solid rgba(86, 156, 214, 0.5);
     pointer-events: none;
 }
 
-/* CSS updates for better chart alignment */
-.cpu-heatmap {
-    padding-left: 60px !important; /* Space for CPU labels */
-    padding-bottom: 30px !important; /* Match spacing with line charts */
-    margin-bottom: 0 !important; /* Remove any bottom margin */
-}
-
-/* Match the Y-axis label styling */
-.cpu-heatmap text {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-    font-size: 11px !important;
-    fill: #888888 !important;
-    color: #888888 !important;
-}
-
-/* Fix legend positioning */
-.heatmap-legend-container {
-    position: absolute;
-    bottom: 45px !important; /* Move up to avoid time labels */
-    left: 70px !important; /* Move right to avoid first label */
-    z-index: 100 !important;
-    background-color: rgba(30, 30, 30, 0.8) !important;
-    border: 1px solid #333 !important;
-    border-radius: 4px !important;
-    padding: 5px !important;
-    font-size: 10px !important;
-}
-
-/* Fix alignment of chart areas */
-.plot-container {
-    margin-bottom: 15px !important;
-}
-
-/* Ensure consistent spacing between charts */
-.group-content {
-    gap: 15px !important;
-}
-
-/* Ensure X-axis alignment between charts */
-.uplot .u-axis {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-    font-size: 11px !important;
-}
-
-/* Ensure all charts can resize properly */
-.uplot {
-    width: 100% !important;
-}
-
-/* Make sure heatmap fills available space */
-.cpu-heatmap-canvas {
-    width: 100%;
-}
-
-/* Improve chart layout in the CPU group */
+/* ========== CPU GROUP SPECIFIC STYLES ========== */
+/* Special layout for CPU charts (side-by-side) */
 #group-1 .group-content {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
     align-items: flex-start;
 }
 
-/* Ensure tooltips work properly in side-by-side layout */
-.u-tooltip, .heatmap-tooltip {
-    z-index: 1000 !important;
+#group-1 .plot-container {
+    flex: 1 1 calc(50% - 20px);
+    min-width: 400px;
+    max-width: calc(50% - 10px);
 }
 
-/* CSS to fix heatmap alignment */
-.cpu-heatmap-canvas {
-    position: absolute !important;
-    top: 0 !important;
-    left: 0 !important;
-    pointer-events: none !important; /* Allow events to pass through */
-    z-index: 10 !important; /* Above the plot but below tooltips */
+#group-1 .plot-container.full-width {
+    flex: 1 1 calc(50% - 20px);
+    min-width: 400px;
+    max-width: calc(50% - 10px);
+    width: calc(50% - 10px) !important;
 }
 
-.cpu-heatmap .u-over {
-    z-index: 20 !important; /* Ensure interactions work */
+/* ========== RESPONSIVE STYLING ========== */
+@media (max-width: 992px) {
+    /* Stack CPU charts vertically on smaller screens */
+    #group-1 .plot-container,
+    #group-1 .plot-container.full-width {
+        flex: 1 1 100%;
+        max-width: 100%;
+        width: 100% !important;
+    }
 }
 
-.heatmap-tooltip {
-    z-index: 1000 !important; /* Keep tooltips above everything */
+@media (max-width: 768px) {
+    /* Adjustments for small screens */
+    .plot-container {
+        flex: 1 1 100%;
+        min-width: 100%;
+    }
+    
+    .uplot {
+        height: 350px !important;
+    }
+    
+    .container, .full-width {
+        padding: 10px 15px;
+    }
+    
+    h1 {
+        font-size: 1.5em;
+    }
+    
+    .instructions {
+        padding: 10px;
+    }
+    
+    .group-header {
+        padding: 8px 10px;
+    }
+    
+    .group-content {
+        padding: 10px;
+        grid-template-columns: 1fr;
+    }
+    
+    .plot-container {
+        margin-bottom: 15px;
+    }
 }
 
-/* Ensure uPlot doesn't override our positioning */
+@media (min-width: 1600px) {
+    /* Optimizations for large screens */
+    .plot-container {
+        flex: 1 1 800px;
+    }
+    
+    .uplot {
+        height: 450px !important;
+    }
+}
+
+
+/* === Here be dragons === */
+/* Ensure the main uPlot container has positioning context */
 .uplot {
     position: relative !important;
 }
 
-/* Debug helper - add borders to see alignment (can be removed in production) */
+/* Style for the canvas wrapper */
+.cpu-heatmap-wrapper {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: visible;
+    z-index: 10;
+}
+
+/* Ensure heatmap canvas doesn't have conflicting positioning */
+.cpu-heatmap-canvas {
+    position: absolute;
+    image-rendering: pixelated; /* Makes heatmap cells crisp */
+    z-index: 10;
+    pointer-events: none;
+}
+
+/* Ensure .u-over doesn't have conflicting z-index */
+.cpu-heatmap .u-over {
+    z-index: 20 !important; /* Ensure this is above the canvas for interaction */
+}
+
+/* Ensure the tooltip stays above everything */
+.heatmap-tooltip {
+    z-index: 1000 !important;
+}
+
+/* Remove any padding-left on .cpu-heatmap since we're handling positioning in JS */
+.cpu-heatmap {
+    padding-left: 0 !important;
+}
+
+/* Make sure the chart's bounding box is visible in debug mode */
+.debug-mode .u-bbox {
+    border: 1px dashed blue !important;
+}
+
+/* Debug helper for the heatmap canvas in debug mode */
 .debug-mode .cpu-heatmap-canvas {
     border: 1px dashed red !important;
 }
-.debug-mode .u-over {
-    border: 1px dashed green !important;
+
+/* Reset any existing styles that might interfere with heatmap positioning */
+.cpu-heatmap-canvas,
+.manual-heatmap-canvas,
+.cpu-heatmap-wrapper {
+    position: absolute !important;
+    pointer-events: none !important;
+    border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* Ensure the uPlot container has proper positioning */
+.uplot {
+    position: relative !important;
+}
+
+/* Make sure the heatmap canvas is pixelated for crisp cell rendering */
+.manual-heatmap-canvas {
+    image-rendering: pixelated !important;
+    z-index: 10 !important;
+}
+
+/* Ensure tooltip stays above everything */
+.heatmap-tooltip {
+    z-index: 1000 !important;
+}
+
+/* Remove any padding that might interfere with positioning */
+.cpu-heatmap {
+    padding-left: 0 !important; 
+}
+
+/* Legend container styling */
+.heatmap-legend-container {
+    position: absolute !important;
+    z-index: 100 !important;
+}
+
+/* Ensure proper z-index for interactive elements */
+.cpu-heatmap .u-over {
+    z-index: 20 !important; 
 }
