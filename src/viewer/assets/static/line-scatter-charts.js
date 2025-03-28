@@ -24,12 +24,6 @@ function createLineOrScatterChart(containerId, seriesData, containerWidth, group
     // Create static legend plugin
     const staticLegend = createStaticLegendPlugin(seriesData.series);
     
-    // Add a chart type badge
-    const chartTypeBadge = document.createElement('div');
-    chartTypeBadge.className = 'chart-type-badge';
-    chartTypeBadge.textContent = isScatter ? 'Scatter' : 'Line';
-    container.appendChild(chartTypeBadge);
-    
     // Improved responsive handling
     const responsivePlugin = {
         hooks: {

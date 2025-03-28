@@ -71,7 +71,7 @@ fn setup_files() -> std::io::Result<()> {
     Ok(())
 }
 
-// Add these new struct definitions in the mod.rs file 
+// Add these new struct definitions in the mod.rs file
 // alongside the existing struct definitions
 
 // Enum to represent different chart types
@@ -89,7 +89,7 @@ struct SeriesInfo {
     name: String,
     values: Vec<f64>,
     color: String,
-    id: Option<String>, // For special identification, e.g., CPU core 
+    id: Option<String>, // For special identification, e.g., CPU core
 }
 
 // Base structure for all chart types
@@ -118,14 +118,14 @@ fn create_line_chart(
     series_data: Vec<(&str, f64, f64, f64, &str)>,
 ) -> TimeSeriesData {
     let mut series_vec = Vec::new();
-    
+
     // Create each series
     for (name, freq, amp, phase, color) in series_data {
         let values = timestamps
             .iter()
             .map(|&t| amp * ((t * freq) + phase).sin())
             .collect();
-            
+
         series_vec.push(SeriesInfo {
             name: name.to_string(),
             values,
@@ -133,7 +133,7 @@ fn create_line_chart(
             id: None,
         });
     }
-    
+
     TimeSeriesData {
         chart_type: ChartType::Line,
         timestamps: timestamps.to_owned(),
@@ -151,7 +151,7 @@ fn create_line_chart_with_offset(
     series_data: Vec<(&str, f64, f64, f64, f64, &str)>,
 ) -> TimeSeriesData {
     let mut series_vec = Vec::new();
-    
+
     // Create each series with offset
     // Parameters: (name, freq, amp, phase, offset, color)
     for (name, freq, amp, phase, offset, color) in series_data {
@@ -159,7 +159,7 @@ fn create_line_chart_with_offset(
             .iter()
             .map(|&t| amp * ((t * freq) + phase).sin() + offset)
             .collect();
-            
+
         series_vec.push(SeriesInfo {
             name: name.to_string(),
             values,
@@ -167,7 +167,7 @@ fn create_line_chart_with_offset(
             id: None,
         });
     }
-    
+
     TimeSeriesData {
         chart_type: ChartType::Line,
         timestamps: timestamps.to_owned(),
@@ -185,13 +185,13 @@ fn create_scatter_chart(
     series_data: Vec<(&str, f64, f64, f64, f64, &str)>,
 ) -> TimeSeriesData {
     let mut series_vec = Vec::new();
-    
+
     // Create each series with noise for scatter effect
     // Parameters: (name, freq, amp, phase, noise_factor, color)
     for (name, freq, amp, phase, noise_factor, color) in series_data {
         use rand::Rng;
         let mut rng = rand::thread_rng();
-        
+
         let values = timestamps
             .iter()
             .map(|&t| {
@@ -200,7 +200,7 @@ fn create_scatter_chart(
                 base + noise
             })
             .collect();
-            
+
         series_vec.push(SeriesInfo {
             name: name.to_string(),
             values,
@@ -208,7 +208,7 @@ fn create_scatter_chart(
             id: None,
         });
     }
-    
+
     TimeSeriesData {
         chart_type: ChartType::Scatter,
         timestamps: timestamps.to_owned(),
@@ -226,40 +226,40 @@ fn create_cpu_heatmap(
     num_cpus: usize,
 ) -> TimeSeriesData {
     let mut series_vec = Vec::new();
-    
+
     // Create data for each CPU
     for cpu_idx in 0..num_cpus {
         use rand::Rng;
         let mut rng = rand::thread_rng();
-        
+
         // Generate different patterns for each CPU
         let freq = 0.05 + (cpu_idx as f64 * 0.01); // Slightly different frequency per CPU
-        let phase = (cpu_idx as f64) * 0.5;  // Different phase per CPU
-        let amplitude = 25.0 + (cpu_idx as f64 * 2.0);  // Different amplitude per CPU
-        let offset = 20.0 + (cpu_idx as f64 * 3.0);     // Different offset per CPU
-        
+        let phase = (cpu_idx as f64) * 0.5; // Different phase per CPU
+        let amplitude = 25.0 + (cpu_idx as f64 * 2.0); // Different amplitude per CPU
+        let offset = 20.0 + (cpu_idx as f64 * 3.0); // Different offset per CPU
+
         // Create the CPU's utilization pattern
         let values = timestamps
             .iter()
             .map(|&t| {
                 // Base sine wave for periodic behavior
                 let base = offset + amplitude * ((t * freq) + phase).sin();
-                
+
                 // Add some randomness for more realistic data
                 let noise = rng.gen::<f64>() * 15.0;
-                
+
                 // Add occasional spikes for some CPUs
                 let spike = if rng.gen::<f64>() < 0.01 && cpu_idx % 2 == 0 {
                     30.0
                 } else {
                     0.0
                 };
-                
+
                 // Combine and clamp to 0-100 range
                 (base + noise + spike).max(0.0).min(100.0)
             })
             .collect();
-        
+
         // Each CPU gets its own series with a unique ID
         series_vec.push(SeriesInfo {
             name: format!("CPU {}", cpu_idx),
@@ -268,7 +268,7 @@ fn create_cpu_heatmap(
             id: Some(format!("cpu{}", cpu_idx)),
         });
     }
-    
+
     TimeSeriesData {
         chart_type: ChartType::Heatmap,
         timestamps: timestamps.to_owned(),
@@ -296,13 +296,13 @@ fn generate_example_metric_groups() -> Vec<MetricGroup> {
                         ("System", 0.1, 10.0, 0.0, 30.0, "#569CD6"),
                         ("User", 0.1, 15.0, 1.0, 20.0, "#4EC9B0"),
                         ("IO Wait", 0.2, 5.0, 0.5, 5.0, "#CE9178"),
-                    ]
+                    ],
                 ),
                 create_cpu_heatmap(
                     &timestamps,
                     "Per-CPU Utilization",
                     "%",
-                    8 // 8 CPU cores
+                    8, // 8 CPU cores
                 ),
                 // Removed CPU Load Average chart
             ],
@@ -320,15 +320,13 @@ fn generate_example_metric_groups() -> Vec<MetricGroup> {
                         ("Used", 0.01, 1.0, 0.0, 8.0, "#CE9178"),
                         ("Cached", 0.02, 0.5, 1.0, 4.0, "#DCDCAA"),
                         ("Free", 0.015, 0.8, 0.5, 4.0, "#569CD6"),
-                    ]
+                    ],
                 ),
                 create_line_chart_with_offset(
                     &timestamps,
                     "Swap Usage",
                     "MB",
-                    vec![
-                        ("Used", 0.08, 100.0, 0.5, 250.0, "#DCDCAA"),
-                    ]
+                    vec![("Used", 0.08, 100.0, 0.5, 250.0, "#DCDCAA")],
                 ),
             ],
         },
@@ -343,7 +341,7 @@ fn generate_example_metric_groups() -> Vec<MetricGroup> {
                     vec![
                         ("Ingress", 0.05, 200.0, 0.0, 500.0, "#9CDCFE"),
                         ("Egress", 0.05, 150.0, 1.0, 300.0, "#B5CEA8"),
-                    ]
+                    ],
                 ),
                 create_scatter_chart(
                     &timestamps,
@@ -353,7 +351,7 @@ fn generate_example_metric_groups() -> Vec<MetricGroup> {
                         ("p50", 0.1, 2.0, 0.0, 1.0, "#9CDCFE"),
                         ("p90", 0.1, 4.0, 0.5, 2.0, "#CE9178"),
                         ("p99", 0.1, 8.0, 1.0, 5.0, "#CC6666"),
-                    ]
+                    ],
                 ),
             ],
         },
@@ -368,7 +366,7 @@ fn generate_example_metric_groups() -> Vec<MetricGroup> {
                     vec![
                         ("Read", 0.15, 500.0, 3.0, 1500.0, "#CC6666"),
                         ("Write", 0.1, 300.0, 0.0, 800.0, "#C586C0"),
-                    ]
+                    ],
                 ),
                 create_scatter_chart(
                     &timestamps,
@@ -377,10 +375,10 @@ fn generate_example_metric_groups() -> Vec<MetricGroup> {
                     vec![
                         ("Read", 0.1, 0.5, 0.0, 0.5, "#CC6666"),
                         ("Write", 0.15, 0.8, 2.5, 1.0, "#C586C0"),
-                    ]
+                    ],
                 ),
             ],
-        }
+        },
     ];
 
     groups

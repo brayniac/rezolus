@@ -23,6 +23,171 @@
         </div>
     </div>
 
+    <style>
+        /* Hide 'Time' and 'Dummy' labels from legend */
+        .u-legend [data-idx="0"],
+        .u-legend [data-idx="1"] {
+            display: none !important;
+        }
+        
+        /* Hide chart type badges */
+        .chart-type-badge {
+            display: none;
+        }
+        
+        /* Position heatmap legend */
+        .heatmap-legend-container {
+            position: absolute;
+            bottom: 25px;
+            left: 10px;
+            z-index: 5;
+        }
+        
+        /* Add space for CPU labels */
+        .cpu-heatmap .u-over {
+            padding-left: 40px;
+        }
+    </style>
+
+    <style>
+        /* Hide Time and Dummy labels in the legend */
+        .u-legend [data-idx="0"],
+        .u-legend [data-idx="1"] {
+            display: none !important;
+        }
+        
+        /* Position heatmap legend properly */
+        .heatmap-legend-container {
+            position: absolute;
+            bottom: 30px !important;
+            left: 10px !important;
+            z-index: 100;
+            background-color: rgba(30, 30, 30, 0.8);
+            border: 1px solid #333;
+            border-radius: 4px;
+            padding: 5px;
+        }
+        
+        /* Add space for CPU labels and ensure they're visible */
+        .cpu-heatmap {
+            padding-left: 60px !important;
+        }
+        
+        /* Remove any overlapping elements at the bottom of the heatmap */
+        .cpu-heatmap .u-legend {
+            display: none !important;
+        }
+        
+        /* Fix tooltip visibility */
+        .heatmap-tooltip {
+            z-index: 1000 !important;
+        }
+    </style>
+
+    <style>
+        /* Fix chart spacing and alignment */
+        .plot-container {
+            margin-bottom: 15px !important;
+        }
+        
+        /* Ensure consistent spacing in the grid layout */
+        .group-content {
+            display: grid;
+            grid-gap: 15px !important;
+        }
+        
+        /* Ensure heatmap is properly sized */
+        .plot-container.full-width {
+            width: 100% !important;
+            margin-bottom: 15px !important;
+        }
+        
+        /* Better match Y-axis labels */
+        .cpu-heatmap text {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+            font-size: 11px !important;
+            fill: #888888 !important;
+        }
+        
+        /* Position legend to avoid time labels */
+        .heatmap-legend-container {
+            position: absolute !important;
+            bottom: 45px !important;
+            left: 70px !important;
+            z-index: 100 !important;
+        }
+        
+        /* Hide Time and Dummy labels */
+        .u-legend [data-idx="0"],
+        .u-legend [data-idx="1"] {
+            display: none !important;
+        }
+    </style>
+
+    <style>
+        /* Make CPU charts display side-by-side when there's enough screen space */
+        #group-1 .group-content {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        
+        /* Set width for each CPU chart to allow side-by-side layout */
+        #group-1 .plot-container {
+            flex: 1 1 calc(50% - 20px);
+            min-width: 400px;
+            max-width: calc(50% - 10px);
+        }
+        
+        /* Ensure the heatmap isn't forced to take full width */
+        #group-1 .plot-container.full-width {
+            flex: 1 1 calc(50% - 20px);
+            min-width: 400px;
+            max-width: calc(50% - 10px);
+            width: calc(50% - 10px) !important;
+        }
+        
+        /* For smaller screens, allow vertical stacking */
+        @media (max-width: 992px) {
+            #group-1 .plot-container,
+            #group-1 .plot-container.full-width {
+                flex: 1 1 100%;
+                max-width: 100%;
+                width: 100% !important;
+            }
+        }
+    </style>
+<!-- 
+    <style>
+        /* Ensure consistent chart height and padding */
+        .cpu-heatmap,
+        .uplot {
+            height: 350px !important;
+            box-sizing: border-box !important;
+        }
+        
+        /* Fix alignment of x-axis time labels */
+        .cpu-heatmap .u-axis {
+            font-size: 11px !important;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+        }
+        
+        /* Make both charts have the same title positioning */
+        .cpu-heatmap .u-title,
+        .uplot .u-title {
+            font-size: 16px !important;
+            padding-top: 10px !important;
+            padding-bottom: 5px !important;
+            margin-top: 0 !important;
+        }
+        
+        /* Ensure both charts in the CPU group have the same dimensions */
+/*        #group-1 .plot-container {
+            min-height: 350px !important;
+            height: 350px !important;
+        }*/
+    </style> -->
+
     <!-- Load supporting scripts -->
     <script src="/static/zoom-controller.js"></script>
     <script src="/static/time-axis-formatter.js"></script>
@@ -141,8 +306,9 @@
                 group.series.forEach((series, seriesIdx) => {
                     const plotContainer = document.createElement('div');
                     
-                    // Give full width for heatmaps
-                    if (series.chart_type === 'heatmap') {
+                    // Special handling for the CPU group (groupIdx === 0)
+                    // Don't make heatmaps full-width in the CPU group
+                    if (series.chart_type === 'heatmap' && groupIdx !== 0) {
                         plotContainer.className = 'plot-container full-width';
                     } else {
                         plotContainer.className = 'plot-container';
@@ -230,6 +396,38 @@
                 });
             });
         }
+
+        function checkHeatmapAlignment() {
+            const heatmaps = document.querySelectorAll('.cpu-heatmap');
+            heatmaps.forEach((heatmap, idx) => {
+                const canvas = heatmap.querySelector('.cpu-heatmap-canvas');
+                const over = heatmap.querySelector('.u-over');
+                
+                if (canvas && over) {
+                    console.log(`Heatmap #${idx} canvas:`, {
+                        width: canvas.width,
+                        height: canvas.height,
+                        offsetLeft: canvas.offsetLeft,
+                        offsetTop: canvas.offsetTop
+                    });
+                    
+                    console.log(`Heatmap #${idx} interaction area:`, {
+                        width: over.offsetWidth,
+                        height: over.offsetHeight,
+                        offsetLeft: over.offsetLeft,
+                        offsetTop: over.offsetTop
+                    });
+                    
+                    // Check for misalignment
+                    if (Math.abs(canvas.width - over.offsetWidth) > 5 || 
+                        Math.abs(canvas.height - over.offsetHeight) > 5 ||
+                        Math.abs(canvas.offsetLeft - over.offsetLeft) > 5 ||
+                        Math.abs(canvas.offsetTop - over.offsetTop) > 5) {
+                        console.warn(`⚠️ Heatmap #${idx} has alignment issues!`);
+                    }
+                }
+            });
+        }
         
         // Function to set up improved resize handlers - updated to use window.zoomController
         function setupResizeHandlers() {
@@ -277,6 +475,10 @@
                         });
                     }
                 }, 250); // Wait for 250ms after last resize event
+            });
+
+            window.addEventListener('load', () => {
+                setTimeout(checkHeatmapAlignment, 500);
             });
             
             // Also set up a resize check on window load for initial sizing

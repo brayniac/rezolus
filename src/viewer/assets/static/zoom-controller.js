@@ -100,7 +100,22 @@ class ZoomController {
             try {
                 const rect = plot.over.getBoundingClientRect();
                 const xPos = e.clientX - rect.left;
-                const xVal = plot.posToVal(xPos, 'x');
+                let xVal;
+                
+                try {
+                    xVal = plot.posToVal(xPos, 'x');
+                } catch (err) {
+                    this.debug(`⚠️ Error converting position to value: ${err.message}`);
+                    selectionActive = false;
+                    return;
+                }
+                
+                // Check if the value is valid
+                if (isNaN(xVal)) {
+                    this.debug(`⚠️ Invalid X value from posToVal: NaN`);
+                    selectionActive = false;
+                    return;
+                }
                 
                 this.debug(`🖱️ Plot ${plot._id} selection ended at x=${xVal.toFixed(2)} (${this.formatTime(xVal)})`);
                 
@@ -112,32 +127,57 @@ class ZoomController {
                     const selectLeft = parseInt(selectElem.style.left, 10);
                     const selectWidth = parseInt(selectElem.style.width, 10);
                     
-                    // Convert selection pixels to values
-                    const minX = plot.posToVal(selectLeft, 'x');
-                    const maxX = plot.posToVal(selectLeft + selectWidth, 'x');
+                    // Make sure we have valid numbers
+                    if (isNaN(selectLeft) || isNaN(selectWidth)) {
+                        this.debug(`⚠️ Invalid selection coordinates: left=${selectLeft}, width=${selectWidth}`);
+                        selectionActive = false;
+                        return;
+                    }
                     
-                    this.debug(`🔍 Plot ${plot._id} selection detected: ${minX.toFixed(2)}-${maxX.toFixed(2)} (width: ${selectWidth}px)`);
-                    this.debug(`📅 Time range: ${this.formatTime(minX)} to ${this.formatTime(maxX)}`);
+                    let minX, maxX;
                     
-                    // Check if selection is meaningful (not too small)
-                    if (selectWidth > 5 && Math.abs(maxX - minX) > 1) {
-                        // This happens before uPlot automatically zooms the plot
-                        // We need to manually sync all plots to this range
-                        this.syncZoom(plot, minX, maxX);
+                    try {
+                        // Convert selection pixels to values
+                        minX = plot.posToVal(selectLeft, 'x');
+                        maxX = plot.posToVal(selectLeft + selectWidth, 'x');
                         
-                        // Also update this plot to make sure it gets the exact same range
-                        plot.setScale('x', {
-                            min: minX,
-                            max: maxX
-                        });
+                        // Check if the values are valid
+                        if (isNaN(minX) || isNaN(maxX)) {
+                            this.debug(`⚠️ Invalid range values: min=${minX}, max=${maxX}`);
+                            selectionActive = false;
+                            return;
+                        }
                         
-                        // Clear the selection
-                        plot.setSelect({
-                            width: 0,
-                            height: 0
-                        });
-                    } else {
-                        this.debug(`ℹ️ Plot ${plot._id} selection too small, ignoring`);
+                        // Ensure min < max (handle right-to-left selections)
+                        if (minX > maxX) {
+                            [minX, maxX] = [maxX, minX];
+                        }
+                        
+                        this.debug(`🔍 Plot ${plot._id} selection detected: ${minX.toFixed(2)}-${maxX.toFixed(2)} (width: ${selectWidth}px)`);
+                        this.debug(`📅 Time range: ${this.formatTime(minX)} to ${this.formatTime(maxX)}`);
+                        
+                        // Check if selection is meaningful (not too small)
+                        if (selectWidth > 5 && Math.abs(maxX - minX) > 1) {
+                            // This happens before uPlot automatically zooms the plot
+                            // We need to manually sync all plots to this range
+                            this.syncZoom(plot, minX, maxX);
+                            
+                            // Also update this plot to make sure it gets the exact same range
+                            plot.setScale('x', {
+                                min: minX,
+                                max: maxX
+                            });
+                            
+                            // Clear the selection
+                            plot.setSelect({
+                                width: 0,
+                                height: 0
+                            });
+                        } else {
+                            this.debug(`ℹ️ Plot ${plot._id} selection too small, ignoring`);
+                        }
+                    } catch (err) {
+                        this.debug(`❌ Error calculating selection range: ${err.message}`);
                     }
                 } else {
                     // No visible selection, might be a click without drag
@@ -160,6 +200,12 @@ class ZoomController {
 
     // Method to sync all plots to a specific range
     syncZoom(sourcePlot, xMin, xMax) {
+        // Validate input parameters
+        if (isNaN(xMin) || isNaN(xMax)) {
+            this.debug(`❌ Invalid zoom range: min=${xMin}, max=${xMax}`);
+            return;
+        }
+        
         if (this.syncLock) {
             this.debug(`⚠️ Sync lock active, skipping sync from plot ${sourcePlot._id}`);
             return;
@@ -429,15 +475,28 @@ class ZoomController {
         });
     }
     
-    // Format time for display
+    // Format time for display with error handling
     formatTime(timestamp) {
-        const date = new Date(timestamp * 1000);
-        return date.toLocaleTimeString([], {
-            hour: '2-digit', 
-            minute: '2-digit', 
-            second: '2-digit', 
-            hour12: false
-        });
+        if (timestamp === undefined || timestamp === null || isNaN(timestamp)) {
+            return "Invalid Date";
+        }
+        
+        try {
+            const date = new Date(timestamp * 1000);
+            if (isNaN(date.getTime())) {
+                return "Invalid Date";
+            }
+            
+            return date.toLocaleTimeString([], {
+                hour: '2-digit', 
+                minute: '2-digit', 
+                second: '2-digit', 
+                hour12: false
+            });
+        } catch (err) {
+            console.error("Error formatting time:", err);
+            return "Error";
+        }
     }
     
     // Debug logging

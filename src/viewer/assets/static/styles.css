@@ -561,3 +561,184 @@ button:hover {
         height: 450px !important;
     }
 }
+
+.heatmap-legend-container {
+    background-color: rgba(30, 30, 30, 0.7);
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 5px;
+    bottom: 25px;
+    left: 10px;
+    position: absolute;
+    z-index: 5;
+}
+
+.chart-type-badge {
+    display: none; /* Hide all chart type badges */
+}
+
+.cpu-heatmap {
+    padding-left: 40px; /* Add space for CPU labels */
+}
+
+.u-tooltip {
+    position: absolute;
+    background: rgba(40, 40, 40, 0.95);
+    color: #eee;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 8px 12px;
+    pointer-events: none;
+    z-index: 100;
+    font-size: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
+    white-space: nowrap;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(2px);
+    max-width: 300px;
+    display: none; /* Initially hidden */
+}
+
+/* Fix heatmap positioning and overlapping elements */
+.cpu-heatmap {
+    position: relative;
+    padding-left: 60px !important; /* Add space for CPU labels */
+}
+
+/* Fix heatmap legend positioning */
+.heatmap-legend-container {
+    position: absolute;
+    bottom: 30px !important;
+    left: 10px !important;
+    z-index: 100 !important;
+    background-color: rgba(30, 30, 30, 0.8) !important;
+    border: 1px solid #333 !important;
+    border-radius: 4px !important;
+    padding: 5px !important;
+}
+
+/* Hide the dummy and time labels */
+.u-legend [data-idx="0"],
+.u-legend [data-idx="1"] {
+    display: none !important;
+}
+
+/* Custom tooltip styles */
+.heatmap-tooltip {
+    position: absolute;
+    background: rgba(40, 40, 40, 0.95);
+    color: #eee;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 8px 12px;
+    pointer-events: none;
+    z-index: 1000;
+    font-size: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
+    white-space: nowrap;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(2px);
+    max-width: 300px;
+    display: none;
+}
+
+/* Custom selection styles */
+.heatmap-selection {
+    background-color: rgba(86, 156, 214, 0.2);
+    border: 1px solid rgba(86, 156, 214, 0.5);
+    pointer-events: none;
+}
+
+/* CSS updates for better chart alignment */
+.cpu-heatmap {
+    padding-left: 60px !important; /* Space for CPU labels */
+    padding-bottom: 30px !important; /* Match spacing with line charts */
+    margin-bottom: 0 !important; /* Remove any bottom margin */
+}
+
+/* Match the Y-axis label styling */
+.cpu-heatmap text {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+    font-size: 11px !important;
+    fill: #888888 !important;
+    color: #888888 !important;
+}
+
+/* Fix legend positioning */
+.heatmap-legend-container {
+    position: absolute;
+    bottom: 45px !important; /* Move up to avoid time labels */
+    left: 70px !important; /* Move right to avoid first label */
+    z-index: 100 !important;
+    background-color: rgba(30, 30, 30, 0.8) !important;
+    border: 1px solid #333 !important;
+    border-radius: 4px !important;
+    padding: 5px !important;
+    font-size: 10px !important;
+}
+
+/* Fix alignment of chart areas */
+.plot-container {
+    margin-bottom: 15px !important;
+}
+
+/* Ensure consistent spacing between charts */
+.group-content {
+    gap: 15px !important;
+}
+
+/* Ensure X-axis alignment between charts */
+.uplot .u-axis {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+    font-size: 11px !important;
+}
+
+/* Ensure all charts can resize properly */
+.uplot {
+    width: 100% !important;
+}
+
+/* Make sure heatmap fills available space */
+.cpu-heatmap-canvas {
+    width: 100%;
+}
+
+/* Improve chart layout in the CPU group */
+#group-1 .group-content {
+    align-items: flex-start;
+}
+
+/* Ensure tooltips work properly in side-by-side layout */
+.u-tooltip, .heatmap-tooltip {
+    z-index: 1000 !important;
+}
+
+/* CSS to fix heatmap alignment */
+.cpu-heatmap-canvas {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    pointer-events: none !important; /* Allow events to pass through */
+    z-index: 10 !important; /* Above the plot but below tooltips */
+}
+
+.cpu-heatmap .u-over {
+    z-index: 20 !important; /* Ensure interactions work */
+}
+
+.heatmap-tooltip {
+    z-index: 1000 !important; /* Keep tooltips above everything */
+}
+
+/* Ensure uPlot doesn't override our positioning */
+.uplot {
+    position: relative !important;
+}
+
+/* Debug helper - add borders to see alignment (can be removed in production) */
+.debug-mode .cpu-heatmap-canvas {
+    border: 1px dashed red !important;
+}
+.debug-mode .u-over {
+    border: 1px dashed green !important;
+}

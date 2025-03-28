@@ -19,7 +19,7 @@ function createCpuHeatmap(containerId, data, options = {}) {
     const defaults = {
         title: "CPU Heatmap",
         width: container.clientWidth,
-        height: 400,
+        height: 350, // Match line chart height
         colorScale: ["#100060", "#4000A0", "#8000C0", "#A000E0", "#C000FF", "#FF2000", "#FF6000", "#FFA000", "#FFE000"],
         minValue: 0,
         maxValue: 100,
@@ -32,48 +32,99 @@ function createCpuHeatmap(containerId, data, options = {}) {
     const { timestamps, cpuData } = data;
     const numCPUs = cpuData.length;
     
-    // Create canvas for the heatmap
+    // Create canvas for the heatmap with explicit positioning
     const heatmapCanvas = document.createElement('canvas');
     heatmapCanvas.className = 'cpu-heatmap-canvas';
     heatmapCanvas.style.position = 'absolute';
     heatmapCanvas.style.top = '0';
     heatmapCanvas.style.left = '0';
+    heatmapCanvas.style.pointerEvents = 'none'; // Allow events to pass through to underlying elements
     
     // Create a separate container for the legend
     const legendContainer = document.createElement('div');
     legendContainer.className = 'heatmap-legend-container';
     legendContainer.style.position = 'absolute';
-    legendContainer.style.top = '10px';
-    legendContainer.style.right = '10px';
-    legendContainer.style.zIndex = '5';
+    legendContainer.style.bottom = '45px';  // Position at bottom but above time labels
+    legendContainer.style.left = '70px';    // Position at left but avoid first time label
+    legendContainer.style.zIndex = '100';
     container.appendChild(legendContainer);
+    
+    // Remove the time/dummy legend by adding a style override
+    const legendOverride = document.createElement('style');
+    legendOverride.textContent = `
+        #${containerId} .u-legend [data-idx="0"],
+        #${containerId} .u-legend [data-idx="1"] {
+            display: none !important;
+        }
+    `;
+    container.appendChild(legendOverride);
     
     // Store current view state
     let currentViewMin = timestamps[0];
     let currentViewMax = timestamps[timestamps.length - 1];
     let isCustomZoom = false;
     
-    // Create drawing functions for uPlot
+    // Helper function to check if a point is within the chart area
+    function isInChartArea(x, y, chartRect) {
+        return (
+            x >= chartRect.left && 
+            x <= chartRect.left + chartRect.width &&
+            y >= chartRect.top && 
+            y <= chartRect.top + chartRect.height
+        );
+    }
+    
+    // Improved tooltip creation for heatmap
+    function createEnhancedTooltip() {
+        const tooltipEl = document.createElement('div');
+        tooltipEl.className = 'heatmap-tooltip';
+        tooltipEl.style.position = 'absolute';
+        tooltipEl.style.display = 'none';
+        tooltipEl.style.backgroundColor = 'rgba(40, 40, 40, 0.95)';
+        tooltipEl.style.color = '#eee';
+        tooltipEl.style.border = '1px solid #555';
+        tooltipEl.style.borderRadius = '4px';
+        tooltipEl.style.padding = '8px 12px';
+        tooltipEl.style.pointerEvents = 'none';
+        tooltipEl.style.zIndex = '1000';
+        tooltipEl.style.fontSize = '12px';
+        tooltipEl.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace';
+        tooltipEl.style.whiteSpace = 'nowrap';
+        tooltipEl.style.boxShadow = '0 2px 10px rgba(0, 0, 0, 0.3)';
+        
+        container.appendChild(tooltipEl);
+        
+        return tooltipEl;
+    }
+    
+    // Create tooltip element
+    const tooltipEl = createEnhancedTooltip();
+    
     function drawHeatmap(u) {
         if (!u.data || !u.data[0] || u.data[0].length === 0) return;
         
-        const ctx = heatmapCanvas.getContext('2d');
-        const width = u.width;
-        const height = u.height;
-        
-        // Set canvas dimensions
-        heatmapCanvas.width = width;
-        heatmapCanvas.height = height;
-        
-        // Clear canvas
-        ctx.clearRect(0, 0, width, height);
-        
-        // Get pixel dimensions
+        // Get pixel dimensions of the data area
         const dataStartX = u.bbox.left;
         const dataEndX = u.bbox.left + u.bbox.width;
         const dataWidth = u.bbox.width;
         const dataStartY = u.bbox.top;
         const dataHeight = u.bbox.height;
+        
+        // Position the canvas precisely over the data area
+        heatmapCanvas.style.position = 'absolute';
+        heatmapCanvas.style.left = `${dataStartX}px`;
+        heatmapCanvas.style.top = `${dataStartY}px`;
+        heatmapCanvas.style.width = `${dataWidth}px`;
+        heatmapCanvas.style.height = `${dataHeight}px`;
+        
+        // Set canvas dimensions to match data area exactly
+        heatmapCanvas.width = dataWidth;
+        heatmapCanvas.height = dataHeight;
+        
+        const ctx = heatmapCanvas.getContext('2d');
+        
+        // Clear canvas
+        ctx.clearRect(0, 0, dataWidth, dataHeight);
         
         // Calculate cell size
         const cellHeight = dataHeight / numCPUs;
@@ -113,8 +164,8 @@ function createCpuHeatmap(containerId, data, options = {}) {
             const reversedCpuIdx = numCPUs - cpuIdx - 1;
             const cpuValues = cpuData[cpuIdx];
             
-            // Y position for this CPU (reversed)
-            const yPos = dataStartY + reversedCpuIdx * cellHeight;
+            // Y position for this CPU (reversed) - now relative to canvas (0,0)
+            const yPos = reversedCpuIdx * cellHeight;
             
             // Draw cells for this CPU
             for (let i = startIdx; i < endIdx; i++) {
@@ -127,11 +178,11 @@ function createCpuHeatmap(containerId, data, options = {}) {
                 const value = cpuValues[i];
                 const color = getColor(value);
                 
-                // Calculate pixel positions
-                const x1 = u.valToPos(time1, 'x');
-                const x2 = u.valToPos(time2, 'x');
+                // Calculate pixel positions relative to canvas (not the overall plot)
+                const x1 = u.valToPos(time1, 'x') - dataStartX;
+                const x2 = u.valToPos(time2, 'x') - dataStartX;
                 
-                // Draw rectangle
+                // Draw rectangle using coordinates relative to canvas
                 ctx.fillStyle = color;
                 ctx.fillRect(x1, yPos, x2 - x1, cellHeight);
                 
@@ -144,48 +195,71 @@ function createCpuHeatmap(containerId, data, options = {}) {
             }
         }
         
-        // Add CPU labels
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.font = '10px sans-serif';
-        ctx.fillStyle = '#CCCCCC';
+        // Draw the legend
+        drawLegend();
+        
+        // Draw CPU labels outside the canvas (don't include in the canvas drawing)
+        drawCpuLabels(u);
+    }
+
+    // Separate function for drawing CPU labels
+    function drawCpuLabels(u) {
+        // Get dimensions for positioning
+        const dataStartX = u.bbox.left;
+        const dataStartY = u.bbox.top;
+        const dataHeight = u.bbox.height;
+        
+        // Get canvas from uPlot
+        const fullCtx = u.ctx;
+        
+        // Improved CPU labels - styled to match line chart Y-axis
+        // Clear the label area first
+        fullCtx.clearRect(0, dataStartY, dataStartX - 2, dataHeight);
+        
+        // Style to match the Y-axis labels
+        fullCtx.textAlign = 'right';
+        fullCtx.textBaseline = 'middle';
+        fullCtx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        fullCtx.fillStyle = '#888888';  // Match the axis label color
+        
+        // Calculate cell height
+        const cellHeight = dataHeight / numCPUs;
         
         for (let cpuIdx = 0; cpuIdx < numCPUs; cpuIdx++) {
             // Reverse the order - CPU0 at bottom, highest CPU at top
             const reversedCpuIdx = numCPUs - cpuIdx - 1;
             const yPos = dataStartY + (reversedCpuIdx + 0.5) * cellHeight;
-            ctx.fillText(`CPU ${cpuIdx}`, 5, yPos);
+            
+            // Draw label to the left of the chart area, aligned with Y-axis labels
+            fullCtx.fillText(`CPU ${cpuIdx}`, dataStartX - 10, yPos);
         }
-        
-        // Draw the legend
-        drawLegend();
     }
     
-    // Create a legend for the heatmap (now rendered in its own container)
+    // Create a legend for the heatmap
     function drawLegend() {
         // Clear previous legend if any
         while (legendContainer.firstChild) {
             legendContainer.removeChild(legendContainer.firstChild);
         }
         
-        // Create canvas for the legend
+        // Create canvas for the legend with improved dimensions
         const legendCanvas = document.createElement('canvas');
         legendCanvas.width = 150;
-        legendCanvas.height = 40;
+        legendCanvas.height = 30;
         legendContainer.appendChild(legendCanvas);
         
         const ctx = legendCanvas.getContext('2d');
         const width = 150;
-        const height = 15;
+        const height = 12; // Smaller height to be less intrusive
         const x = 0;
         const y = 5;
         
-        // Draw legend title
+        // Draw legend title with better positioning
         ctx.textAlign = 'right';
         ctx.textBaseline = 'bottom';
-        ctx.font = '11px sans-serif';
-        ctx.fillStyle = '#CCCCCC';
-        ctx.fillText(`${config.units}`, width, y - 2);
+        ctx.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.fillStyle = '#888888'; // Match axis label color
+        ctx.fillText(config.units, width, y - 2);
         
         // Draw gradient
         const gradient = ctx.createLinearGradient(x, y, x + width, y);
@@ -198,48 +272,47 @@ function createCpuHeatmap(containerId, data, options = {}) {
         ctx.fillRect(x, y, width, height);
         
         // Draw border
-        ctx.strokeStyle = '#888888';
+        ctx.strokeStyle = '#444444';
         ctx.lineWidth = 1;
         ctx.strokeRect(x, y, width, height);
         
-        // Draw min/max labels
+        // Draw min/max labels with better spacing
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.fillStyle = '#CCCCCC';
-        ctx.font = '10px sans-serif';
+        ctx.fillStyle = '#888888';
+        ctx.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
         
-        ctx.fillText(config.minValue, x, y + height + 5);
-        ctx.fillText(config.maxValue, x + width, y + height + 5);
+        ctx.fillText(config.minValue, x + 10, y + height + 3);
+        ctx.fillText(config.maxValue, x + width - 10, y + height + 3);
     }
     
-    // Create cursor plugin to show value at cursor position
-    function createCursorPlugin() {
-        let tooltipEl;
+    // Enhanced mousemove handler for tooltip
+    function handleMouseMove(e) {
+        const rect = plot.over.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
         
-        function init(u) {
-            tooltipEl = document.createElement('div');
-            tooltipEl.className = 'u-tooltip';
+        // Check if mouse is within the exact data area
+        if (!(x >= plot.bbox.left && x <= plot.bbox.left + plot.bbox.width && 
+              y >= plot.bbox.top && y <= plot.bbox.top + plot.bbox.height)) {
             tooltipEl.style.display = 'none';
-            u.over.appendChild(tooltipEl);
+            return;
         }
         
-        function update(u) {
-            if (!u.cursor.idx || !u.cursor.left) {
-                tooltipEl.style.display = 'none';
-                return;
-            }
+        // Calculate relative position within data area
+        const relX = x - plot.bbox.left;
+        const relY = y - plot.bbox.top;
+        
+        // Convert to data coordinates with precise positioning
+        try {
+            const xVal = plot.posToVal(x, 'x');
             
-            const idx = u.cursor.idx;
-            const timestamp = timestamps[idx];
+            // Calculate exact CPU based on relative Y position in data area
+            const dataHeight = plot.bbox.height;
+            const cpuHeight = dataHeight / numCPUs;
             
-            // Calculate which CPU is under cursor
-            const rect = u.bbox;
-            const mouseY = u.cursor.top;
-            const cpuHeight = rect.height / numCPUs;
-            
-            // Convert mouseY to CPU index (taking into account reversed order)
-            const relativeY = mouseY - rect.top;
-            const reversedCpuIdx = Math.floor(relativeY / cpuHeight);
+            // Get CPU index (taking into account reversed order)
+            const reversedCpuIdx = Math.floor(relY / cpuHeight);
             const cpuIdx = numCPUs - reversedCpuIdx - 1;
             
             if (cpuIdx < 0 || cpuIdx >= numCPUs) {
@@ -247,15 +320,27 @@ function createCpuHeatmap(containerId, data, options = {}) {
                 return;
             }
             
+            // Find closest timestamp
+            let closestIdx = 0;
+            let closestDist = Infinity;
+            
+            for (let i = 0; i < timestamps.length; i++) {
+                const dist = Math.abs(timestamps[i] - xVal);
+                if (dist < closestDist) {
+                    closestDist = dist;
+                    closestIdx = i;
+                }
+            }
+            
             // Get value at cursor position
-            const value = cpuData[cpuIdx][idx];
+            const value = cpuData[cpuIdx][closestIdx];
             if (value === undefined || value === null) {
                 tooltipEl.style.display = 'none';
                 return;
             }
             
             // Format timestamp
-            const date = new Date(timestamp * 1000);
+            const date = new Date(timestamps[closestIdx] * 1000);
             const timeStr = date.toLocaleTimeString([], {
                 hour: '2-digit',
                 minute: '2-digit',
@@ -265,74 +350,155 @@ function createCpuHeatmap(containerId, data, options = {}) {
             
             // Create HTML content
             tooltipEl.innerHTML = `
-                <div class="header">${timeStr}</div>
-                <div class="value-row">
-                    <span class="label">CPU ${cpuIdx}</span>
-                    <span class="value">${value.toFixed(1)}${config.units}</span>
+                <div style="margin-bottom: 6px; font-weight: bold; color: #ddd; border-bottom: 1px solid #555; padding-bottom: 4px;">
+                    ${timeStr}
+                </div>
+                <div style="display: flex; justify-content: space-between; margin: 3px 0; align-items: center;">
+                    <span style="margin-right: 16px;">
+                        CPU ${cpuIdx}:
+                    </span>
+                    <span style="font-weight: bold;">${value.toFixed(1)}${config.units}</span>
                 </div>
             `;
             
             tooltipEl.style.display = 'block';
             
             // Position tooltip
-            const left = u.cursor.left + 10;
-            const top = u.cursor.top + 10;
+            const tooltipLeft = x + 10;
+            const tooltipTop = y + 10;
             
-            tooltipEl.style.left = left + 'px';
-            tooltipEl.style.top = top + 'px';
+            // Make sure tooltip stays within chart
+            const tooltipRect = tooltipEl.getBoundingClientRect();
+            const rightEdge = tooltipLeft + tooltipRect.width;
+            const bottomEdge = tooltipTop + tooltipRect.height;
+            
+            tooltipEl.style.left = (rightEdge > rect.width ? x - tooltipRect.width - 10 : tooltipLeft) + 'px';
+            tooltipEl.style.top = (bottomEdge > rect.height ? y - tooltipRect.height - 10 : tooltipTop) + 'px';
+            
+        } catch (err) {
+            console.error("Error handling tooltip:", err);
+            tooltipEl.style.display = 'none';
+        }
+    }
+    
+    // Create custom plugin to handle heatmap selection
+    function createHeatmapSelectionPlugin() {
+        // State variables
+        let selecting = false;
+        let startX = null;
+        let selectRect = null;
+        
+        function init(u) {
+            // Create selection rectangle element
+            selectRect = document.createElement('div');
+            selectRect.className = 'heatmap-selection';
+            selectRect.style.position = 'absolute';
+            selectRect.style.display = 'none';
+            selectRect.style.backgroundColor = 'rgba(86, 156, 214, 0.2)';
+            selectRect.style.border = '1px solid rgba(86, 156, 214, 0.5)';
+            selectRect.style.pointerEvents = 'none';
+            selectRect.style.zIndex = 100;
+            
+            u.over.appendChild(selectRect);
+            
+            // Mouse events for selection
+            u.over.addEventListener('mousedown', e => {
+                const rect = u.over.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                // Only start selection if within exact data area
+                if (x >= u.bbox.left && x <= u.bbox.left + u.bbox.width && 
+                    y >= u.bbox.top && y <= u.bbox.top + u.bbox.height) {
+                    selecting = true;
+                    startX = x;
+                    
+                    // Start with zero-width selection at cursor
+                    selectRect.style.left = `${x}px`;
+                    selectRect.style.top = `${u.bbox.top}px`;
+                    selectRect.style.width = '0px';
+                    selectRect.style.height = `${u.bbox.height}px`;
+                    selectRect.style.display = 'block';
+                }
+            });
+            
+            u.over.addEventListener('mousemove', e => {
+                if (selecting) {
+                    const rect = u.over.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    
+                    // Update selection rectangle
+                    const left = Math.min(startX, x);
+                    const width = Math.abs(x - startX);
+                    
+                    selectRect.style.left = `${left}px`;
+                    selectRect.style.width = `${width}px`;
+                }
+            });
+            
+            u.over.addEventListener('mouseup', e => {
+                if (selecting) {
+                    selecting = false;
+                    
+                    const rect = u.over.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const width = Math.abs(x - startX);
+                    
+                    // Only process if selection has meaningful width
+                    if (width > 5) {
+                        try {
+                            // Convert selection to values
+                            const left = Math.min(startX, x);
+                            const right = Math.max(startX, x);
+                            
+                            const minX = u.posToVal(left, 'x');
+                            const maxX = u.posToVal(right, 'x');
+                            
+                            debug(`Heatmap selection completed: ${minX.toFixed(2)}-${maxX.toFixed(2)}`);
+                            
+                            // Trigger zoom
+                            if (typeof window.zoomController !== 'undefined') {
+                                window.zoomController.syncZoom(u, minX, maxX);
+                            } else {
+                                // Apply zoom directly if no controller
+                                u.batch(() => {
+                                    u.setScale('x', {
+                                        min: minX,
+                                        max: maxX
+                                    });
+                                });
+                                // Redraw the heatmap
+                                drawHeatmap(u);
+                            }
+                        } catch (err) {
+                            console.error("Error processing selection:", err);
+                        }
+                    }
+                    
+                    // Hide selection rectangle
+                    selectRect.style.display = 'none';
+                }
+            });
+            
+            // Handle tooltip
+            u.over.addEventListener('mousemove', handleMouseMove);
+            
+            // Clear tooltip on mouseout
+            u.over.addEventListener('mouseout', () => {
+                tooltipEl.style.display = 'none';
+            });
+            
+            // Double click to reset zoom
+            u.over.addEventListener('dblclick', () => {
+                if (typeof window.zoomController !== 'undefined') {
+                    window.zoomController.resetZoom();
+                }
+            });
         }
         
         return {
             hooks: {
-                init: init,
-                setCursor: update
-            }
-        };
-    }
-    
-    // Create a responsive plugin to handle resize events properly
-    function createResponsivePlugin() {
-        // Track resize state to prevent loops
-        let isHandlingResize = false;
-        
-        return {
-            hooks: {
-                setSize: [
-                    (u) => {
-                        // Skip if currently handling a resize to prevent loops
-                        if (isHandlingResize || u._resizing || u._skipNextDraw) {
-                            return;
-                        }
-                        
-                        // Set flag to prevent recursive resize
-                        isHandlingResize = true;
-                        
-                        // When size changes, maintain the current view
-                        debug(`🔄 ResponsivePlugin maintaining view: ${currentViewMin.toFixed(2)}-${currentViewMax.toFixed(2)}`);
-                        
-                        try {
-                            u.batch(() => {
-                                // First update the scale
-                                u.setScale('x', {
-                                    min: currentViewMin,
-                                    max: currentViewMax,
-                                    auto: false
-                                });
-                                
-                                // Override the axes explicitly
-                                u.axes[0]._min = currentViewMin;
-                                u.axes[0]._max = currentViewMax;
-                            });
-                        } catch (err) {
-                            console.error("Error updating scales during resize:", err);
-                        }
-                        
-                        // Clear flag after a delay to prevent immediate retriggering
-                        setTimeout(() => {
-                            isHandlingResize = false;
-                        }, 50);
-                    }
-                ]
+                init: init
             }
         };
     }
@@ -340,10 +506,11 @@ function createCpuHeatmap(containerId, data, options = {}) {
     // Create the options for uPlot
     const opts = {
         width: config.width,
-        height: config.height,
+        height: 350, // Match line chart height
         title: config.title,
         background: '#1E1E1E',
         class: 'cpu-heatmap',
+        padding: [30, 10, 30, 60], // Increase top padding to 30px to match line chart
         cursor: {
             show: true,
             x: true,
@@ -397,12 +564,6 @@ function createCpuHeatmap(containerId, data, options = {}) {
                     u._skipNextDraw = false;
                 }
             ],
-            setSelect: [
-                (u) => {
-                    // When selection happens, note that we have a custom zoom
-                    isCustomZoom = true;
-                }
-            ],
             ready: [
                 (u) => {
                     // We need a way to track the current width to avoid resize loops
@@ -449,7 +610,7 @@ function createCpuHeatmap(containerId, data, options = {}) {
                         }
                     });
                     
-                    // Observe the container for size changes, with a threshold to reduce callbacks
+                    // Observe the container for size changes
                     resizeObserver.observe(container, { box: 'border-box' });
                     
                     // Store the observer for cleanup
@@ -469,35 +630,24 @@ function createCpuHeatmap(containerId, data, options = {}) {
             ]
         },
         plugins: [
-            createCursorPlugin(),
-            createResponsivePlugin()
-        ],
-        select: {
-            show: true,
-            stroke: 'rgba(86, 156, 214, 0.5)',
-            fill: 'rgba(86, 156, 214, 0.2)',
-        }
+            createHeatmapSelectionPlugin()
+        ]
     };
     
     // Create dummy series to make uPlot work (we'll draw the heatmap ourselves)
     const dummyData = [timestamps, Array(timestamps.length).fill(0)];
     const dummySeries = [
         { 
-            label: 'Time'
+            label: 'Time',
+            show: false  // Hide Time label
         },
         {
             label: 'Dummy',
-            show: false
+            show: false  // Hide Dummy label
         }
     ];
     
     opts.series = dummySeries;
-    
-    // Add a chart type badge
-    const chartTypeBadge = document.createElement('div');
-    chartTypeBadge.className = 'chart-type-badge';
-    chartTypeBadge.textContent = 'Heatmap';
-    container.appendChild(chartTypeBadge);
     
     // Create the plot
     const plot = new uPlot(opts, dummyData, container);
@@ -507,9 +657,17 @@ function createCpuHeatmap(containerId, data, options = {}) {
     
     // Add method to handle external zoom commands
     plot.updateZoom = function(min, max) {
+        // Validate the input values to prevent NaN
+        if (isNaN(min) || isNaN(max)) {
+            console.error("Invalid zoom range:", min, max);
+            return;
+        }
+        
+        // Store current view values
         currentViewMin = min;
         currentViewMax = max;
         
+        // Ensure scales are properly updated
         this.batch(() => {
             this.setScale('x', {
                 min: min,
@@ -524,7 +682,14 @@ function createCpuHeatmap(containerId, data, options = {}) {
         
         // Redraw after update
         drawHeatmap(this);
+        
+        debug(`✅ Heatmap ${this._id} zoom updated to ${min.toFixed(2)}-${max.toFixed(2)}`);
     };
+    
+    // Force a redraw after a short delay to ensure proper positioning
+    setTimeout(() => {
+        drawHeatmap(plot);
+    }, 50);
     
     return plot;
 }
@@ -559,4 +724,59 @@ function createColorInterpolator(colorScale, min, max) {
         
         return interpolateColor(color1, color2, remainder);
     };
+}
+
+// Helper function to interpolate between two colors
+function interpolateColor(color1, color2, factor) {
+    if (color1.startsWith('#')) {
+        // Parse hex colors to RGB
+        const r1 = parseInt(color1.slice(1, 3), 16);
+        const g1 = parseInt(color1.slice(3, 5), 16);
+        const b1 = parseInt(color1.slice(5, 7), 16);
+        
+        const r2 = parseInt(color2.slice(1, 3), 16);
+        const g2 = parseInt(color2.slice(3, 5), 16);
+        const b2 = parseInt(color2.slice(5, 7), 16);
+        
+        // Interpolate values
+        const r = Math.round(r1 + factor * (r2 - r1));
+        const g = Math.round(g1 + factor * (g2 - g1));
+        const b = Math.round(b1 + factor * (b2 - b1));
+        
+        // Convert back to rgb
+        return `rgb(${r}, ${g}, ${b})`;
+    } else if (color1.startsWith('rgb')) {
+        // Extract RGB values using regex
+        const rgbRegex = /rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/;
+        const match1 = rgbRegex.exec(color1);
+        const match2 = rgbRegex.exec(color2);
+        
+        if (!match1 || !match2) return color1;
+        
+        const r1 = parseInt(match1[1], 10);
+        const g1 = parseInt(match1[2], 10);
+        const b1 = parseInt(match1[3], 10);
+        
+        const r2 = parseInt(match2[1], 10);
+        const g2 = parseInt(match2[2], 10);
+        const b2 = parseInt(match2[3], 10);
+        
+        // Interpolate values
+        const r = Math.round(r1 + factor * (r2 - r1));
+        const g = Math.round(g1 + factor * (g2 - g1));
+        const b = Math.round(b1 + factor * (b2 - b1));
+        
+        return `rgb(${r}, ${g}, ${b})`;
+    }
+    
+    // Fallback
+    return color1;
+}
+
+// Debug helper function
+function debug(message) {
+    const timestamp = new Date().toISOString().substr(11, 12);
+    const formattedMessage = `[${timestamp}] ${message}`;
+    
+    console.log(formattedMessage);
 }
