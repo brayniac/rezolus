@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Rezolus Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.iife.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.min.css">
+    <style>
+        :root {
+            --bg-dark: #1E1E1E;
+            --bg-medium: #252526;
+            --text-light: #D4D4D4;
+            --accent-blue: #569CD6;
+        }
+
+        body {
+            font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+            background-color: var(--bg-dark);
+            color: var(--text-light);
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .plot-container {
+            margin-bottom: 20px;
+            background-color: var(--bg-medium);
+            border-radius: 4px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            overflow: hidden;
+            width: 100%;
+        }
+
+        .plot-container > div {
+            width: 100% !important;
+        }
+
+        button {
+            background-color: var(--accent-blue);
+            color: var(--bg-dark);
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: inherit;
+            margin-bottom: 20px;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #7DAFFF;
+        }
+
+        .instructions {
+            margin: 15px 0;
+            padding: 10px;
+            background: rgba(86, 156, 214, 0.1);
+            border-left: 4px solid var(--accent-blue);
+            border-radius: 4px;
+        }
+
+        .debug-area {
+            background: #333;
+            border: 1px solid #555;
+            padding: 10px;
+            margin-top: 20px;
+            font-family: monospace;
+            white-space: pre;
+            overflow: auto;
+            max-height: 200px;
+            display: block; /* Set to block by default */
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Rezolus Time Series Dashboard</h1>
+        
+        <div class="instructions">
+            <p>Click and drag on any chart to zoom all charts. Double-click to reset zoom.</p>
+        </div>
+        
+        <div id="controls">
+            <button id="reset-zoom">Reset Zoom</button>
+            <button id="toggle-debug">Debug Console</button>
+            <button id="clear-debug">Clear Console</button>
+        </div>
+
+        {% for series in time_series %}
+        <div class="plot-container">
+            <div id="plot-{{ loop.index }}"></div>
+        </div>
+        {% endfor %}
+        
+        <div class="debug-area" id="debug"></div>
+    </div>
+
+    <script>
+        // Global state
+        const plots = [];
+        let globalXMin = null;
+        let globalXMax = null;
+        let syncLock = false;
+        let isDebugging = true; // Enable debugging by default
+        let initialRangeSet = false; // Flag to track if we've set initial range
+        
+        // Debug functions
+        function debug(message) {
+            const timestamp = new Date().toISOString().substr(11, 12);
+            const formattedMessage = `[${timestamp}] ${message}`;
+            
+            console.log(formattedMessage);
+            
+            if (isDebugging) {
+                const debugArea = document.getElementById('debug');
+                debugArea.textContent += formattedMessage + '\n';
+                debugArea.scrollTop = debugArea.scrollHeight;
+            }
+        }
+        
+        document.getElementById('toggle-debug').addEventListener('click', function() {
+            const debugArea = document.getElementById('debug');
+            isDebugging = debugArea.style.display === 'none';
+            debugArea.style.display = isDebugging ? 'block' : 'none';
+            debug(`Debug console ${isDebugging ? 'enabled' : 'disabled'}`);
+        });
+        
+        document.getElementById('clear-debug').addEventListener('click', function() {
+            const debugArea = document.getElementById('debug');
+            debugArea.textContent = '';
+            debug('Debug console cleared');
+        });
+        
+        // Format time for display
+        function formatTime(timestamp) {
+            const date = new Date(timestamp * 1000);
+            return date.toLocaleTimeString([], {
+                hour: '2-digit', 
+                minute: '2-digit', 
+                second: '2-digit', 
+                hour12: false
+            });
+        }
+        
+        // Function to sync all plots to a specific range
+        function syncZoom(sourcePlot, xMin, xMax) {
+            if (syncLock) {
+                debug(`⚠️ Sync lock active, skipping sync from plot ${sourcePlot._id}`);
+                return;
+            }
+            
+            syncLock = true;
+            
+            debug(`🔍 ZOOM: Plot ${sourcePlot._id} selected time range: ${xMin.toFixed(2)}-${xMax.toFixed(2)}`);
+            debug(`📅 ZOOM: From ${formatTime(xMin)} to ${formatTime(xMax)}`);
+            
+            // Apply to all plots including source plot to ensure consistency
+            plots.forEach(plot => {
+                debug(`⚙️ Updating plot ${plot._id} to match time range ${xMin.toFixed(2)}-${xMax.toFixed(2)}`);
+                
+                try {
+                    // Clear any existing selection first to avoid conflicts
+                    if (plot.select && typeof plot.select.width === 'number') {
+                        plot.setSelect({
+                            width: 0,
+                            height: 0
+                        });
+                    }
+                    
+                    // Get the current min/max for validation
+                    const oldMin = plot.scales.x.min;
+                    const oldMax = plot.scales.x.max;
+                    
+                    // IMPORTANT: Use batch updates to ensure all changes apply at once
+                    plot.batch(() => {
+                        // Force a complete redraw with new scales
+                        plot.setScale("x", {
+                            min: xMin,
+                            max: xMax,
+                            auto: false          // Disable auto-scaling
+                        });
+                        
+                        // Override the axes explicitly
+                        plot.axes[0]._min = xMin;
+                        plot.axes[0]._max = xMax;
+                    });
+                    
+                    // Verify the update worked
+                    const newMin = plot.scales.x.min;
+                    const newMax = plot.scales.x.max;
+                    
+                    if (Math.abs(newMin - xMin) > 0.01 || Math.abs(newMax - xMax) > 0.01) {
+                        debug(`⚠️ Plot ${plot._id} scale update failed!`);
+                        debug(`  Requested: ${xMin.toFixed(2)}-${xMax.toFixed(2)}`);
+                        debug(`  Actual: ${newMin.toFixed(2)}-${newMax.toFixed(2)}`);
+                        
+                        // Extreme fallback - recreate the plot with the desired range
+                        const opts = Object.assign({}, plot.opts, {
+                            scales: {
+                                x: {
+                                    min: xMin,
+                                    max: xMax,
+                                    auto: false
+                                }
+                            }
+                        });
+                        
+                        // Capture the parent element
+                        const parent = plot.root.parentElement;
+                        const id = parent.id;
+                        debug(`🔄 Last resort: Recreating plot ${plot._id} in ${id}`);
+                        
+                        // Clean up old plot
+                        plot.destroy();
+                        
+                        // Create a new plot
+                        const newPlot = new uPlot(opts, plot.data, document.getElementById(id));
+                        newPlot._id = plot._id;
+                        
+                        // Replace in the array
+                        const idx = plots.indexOf(plot);
+                        if (idx !== -1) {
+                            plots[idx] = newPlot;
+                        }
+                        
+                        debug(`✅ Plot ${plot._id} recreated with fixed bounds`);
+                    } else {
+                        debug(`✅ Plot ${plot._id} updated: ${oldMin.toFixed(2)}->${newMin.toFixed(2)}, ${oldMax.toFixed(2)}->${newMax.toFixed(2)}`);
+                    }
+                } catch (err) {
+                    debug(`❌ Error updating plot ${plot._id}: ${err.message}`);
+                    console.error(`Error updating plot ${plot._id}:`, err);
+                }
+            });
+            
+            // Release lock after a longer delay to ensure all plots have time to update
+            setTimeout(() => {
+                debug(`🔓 Sync lock released`);
+                syncLock = false;
+            }, 500);
+        }
+        
+        // Reset zoom function
+        function resetZoom() {
+            if (!initialRangeSet) {
+                debug(`⚠️ RESET: Cannot reset zoom, initial range not set yet`);
+                return;
+            }
+            
+            if (syncLock) {
+                debug(`⚠️ RESET: Cannot reset zoom while sync lock is active`);
+                return;
+            }
+            
+            debug(`🔄 RESET: Resetting all plots to global range: ${globalXMin.toFixed(2)}-${globalXMax.toFixed(2)}`);
+            debug(`📅 RESET: From ${formatTime(globalXMin)} to ${formatTime(globalXMax)}`);
+            
+            syncLock = true;
+            
+            plots.forEach(plot => {
+                try {
+                    const oldMin = plot.scales.x.min;
+                    const oldMax = plot.scales.x.max;
+                    
+                    // Clear any existing selection first
+                    plot.setSelect({
+                        width: 0,
+                        height: 0
+                    });
+                    
+                    // Use batch updates for consistency
+                    plot.batch(() => {
+                        plot.setScale('x', {
+                            min: globalXMin,
+                            max: globalXMax,
+                            auto: false
+                        });
+                        
+                        // Override the axes explicitly
+                        plot.axes[0]._min = globalXMin;
+                        plot.axes[0]._max = globalXMax;
+                    });
+                    
+                    // Verify the update worked
+                    const newMin = plot.scales.x.min;
+                    const newMax = plot.scales.x.max;
+                    
+                    debug(`✅ Plot ${plot._id} reset: ${oldMin.toFixed(2)}->${newMin.toFixed(2)}, ${oldMax.toFixed(2)}->${newMax.toFixed(2)}`);
+                    
+                    // Force redraw
+                    plot.redraw();
+                } catch (err) {
+                    debug(`❌ Error resetting plot ${plot._id}: ${err.message}`);
+                    console.error(`Error resetting plot ${plot._id}:`, err);
+                }
+            });
+            
+            setTimeout(() => {
+                debug(`🔓 Reset complete, sync lock released`);
+                syncLock = false;
+            }, 500); // Increased timeout for reset
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            debug('🚀 Initializing dashboard');
+            
+            // Create all plots
+            {% for series in time_series %}
+            (function() {
+                const timestamps = {{ series.timestamps | json_encode | safe }};
+                const values = {{ series.values | json_encode | safe }};
+                
+                // Update global min/max
+                if (globalXMin === null || timestamps[0] < globalXMin) {
+                    globalXMin = timestamps[0];
+                }
+                if (globalXMax === null || timestamps[timestamps.length - 1] > globalXMax) {
+                    globalXMax = timestamps[timestamps.length - 1];
+                }
+                
+                debug(`📊 Plot {{ loop.index }} data range: ${timestamps[0].toFixed(2)} to ${timestamps[timestamps.length - 1].toFixed(2)}`);
+                debug(`📅 Plot {{ loop.index }} time range: ${formatTime(timestamps[0])} to ${formatTime(timestamps[timestamps.length - 1])}`);
+
+                const opts = {
+                    width: document.getElementById('plot-{{ loop.index }}').parentElement.clientWidth,
+                    height: 400,
+                    title: "Time Series {{ loop.index }}",
+                    
+                    background: '#1E1E1E',
+                    
+                    select: {
+                        show: true,
+                        stroke: 'rgba(86, 156, 214, 0.5)',
+                        fill: 'rgba(86, 156, 214, 0.2)',
+                    },
+                    
+                    series: [
+                        {
+                            label: 'Time'
+                        },
+                        {
+                            label: 'Value',
+                            stroke: '#569CD6',
+                            width: 2,
+                            fill: 'rgba(86, 156, 214, 0.1)',
+                        }
+                    ],
+                    
+                    axes: [
+                        {
+                            stroke: '#888888',
+                            grid: {
+                                stroke: 'rgba(136, 136, 136, 0.1)',
+                            },
+                            values: (u, vals) => vals.map(v => formatTime(v))
+                        },
+                        {
+                            label: 'Value',
+                            stroke: '#888888',
+                            grid: {
+                                stroke: 'rgba(136, 136, 136, 0.1)',
+                            },
+                        }
+                    ],
+                    
+                    cursor: {
+                        focus: {
+                            prox: 16,
+                        },
+                        points: {
+                            size: 10,
+                            width: 2,
+                            stroke: '#569CD6',
+                            fill: '#1E1E1E',
+                        }
+                    },
+                    
+                    hooks: {
+                        setSelect: [
+                            (u) => {
+                                // When uPlot itself completes a selection, this hook is called
+                                const selEl = u.root.querySelector(".u-select");
+                                
+                                if (selEl && selEl.style.display !== "none" && parseInt(selEl.style.width, 10) > 5) {
+                                    const selLeft = parseInt(selEl.style.left, 10);
+                                    const selWidth = parseInt(selEl.style.width, 10);
+                                    
+                                    const minX = u.posToVal(selLeft, 'x');
+                                    const maxX = u.posToVal(selLeft + selWidth, 'x');
+                                    
+                                    debug(`🎣 Plot ${u._id} selection hook triggered: ${minX.toFixed(2)}-${maxX.toFixed(2)}`);
+                                    
+                                    // Only trigger if we're not already in a sync process
+                                    if (!syncLock && selWidth > 5) {
+                                        syncZoom(u, minX, maxX);
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                };
+
+                const data = [
+                    timestamps,
+                    values
+                ];
+
+                try {
+                    debug(`🔨 Creating plot {{ loop.index }}`);
+                    const plot = new uPlot(opts, data, document.getElementById('plot-{{ loop.index }}'));
+                    
+                    // Store plot ID and add to array
+                    plot._id = {{ loop.index }};
+                    plots.push(plot);
+                    
+                    // Track selection state
+                    let selectionActive = false;
+                    let selectionStartX = null;
+                    
+                    // Track when selection starts
+                    plot.over.addEventListener('mousedown', (e) => {
+                        // Only track left button
+                        if (e.button !== 0) return;
+                        
+                        const rect = plot.over.getBoundingClientRect();
+                        const xPos = e.clientX - rect.left;
+                        const xVal = plot.posToVal(xPos, 'x');
+                        
+                        selectionActive = true;
+                        selectionStartX = xVal;
+                        
+                        debug(`🖱️ Plot ${plot._id} selection started at x=${xVal.toFixed(2)} (${formatTime(xVal)})`);
+                    });
+                    
+                    // Track when selection ends
+                    plot.over.addEventListener('mouseup', (e) => {
+                        // Only track left button
+                        if (e.button !== 0 || !selectionActive) return;
+                        
+                        // Skip if sync is already in progress
+                        if (syncLock) {
+                            debug(`⚠️ Plot ${plot._id} selection ended but sync lock active, ignoring`);
+                            selectionActive = false;
+                            return;
+                        }
+                        
+                        try {
+                            const rect = plot.over.getBoundingClientRect();
+                            const xPos = e.clientX - rect.left;
+                            const xVal = plot.posToVal(xPos, 'x');
+                            
+                            debug(`🖱️ Plot ${plot._id} selection ended at x=${xVal.toFixed(2)} (${formatTime(xVal)})`);
+                            
+                            // Get the select element from uPlot
+                            const selectElem = plot.root.querySelector(".u-select");
+                            
+                            if (selectElem && selectElem.style.display !== "none") {
+                                // Selection is visible, get its position
+                                const selectLeft = parseInt(selectElem.style.left, 10);
+                                const selectWidth = parseInt(selectElem.style.width, 10);
+                                
+                                // Convert selection pixels to values
+                                const minX = plot.posToVal(selectLeft, 'x');
+                                const maxX = plot.posToVal(selectLeft + selectWidth, 'x');
+                                
+                                debug(`🔍 Plot ${plot._id} selection detected: ${minX.toFixed(2)}-${maxX.toFixed(2)} (width: ${selectWidth}px)`);
+                                debug(`📅 Time range: ${formatTime(minX)} to ${formatTime(maxX)}`);
+                                
+                                // Check if selection is meaningful (not too small)
+                                if (selectWidth > 5 && Math.abs(maxX - minX) > 1) {
+                                    // This happens before uPlot automatically zooms the plot
+                                    // We need to manually sync all plots to this range
+                                    syncZoom(plot, minX, maxX);
+                                    
+                                    // Also update this plot to make sure it gets the exact same range
+                                    plot.setScale('x', {
+                                        min: minX,
+                                        max: maxX
+                                    });
+                                    
+                                    // Clear the selection
+                                    plot.setSelect({
+                                        width: 0,
+                                        height: 0
+                                    });
+                                } else {
+                                    debug(`ℹ️ Plot ${plot._id} selection too small, ignoring`);
+                                }
+                            } else {
+                                // No visible selection, might be a click without drag
+                                debug(`ℹ️ Plot ${plot._id} no visible selection detected`);
+                            }
+                        } catch (err) {
+                            debug(`❌ Error in selection handler for plot ${plot._id}: ${err.message}`);
+                            console.error(err);
+                        } finally {
+                            selectionActive = false;
+                        }
+                    });
+                    
+                    // Double-click to reset
+                    plot.over.addEventListener('dblclick', () => {
+                        debug(`👆 Double-click on plot ${plot._id}, requesting reset`);
+                        resetZoom();
+                    });
+                } catch (err) {
+                    debug(`❌ Error creating plot {{ loop.index }}: ${err.message}`);
+                    console.error(err);
+                }
+            })();
+            {% endfor %}
+
+            // Set the initial range flag after all plots are created
+            initialRangeSet = true;
+            debug(`🌎 Global time range set: ${globalXMin.toFixed(2)}-${globalXMax.toFixed(2)}`);
+            debug(`📅 Global time range: ${formatTime(globalXMin)} to ${formatTime(globalXMax)}`);
+
+            // Reset zoom button
+            document.getElementById('reset-zoom').addEventListener('click', () => {
+                debug(`👆 Reset button clicked`);
+                resetZoom();
+            });
+
+            // Make plots responsive
+            window.addEventListener('resize', () => {
+                debug(`📐 Window resize detected, updating plot dimensions`);
+                plots.forEach(plot => {
+                    try {
+                        const container = plot.root.closest('.plot-container');
+                        const width = container.clientWidth;
+                        debug(`📐 Resizing plot ${plot._id} to width ${width}px`);
+                        plot.setSize({
+                            width: width,
+                            height: 400
+                        });
+                    } catch (err) {
+                        debug(`❌ Error during resize of plot ${plot._id}: ${err.message}`);
+                    }
+                });
+            });
+            
+            debug('✅ Dashboard initialization complete');
+        });
+    </script>
+</body>
+</html>
