@@ -24,6 +24,7 @@
     </div>
 
     <script src="/static/zoom-controller.js"></script>
+    <script src="/static/time-axis-formatter.js"></script>
     <script>
         // Dashboard initialization
         document.addEventListener('DOMContentLoaded', () => {
@@ -195,7 +196,15 @@
                                 grid: {
                                     stroke: 'rgba(136, 136, 136, 0.1)',
                                 },
-                                values: (u, vals) => vals.map(v => formatTimeOnly(v))
+                                values: createTimeAxisFormatter(),
+                                space: 60, // More space for time labels
+                                ticks: {
+                                    show: true,
+                                    stroke: 'rgba(136, 136, 136, 0.5)',
+                                    width: 1,
+                                    size: 5,
+                                },
+                                splits: createTimeSplitsFn()
                             },
                             {
                                 label: seriesData.yUnits ? seriesData.yUnits : '',
