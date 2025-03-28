@@ -6,6 +6,7 @@ class ZoomController {
         this.globalXMax = null;
         this.syncLock = false;
         this.initialRangeSet = false;
+        this.resizeTimeout = null;
     }
 
     // Register a plot with the controller
@@ -321,21 +322,36 @@ class ZoomController {
         }, 500); // Increased timeout for reset
     }
     
-    // Handle resize for all plots
+    // Handle resize for all plots - improved version with debouncing
     handleResize() {
         this.debug(`📐 Window resize detected, updating plot dimensions`);
-        this.plots.forEach(plot => {
-            try {
-                const container = plot.root.closest('.plot-container');
-                const width = container.clientWidth;
-                this.debug(`📐 Resizing plot ${plot._id} to width ${width}px`);
-                plot.setSize({
-                    width: width,
-                    height: 400
-                });
-            } catch (err) {
-                this.debug(`❌ Error during resize of plot ${plot._id}: ${err.message}`);
-            }
+        
+        // Use requestAnimationFrame for smoother resize handling
+        if (this.resizeTimeout) {
+            cancelAnimationFrame(this.resizeTimeout);
+        }
+        
+        this.resizeTimeout = requestAnimationFrame(() => {
+            this.plots.forEach(plot => {
+                try {
+                    const container = plot.root.closest('.plot-container');
+                    if (!container) return;
+                    
+                    const width = container.clientWidth;
+                    
+                    // Only resize if the width has changed significantly
+                    if (Math.abs(plot.width - width) > 5) {
+                        this.debug(`📐 Resizing plot ${plot._id} to width ${width}px`);
+                        plot.setSize({
+                            width: width,
+                            height: plot.height // Keep the same height
+                        });
+                    }
+                } catch (err) {
+                    this.debug(`❌ Error during resize of plot ${plot._id}: ${err.message}`);
+                    console.error(err);
+                }
+            });
         });
     }
     

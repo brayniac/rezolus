@@ -2,12 +2,13 @@
 <html>
 <head>
     <title>Rezolus Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.iife.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.min.css">
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-    <div class="container">
+    <div class="container full-width">
         <h1>Rezolus Time Series Dashboard</h1>
         
         <div class="instructions">
@@ -120,14 +121,33 @@
                 
                 group.series.forEach((series, seriesIdx) => {
                     const plotId = `plot-${groupIdx}-${seriesIdx}`;
+                    const plotElement = document.getElementById(plotId);
+                    
+                    if (!plotElement) {
+                        debug(`❌ Cannot find element with ID: ${plotId}`);
+                        return;
+                    }
+                    
+                    const container = plotElement.parentElement;
+                    const containerWidth = container.clientWidth;
                     
                     debug(`📊 Plot ${plotId} data range: ${series.timestamps[0].toFixed(2)} to ${series.timestamps[series.timestamps.length - 1].toFixed(2)}`);
                     debug(`📅 Plot ${plotId} time range: ${formatTime(series.timestamps[0])} to ${formatTime(series.timestamps[series.timestamps.length - 1])}`);
                     debug(`🔤 Plot ${plotId} title: "${series.title}", units: "${series.yUnits}"`);
+                    debug(`📐 Plot ${plotId} container width: ${containerWidth}px`);
                     
                     const opts = {
-                        width: document.getElementById(plotId).parentElement.clientWidth,
-                        height: 400,
+                        width: containerWidth, // Use container width
+                        height: 350, // Slightly smaller height for two-column layout
+                        gutters: {
+                            y: 10,
+                            x: 8
+                        },
+                        scales: {
+                            x: {
+                                time: false
+                            }
+                        },
                         title: series.title,
                         
                         background: '#1E1E1E',
@@ -213,9 +233,31 @@
                 zoomController.resetZoom();
             });
             
-            // Make plots responsive
+            // Make plots responsive with optimized resize handler
             window.addEventListener('resize', () => {
-                zoomController.handleResize();
+                // Use requestAnimationFrame to avoid too many resize calls
+                if (window.resizeTimeout) {
+                    cancelAnimationFrame(window.resizeTimeout);
+                }
+                
+                window.resizeTimeout = requestAnimationFrame(() => {
+                    zoomController.handleResize();
+                });
+            });
+            
+            // When all plots have been created, force a resize
+            window.addEventListener('load', () => {
+                // Force resize once everything is loaded
+                setTimeout(() => {
+                    window.dispatchEvent(new Event('resize'));
+                    
+                    debug('📏 Forced resize on load');
+                    
+                    // Additional resize after a bit to ensure proper layout
+                    setTimeout(() => {
+                        window.dispatchEvent(new Event('resize'));
+                    }, 500);
+                }, 200);
             });
             
             debug('✅ Dashboard initialization complete');
@@ -232,11 +274,16 @@
                     
                     groupElement.classList.toggle('collapsed');
                     
-                    // Resize plots in group after toggling
+                    // Resize plots in group after toggling with a delay
                     setTimeout(() => {
                         if (!groupElement.classList.contains('collapsed')) {
                             const groupIndex = groupId - 1; // Convert to 0-based index
                             resizePlotsInGroup(groupIndex);
+                            
+                            // Force resize after a slight delay to ensure proper layout
+                            setTimeout(() => {
+                                window.dispatchEvent(new Event('resize'));
+                            }, 100);
                         }
                     }, 50);
                 });
@@ -259,6 +306,11 @@
                 if (allCollapsed) {
                     setTimeout(() => {
                         resizeAllPlots();
+                        
+                        // Force resize after a slight delay to ensure proper layout
+                        setTimeout(() => {
+                            window.dispatchEvent(new Event('resize'));
+                        }, 100);
                     }, 50);
                 }
             });
@@ -269,8 +321,13 @@
                 .filter(plot => plot._group === groupIndex);
                 
             plots.forEach(plot => {
-                const newWidth = plot.root.parentElement.clientWidth;
-                plot.setSize({width: newWidth, height: plot.height});
+                const container = plot.root.parentElement;
+                if (!container) return;
+                
+                const newWidth = container.clientWidth;
+                if (Math.abs(plot.width - newWidth) > 5) {
+                    plot.setSize({width: newWidth, height: plot.height});
+                }
             });
         }
         
@@ -278,8 +335,13 @@
             const plots = Array.from(window.uPlotInstances || []);
             
             plots.forEach(plot => {
-                const newWidth = plot.root.parentElement.clientWidth;
-                plot.setSize({width: newWidth, height: plot.height});
+                const container = plot.root.parentElement;
+                if (!container) return;
+                
+                const newWidth = container.clientWidth;
+                if (Math.abs(plot.width - newWidth) > 5) {
+                    plot.setSize({width: newWidth, height: plot.height});
+                }
             });
         }
         

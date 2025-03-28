@@ -13,6 +13,13 @@ body {
     padding: 20px;
 }
 
+.full-width {
+    max-width: 100% !important;
+    padding: 20px 30px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
 h1 {
     color: #FFFFFF;
     margin-bottom: 30px;
@@ -51,10 +58,24 @@ button:hover {
 
 /* Plot and Group styles */
 .plot-container {
-    margin-bottom: 30px;
     background-color: #1E1E1E;
     border-radius: 4px;
     overflow: hidden;
+    width: 100%;
+    box-sizing: border-box; /* Include padding in width calculation */
+    padding: 0; /* Remove any potential padding */
+}
+
+/* Make sure uPlot takes up the full width of its container */
+.plot-container .u-over,
+.plot-container canvas {
+    width: 100% !important;
+    box-sizing: border-box;
+}
+
+/* Ensure charts don't overflow their containers on any screen size */
+.u-over {
+    max-width: 100% !important;
 }
 
 .metric-group {
@@ -68,60 +89,6 @@ button:hover {
 
 .metric-group:hover {
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
-}
-
-.metric-group {
-    margin: 30px 0;
-    border: 1px solid #333;
-    border-radius: 5px;
-    background-color: #252526;
-}
-
-.group-header {
-    padding: 10px 15px;
-    background-color: #2D2D2D;
-    border-bottom: 1px solid #333;
-    border-radius: 5px 5px 0 0;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.group-name {
-    font-size: 1.2em;
-    font-weight: bold;
-    color: #CCCCCC;
-    margin: 0;
-}
-
-.group-description {
-    color: #AAAAAA;
-    font-size: 0.9em;
-    margin: 5px 0 0;
-}
-
-.group-toggle {
-    background: none;
-    border: none;
-    color: #569CD6;
-    cursor: pointer;
-    font-size: 1.2em;
-}
-
-.group-content {
-    padding: 15px;
-}
-
-.collapsed .group-content {
-    display: none;
-}
-
-.collapsed .group-toggle::after {
-    content: '▼';
-}
-
-.group-toggle::after {
-    content: '▲';
 }
 
 .group-header {
@@ -171,6 +138,23 @@ button:hover {
 .group-content {
     padding: 15px;
     transition: max-height 0.3s ease-in-out;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); /* Better responsive grid */
+    grid-gap: 20px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.collapsed .group-content {
+    display: none;
+}
+
+.collapsed .group-toggle::after {
+    content: '▼';
+}
+
+.group-toggle::after {
+    content: '▲';
 }
 
 /* uPlot custom styling */
@@ -196,9 +180,9 @@ button:hover {
 }
 
 /* Responsive adjustments */
-@media (max-width: 768px) {
-    .container {
-        padding: 10px;
+@media (max-width: 950px) {
+    .container, .full-width {
+        padding: 10px 15px;
     }
     
     h1 {
@@ -215,5 +199,10 @@ button:hover {
     
     .group-content {
         padding: 10px;
+        grid-template-columns: 1fr; /* Force single column on narrower screens */
+    }
+    
+    .plot-container {
+        margin-bottom: 15px;
     }
 }
