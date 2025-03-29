@@ -1,7 +1,7 @@
-// new-heatmap.js - Complete replacement for heatmap chart implementation
+// Fixed heatmap.js with consistent time formatting
 
 /**
- * Create a CPU heatmap chart with proper alignment
+ * Create a CPU heatmap chart with proper alignment and consistent time formatting
  * @param {string} containerId - DOM element ID for the chart container
  * @param {Object} data - Data for the heatmap
  * @param {Object} options - Configuration options
@@ -123,95 +123,100 @@ function createNewCpuHeatmap(containerId, data, options = {}) {
     `;
     container.appendChild(timeAxisEl);
     
-    // Add time labels (5 evenly spaced)
-    const timeLabels = 4; // Use 4 intervals = 5 labels
-    const timeFormat = {
-        hour: '2-digit',
-        minute: '2-digit'
-    };
-    
-    for (let i = 0; i <= timeLabels; i++) {
-        const percent = i / timeLabels;
-        const labelX = percent * chartWidth;
+    // Color parsing and interpolation functions
+    function parseColor(color) {
+        // Handle hex color
+        if (color.startsWith('#')) {
+            const r = parseInt(color.slice(1, 3), 16);
+            const g = parseInt(color.slice(3, 5), 16);
+            const b = parseInt(color.slice(5, 7), 16);
+            return { r, g, b };
+        }
         
-        // Calculate time at this position
-        const timeIndex = Math.min(Math.floor(percent * timestamps.length), timestamps.length - 1);
-        const time = timestamps[timeIndex];
-        const date = new Date(time * 1000);
+        // Handle rgb color
+        const match = color.match(/rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/);
+        if (match) {
+            return {
+                r: parseInt(match[1]),
+                g: parseInt(match[2]),
+                b: parseInt(match[3])
+            };
+        }
         
-        // Format time
-        const timeStr = date.toLocaleTimeString([], timeFormat);
-        
-        const timeLabel = document.createElement('div');
-        timeLabel.textContent = timeStr;
-        timeLabel.style.cssText = `
-            position: absolute;
-            bottom: 5px;
-            left: ${labelX}px;
-            transform: translateX(-50%);
-            font-size: 11px;
-            color: #888888;
-            pointer-events: none;
-        `;
-        timeAxisEl.appendChild(timeLabel);
+        // Default fallback
+        return { r: 0, g: 0, b: 0 };
     }
     
-    // Create color legend
-    const legendEl = document.createElement('div');
-    legendEl.style.cssText = `
-        position: absolute;
-        bottom: 40px;
-        left: ${chartLeft + 10}px;
-        background-color: rgba(30, 30, 30, 0.8);
-        border: 1px solid #333;
-        border-radius: 4px;
-        padding: 5px;
-        z-index: 10;
-    `;
-    container.appendChild(legendEl);
+    // Current view state (for synchronized zooming)
+    let currentViewMin = null;
+    let currentViewMax = null;
     
-    // Create legend canvas
-    const legendCanvas = document.createElement('canvas');
-    legendCanvas.width = 150;
-    legendCanvas.height = 30;
-    legendEl.appendChild(legendCanvas);
+    // Get the interval for current view range
+    function getCurrentInterval() {
+        // Use the same logic as in time-axis-formatter.js
+        const timeSpanSeconds = (currentViewMax || timestamps[timestamps.length - 1]) - 
+                                 (currentViewMin || timestamps[0]);
+        
+        // Define time intervals similar to time-axis-formatter.js
+        const TIME_INTERVALS = [
+            { seconds: 1, format: 'HH:mm:ss' },
+            { seconds: 5, format: 'HH:mm:ss' },
+            { seconds: 15, format: 'HH:mm:ss' },
+            { seconds: 30, format: 'HH:mm:ss' },
+            { seconds: 60, format: 'HH:mm' },
+            { seconds: 5 * 60, format: 'HH:mm' },
+            { seconds: 15 * 60, format: 'HH:mm' },
+            { seconds: 30 * 60, format: 'HH:mm' },
+            { seconds: 60 * 60, format: 'HH:mm' },
+            { seconds: 3 * 60 * 60, format: 'HH:mm' },
+            { seconds: 6 * 60 * 60, format: 'HH:mm' },
+            { seconds: 12 * 60 * 60, format: 'HH:mm' },
+            { seconds: 24 * 60 * 60, format: 'MM-DD HH:mm' }
+        ];
+        
+        const targetDensity = timeSpanSeconds / 6;
+        let selectedInterval = TIME_INTERVALS[TIME_INTERVALS.length - 1];
+        
+        for (let i = 0; i < TIME_INTERVALS.length; i++) {
+            if (TIME_INTERVALS[i].seconds >= targetDensity) {
+                selectedInterval = TIME_INTERVALS[i];
+                break;
+            }
+        }
+        
+        return selectedInterval;
+    }
     
-    // Draw the legend
-    const lctx = legendCanvas.getContext('2d');
-    const width = 150;
-    const height = 12;
-    const x = 0;
-    const y = 5;
-    
-    // Draw unit label
-    lctx.textAlign = 'right';
-    lctx.textBaseline = 'bottom';
-    lctx.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    lctx.fillStyle = '#888888';
-    lctx.fillText(config.units, width, y - 2);
-    
-    // Draw color gradient
-    const gradient = lctx.createLinearGradient(x, y, x + width, y);
-    config.colorScale.forEach((color, i) => {
-        gradient.addColorStop(i / (config.colorScale.length - 1), color);
-    });
-    
-    lctx.fillStyle = gradient;
-    lctx.fillRect(x, y, width, height);
-    
-    // Draw gradient border
-    lctx.strokeStyle = '#444444';
-    lctx.lineWidth = 1;
-    lctx.strokeRect(x, y, width, height);
-    
-    // Draw min/max labels
-    lctx.textAlign = 'center';
-    lctx.textBaseline = 'top';
-    lctx.fillStyle = '#888888';
-    lctx.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    
-    lctx.fillText(config.minValue, x + 10, y + height + 3);
-    lctx.fillText(config.maxValue, x + width - 10, y + height + 3);
+    // Format time consistently
+    function formatTimeLabel(timestamp) {
+        const interval = getCurrentInterval();
+        
+        const date = new Date(timestamp * 1000);
+        
+        // Handle different format strings
+        if (interval.format === 'HH:mm:ss') {
+            return date.toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            });
+        } else if (interval.format === 'HH:mm') {
+            return date.toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false
+            });
+        } else if (interval.format === 'MM-DD HH:mm') {
+            return `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${date.toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false
+            })}`;
+        }
+        
+        return date.toLocaleTimeString();
+    }
     
     // Function to get color for a value
     function getColor(value) {
@@ -240,33 +245,43 @@ function createNewCpuHeatmap(containerId, data, options = {}) {
         return `rgb(${r}, ${g}, ${b})`;
     }
     
-    // Helper to parse color
-    function parseColor(color) {
-        // Handle hex color
-        if (color.startsWith('#')) {
-            const r = parseInt(color.slice(1, 3), 16);
-            const g = parseInt(color.slice(3, 5), 16);
-            const b = parseInt(color.slice(5, 7), 16);
-            return { r, g, b };
-        }
+    // Function to update time axis labels based on current view
+    function updateTimeAxisLabels(viewStartTime, viewEndTime) {
+        // Clear existing labels
+        timeAxisEl.innerHTML = '';
         
-        // Handle rgb color
-        const match = color.match(/rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/);
-        if (match) {
-            return {
-                r: parseInt(match[1]),
-                g: parseInt(match[2]),
-                b: parseInt(match[3])
-            };
-        }
+        // Add new time labels (5 evenly spaced)
+        const timeLabels = 4; // Use 4 intervals = 5 labels
         
-        // Default fallback
-        return { r: 0, g: 0, b: 0 };
+        for (let i = 0; i <= timeLabels; i++) {
+            const percent = i / timeLabels;
+            const time = viewStartTime + percent * (viewEndTime - viewStartTime);
+            const labelX = percent * chartWidth;
+            
+            // Format time using our consistent formatter
+            const timeStr = formatTimeLabel(time);
+            
+            const timeLabel = document.createElement('div');
+            timeLabel.textContent = timeStr;
+            timeLabel.style.cssText = `
+                position: absolute;
+                bottom: 5px;
+                left: ${labelX}px;
+                transform: translateX(-50%);
+                font-size: 11px;
+                color: #888888;
+                pointer-events: none;
+            `;
+            timeAxisEl.appendChild(timeLabel);
+        }
     }
     
-    // Current view state (for synchronized zooming)
-    let currentViewMin = null;
-    let currentViewMax = null;
+    // Function to update zoom range
+    function updateZoom(min, max) {
+        currentViewMin = min;
+        currentViewMax = max;
+        drawHeatmap();
+    }
     
     // Draw the heatmap function
     function drawHeatmap() {
@@ -323,16 +338,9 @@ function createNewCpuHeatmap(containerId, data, options = {}) {
                 }
             }
         }
-    }
-    
-    // Draw the initial heatmap
-    drawHeatmap();
-    
-    // Function to update zoom range
-    function updateZoom(min, max) {
-        currentViewMin = min;
-        currentViewMax = max;
-        drawHeatmap();
+        
+        // Update time axis labels with current view
+        updateTimeAxisLabels(viewStartTime, viewEndTime);
     }
     
     // Create overlay with precise dimensions matching the canvas
@@ -531,24 +539,17 @@ function createNewCpuHeatmap(containerId, data, options = {}) {
             const value = cpuData[actualCpuIdx][closestIdx];
             
             // Format timestamp
-            const date = new Date(timestamps[closestIdx] * 1000);
-            const timeStr = date.toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
-                hour12: false
-            });
+            const formattedDate = formatDateTimeISO(timestamps[closestIdx]);
             
             // Create tooltip content
             tooltipEl.innerHTML = `
-                <div style="margin-bottom: 6px; font-weight: bold; color: #ddd; border-bottom: 1px solid #555; padding-bottom: 4px;">
-                    ${timeStr}
-                </div>
-                <div style="display: flex; justify-content: space-between; margin: 3px 0; align-items: center;">
-                    <span style="margin-right: 16px;">
+                <div class="header">${formattedDate}</div>
+                <div class="value-row">
+                    <span class="label">
+                        <span class="color-dot" style="background-color: ${getColor(value)};"></span>
                         CPU ${actualCpuIdx}:
                     </span>
-                    <span style="font-weight: bold;">${value.toFixed(1)}${config.units}</span>
+                    <span class="value">${value.toFixed(1)}${config.units}</span>
                 </div>
             `;
             
@@ -586,6 +587,9 @@ function createNewCpuHeatmap(containerId, data, options = {}) {
     overlayEl.addEventListener('mouseout', () => {
         tooltipEl.style.display = 'none';
     });
+    
+    // Draw the initial heatmap
+    drawHeatmap();
     
     // Create chart object with interface compatible with original
     const chartObj = {
@@ -738,100 +742,11 @@ function createNewCpuHeatmap(containerId, data, options = {}) {
         }
     };
     
+    // Draw initial heatmap
+    drawHeatmap();
+    
     return chartObj;
 }
 
 // Replace the original with our implementation
 window.createCpuHeatmap = createNewCpuHeatmap;
-
-// Add debug helper function to console
-window.debugHeatmap = function() {
-    // Find all heatmap charts
-    const charts = [];
-    if (window.zoomController && window.zoomController.plots) {
-        window.zoomController.plots.forEach(plot => {
-            if (plot._chart_type === 'heatmap') {
-                charts.push(plot);
-            }
-        });
-    }
-    
-    charts.forEach((chart, i) => {
-        console.log(`Heatmap chart ${i}:`, {
-            width: chart.width,
-            height: chart.height,
-            bbox: chart.bbox,
-            canvas: chart.canvas,
-            overlay: chart.over
-        });
-        
-        // Add visual debug outline
-        if (chart.canvas) {
-            const canvas = chart.canvas;
-            const wrapper = document.createElement('div');
-            wrapper.style.cssText = `
-                position: absolute;
-                top: ${canvas.offsetTop}px;
-                left: ${canvas.offsetLeft}px;
-                width: ${canvas.offsetWidth}px;
-                height: ${canvas.offsetHeight}px;
-                border: 2px dashed red;
-                z-index: 9999;
-                pointer-events: none;
-            `;
-            chart.root.appendChild(wrapper);
-            
-            // Add label
-            const label = document.createElement('div');
-            label.textContent = 'Canvas';
-            label.style.cssText = `
-                position: absolute;
-                top: ${canvas.offsetTop}px;
-                left: ${canvas.offsetLeft}px;
-                background: red;
-                color: white;
-                font-size: 10px;
-                padding: 2px;
-                z-index: 10000;
-                pointer-events: none;
-            `;
-            chart.root.appendChild(label);
-        }
-        
-        if (chart.over) {
-            const overlay = chart.over;
-            const wrapper = document.createElement('div');
-            wrapper.style.cssText = `
-                position: absolute;
-                top: ${overlay.offsetTop}px;
-                left: ${overlay.offsetLeft}px;
-                width: ${overlay.offsetWidth}px;
-                height: ${overlay.offsetHeight}px;
-                border: 2px dashed blue;
-                z-index: 9999;
-                pointer-events: none;
-            `;
-            chart.root.appendChild(wrapper);
-            
-            // Add label
-            const label = document.createElement('div');
-            label.textContent = 'Overlay';
-            label.style.cssText = `
-                position: absolute;
-                top: ${overlay.offsetTop}px;
-                left: ${overlay.offsetLeft + 50}px;
-                background: blue;
-                color: white;
-                font-size: 10px;
-                padding: 2px;
-                z-index: 10000;
-                pointer-events: none;
-            `;
-            chart.root.appendChild(label);
-        }
-    });
-    
-    console.log("Debug visualization added to heatmap charts");
-    
-    return charts.length ? charts : "No heatmap charts found";
-};
