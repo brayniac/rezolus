@@ -202,7 +202,11 @@
     <script src="/static/heatmap-loader.js"></script>
     <script src="/static/zoom-controller-fix.js"></script> -->
 
-    <script src="/static/heatmap.js"></script>
+    <script src="/static/heatmap-utils.js"></script>
+    <script src="/static/heatmap-elements.js"></script>
+    <script src="/static/heatmap-events.js"></script>
+    <script src="/static/heatmap-core.js"></script>
+    <script src="/static/heatmap-integration.js"></script>
     
     <!-- Dashboard initialization with embedded Jinja2 -->
     <script>
@@ -487,6 +491,8 @@
             });
 
             window.addEventListener('load', () => {
+                fixHeatmapPositioning();
+                setTimeout(fixCanvasRendering, 100);
                 setTimeout(checkHeatmapAlignment, 500);
             });
             
