@@ -9,6 +9,7 @@ const NAME: &str = "cpu_l3";
 use crate::agent::*;
 
 use perf_event::ReadFormat;
+use perf_event::events::Event;
 use tokio::sync::Mutex;
 use walkdir::WalkDir;
 
