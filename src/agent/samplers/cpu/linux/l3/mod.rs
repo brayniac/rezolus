@@ -90,7 +90,7 @@ impl LowLevelEvent {
     }
 }
 
-impl Event for Raw {
+impl Event for LowLevelEvent {
     fn update_attrs(self, attr: &mut perf_event_open_sys::bindings::perf_event_attr) {
         attr.type_ = self.event_type;
         attr.config = self.config;
@@ -122,7 +122,7 @@ impl L3Cache {
             )
             .build()
         {
-            if let Ok(miss) = perf_event::Builder::new(perf_event::events::Raw::new(0x104))
+            if let Ok(miss) = perf_event::Builder::new(LowLevelEvent::new(0xb, 0x104))
                 .one_cpu(cpu)
                 .any_pid()
                 .exclude_hv(false)
