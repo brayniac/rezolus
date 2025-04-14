@@ -91,7 +91,7 @@ impl LowLevelEvent {
 }
 
 impl Event for Raw {
-    fn update_attrs(self, attr: &mut bindings::perf_event_attr) {
+    fn update_attrs(self, attr: &mut perf_event_open_sys::bindings::perf_event_attr) {
         attr.type_ = self.event_type;
         attr.config = self.config;
     }
