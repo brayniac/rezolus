@@ -76,6 +76,27 @@ impl CpuL3Inner {
     }
 }
 
+pub struct LowLevelEvent {
+    event_type: u32,
+    config: u64,
+}
+
+impl LowLevelEvent {
+    pub fn new(event_type: u32, config: u64) -> Self {
+        Self {
+            event_type,
+            config,
+        }
+    }
+}
+
+impl Event for Raw {
+    fn update_attrs(self, attr: &mut bindings::perf_event_attr) {
+        attr.type_ = self.event_type;
+        attr.config = self.config;
+    }
+}
+
 /// A struct that contains the perf counters for each L3 cache as well as the
 /// list of all CPUs in that L3 domain.
 struct L3Cache {
@@ -90,7 +111,7 @@ impl L3Cache {
     pub fn new(shared_cores: Vec<usize>) -> Result<Self, ()> {
         let cpu = *shared_cores.first().expect("empty l3 domain");
 
-        if let Ok(mut access) = perf_event::Builder::new(perf_event::events::Raw::new(0xFF04))
+        if let Ok(mut access) = perf_event::Builder::new(LowLevelEvent::new(0xb, 0xFF04))
             .one_cpu(cpu)
             .any_pid()
             .exclude_hv(false)
