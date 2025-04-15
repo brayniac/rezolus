@@ -252,11 +252,11 @@ fn get_events() -> Option<(LowLevelEvent, LowLevelEvent)> {
     println!("detected uarch: {uarch}");
 
     match uarch {
-        MicroArchitecture::ZenV1 => Some(LowLevelEvent::new(0xb, 0xFF04), LowLevelEvent::new(0xb, 0xFF04)),
-        MicroArchitecture::ZenV2 => Some(LowLevelEvent::new(0xb, 0xFF04), LowLevelEvent::new(0xb, 0xFF04)),
-        MicroArchitecture::ZenV3 => Some(LowLevelEvent::new(0xb, 0xFF04), LowLevelEvent::new(0xb, 0xFF04)),
-        MicroArchitecture::ZenV4 => Some(LowLevelEvent::new(0xb, 0xFF04), LowLevelEvent::new(0xb, 0xFF04)),
-        MicroArchitecture::ZenV5 => Some(LowLevelEvent::new(0xb, 0xFF04), LowLevelEvent::new(0xb, 0xFF04)),
+        MicroArchitecture::ZenV1 => Some((LowLevelEvent::new(0xb, 0xFF04), LowLevelEvent::new(0xb, 0xFF04))),
+        MicroArchitecture::ZenV2 => Some((LowLevelEvent::new(0xb, 0xFF04), LowLevelEvent::new(0xb, 0xFF04))),
+        MicroArchitecture::ZenV3 => Some((LowLevelEvent::new(0xb, 0xFF04), LowLevelEvent::new(0xb, 0xFF04))),
+        MicroArchitecture::ZenV4 => Some((LowLevelEvent::new(0xb, 0xFF04), LowLevelEvent::new(0xb, 0xFF04))),
+        MicroArchitecture::ZenV5 => Some((LowLevelEvent::new(0xb, 0xFF04), LowLevelEvent::new(0xb, 0xFF04))),
         _ => None,
     }
 }
