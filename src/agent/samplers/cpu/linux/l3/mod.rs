@@ -118,7 +118,7 @@ impl L3Cache {
             return Err(());
         };
 
-        if let Ok(mut access) = perf_event::Builder::new(LowLevelEvent::new(0xb, 0xFF04))
+        if let Ok(mut access) = perf_event::Builder::new(access_event)
             .one_cpu(cpu)
             .any_pid()
             .exclude_hv(false)
@@ -129,7 +129,7 @@ impl L3Cache {
             )
             .build()
         {
-            if let Ok(miss) = perf_event::Builder::new(LowLevelEvent::new(0xb, 0x104))
+            if let Ok(miss) = perf_event::Builder::new(miss_event)
                 .one_cpu(cpu)
                 .any_pid()
                 .exclude_hv(false)
@@ -247,16 +247,16 @@ fn parse_cpu_list(list: &str) -> Vec<usize> {
     cores
 }
 
-fn get_event_codes() -> Option<(u64, u64)> {
+fn get_events() -> Option<(LowLevelEvent, LowLevelEvent)> {
     let uarch = detect_microarchitecture();
     println!("detected uarch: {uarch}");
 
     match uarch {
-        MicroArchitecture::ZenV1 => (0xFF04, 0x0104),
-        MicroArchitecture::ZenV2 => (0xFF04, 0x0104),
-        MicroArchitecture::ZenV3 => (0xFF04, 0x0104),
-        MicroArchitecture::ZenV4 => (0xFF04, 0x0104),
-        MicroArchitecture::ZenV5 => (0xFF04, 0x0104),
+        MicroArchitecture::ZenV1 => Some(LowLevelEvent::new(0xb, 0xFF04), LowLevelEvent::new(0xb, 0xFF04)),
+        MicroArchitecture::ZenV2 => Some(LowLevelEvent::new(0xb, 0xFF04), LowLevelEvent::new(0xb, 0xFF04)),
+        MicroArchitecture::ZenV3 => Some(LowLevelEvent::new(0xb, 0xFF04), LowLevelEvent::new(0xb, 0xFF04)),
+        MicroArchitecture::ZenV4 => Some(LowLevelEvent::new(0xb, 0xFF04), LowLevelEvent::new(0xb, 0xFF04)),
+        MicroArchitecture::ZenV5 => Some(LowLevelEvent::new(0xb, 0xFF04), LowLevelEvent::new(0xb, 0xFF04)),
         _ => None,
     }
 }
