@@ -252,7 +252,7 @@ fn get_events() -> Option<(LowLevelEvent, LowLevelEvent)> {
         println!("detected uarch: {uarch}");
 
         let events = match uarch.as_str() {
-            "zen" | "zen2" | "zen3" | "zen4" | "zen5" => (LowLevelEvent::new(0xb, 0xFF04), LowLevelEvent::new(0xb, 0xFF04)),
+            "zen" | "zen2" | "zen3" | "zen4" | "zen5" => (LowLevelEvent::new(0xb, 0xFF04), LowLevelEvent::new(0xb, 0x0104)),
             _ => {
                 return None;
             }
