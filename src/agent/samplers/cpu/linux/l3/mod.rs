@@ -258,7 +258,7 @@ fn get_events() -> Option<(LowLevelEvent, LowLevelEvent)> {
             }
         };
 
-        Some(events);
+        Some(events)
     } else {
         None
     }
