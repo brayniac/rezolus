@@ -112,8 +112,8 @@ impl L3Cache {
     pub fn new(shared_cores: Vec<usize>) -> Result<Self, ()> {
         let cpu = *shared_cores.first().expect("empty l3 domain");
 
-        let (access_event, miss_event) = if let Some(codes) = get_event_codes() {
-            codes
+        let (access_event, miss_event) = if let Some(events) = get_events() {
+            events
         } else {
             return Err(());
         };
