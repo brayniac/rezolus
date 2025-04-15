@@ -400,11 +400,17 @@ fn detect_microarchitecture() -> MicroArchitecture {
     let full_model = (extended_model << 4) | model;
 
     // Vendor-specific detection
-    match vendor_info.as_str() {
+    let result = match vendor_info.as_str() {
         "GenuineIntel" => detect_intel_microarchitecture(family, full_model),
         "AuthenticAMD" => detect_amd_microarchitecture(family, full_model),
         _ => MicroArchitecture::Unknown,
+    };
+
+    if result == MicroArchitecture::Unknown {
+        println!("family: {family} model: {full_model}");
     }
+
+    result
 }
 
 // Detect Intel Microarchitecture
