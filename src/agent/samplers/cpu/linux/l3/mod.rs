@@ -381,13 +381,13 @@ fn detect_microarchitecture() -> MicroArchitecture {
     let cpuid = CpuId::new();
 
     // Get vendor string and feature information
-    let vendor_info = if let Ok(vendor_info) = cpuid.get_vendor_info() {
+    let vendor_info = if let Some(vendor_info) = cpuid.get_vendor_info() {
         vendor_info
     } else {
         return MicroArchitecture::Unknown;
     };
 
-    let feature_info = if let Ok(feature_info) = cpuid.get_feature_info() {
+    let feature_info = if let Some(feature_info) = cpuid.get_feature_info() {
         feature_info
     } else {
         return MicroArchitecture::Unknown;
