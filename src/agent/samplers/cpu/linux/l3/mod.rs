@@ -381,8 +381,17 @@ fn detect_microarchitecture() -> MicroArchitecture {
     let cpuid = CpuId::new();
 
     // Get vendor string and feature information
-    let vendor_info = cpuid.get_vendor_info().unwrap_or_default();
-    let feature_info = cpuid.get_feature_info().unwrap_or_default();
+    let vendor_info = if let Ok(vendor_info) = cpuid.get_vendor_info() {
+        vendor_info
+    } else {
+        return MicroArchitecture::Unknown;
+    };
+
+    let feature_info = if let Ok(feature_info) = cpuid.get_feature_info() {
+        feature_info
+    } else {
+        return MicroArchitecture::Unknown;
+    };
 
     // Family and model are important for microarchitecture detection
     let family = feature_info.family_id();
