@@ -112,6 +112,12 @@ impl L3Cache {
     pub fn new(shared_cores: Vec<usize>) -> Result<Self, ()> {
         let cpu = *shared_cores.first().expect("empty l3 domain");
 
+        let (access_event, miss_event) = if let Some(codes) = get_event_codes() {
+            codes
+        } else {
+            return Err(());
+        };
+
         if let Ok(mut access) = perf_event::Builder::new(LowLevelEvent::new(0xb, 0xFF04))
             .one_cpu(cpu)
             .any_pid()
@@ -239,4 +245,272 @@ fn parse_cpu_list(list: &str) -> Vec<usize> {
     cores.sort_unstable();
     cores.dedup();
     cores
+}
+
+fn get_event_codes() -> Option<(u64, u64)> {
+    let uarch = detect_microarchitecture();
+    println!("detected uarch: {uarch}");
+
+    match uarch {
+        MicroArchitecture::ZenV1 => (0xFF04, 0x0104),
+        MicroArchitecture::ZenV2 => (0xFF04, 0x0104),
+        MicroArchitecture::ZenV3 => (0xFF04, 0x0104),
+        MicroArchitecture::ZenV4 => (0xFF04, 0x0104),
+        MicroArchitecture::ZenV5 => (0xFF04, 0x0104),
+        _ => None,
+    }
+}
+
+use std::fmt;
+use raw_cpuid::CpuId;
+
+// Enum to represent different microarchitectures
+#[derive(Debug, PartialEq)]
+enum MicroArchitecture {
+    // Intel Microarchitectures
+    AlderLake,
+    AlderLakeN,
+    ArrowLake,
+    Bonnell,
+    Broadwell,
+    BroadwellDE,
+    BroadwellX,
+    CascadeLakeX,
+    ClearwaterForest,
+    ElkhartLake,
+    EmeraldRapids,
+    Goldmont,
+    GoldmontPlus,
+    GrandRidge,
+    GraniteRapids,
+    Haswell,
+    HaswellX,
+    IceLake,
+    IceLakeX,
+    IvyBridge,
+    IvyTown,
+    JakeTown,
+    KnightsLanding,
+    LunarLake,
+    MeteorLake,
+    NehalemEP,
+    NehalemEX,
+    RocketLake,
+    SandyBridge,
+    SapphireRapids,
+    SierraForest,
+    Silvermont,
+    Skylake,
+    SkylakeX,
+    SnowRidgeX,
+    TigerLake,
+    WestmereEPDP,
+    WestmereEPSP,
+    WestmereEX,
+
+    // AMD Microarchitectures
+    ZenV1,
+    ZenV2,
+    ZenV3,
+    ZenV4,
+    ZenV5,
+
+    // Unknown Microarchitecture
+    Unknown,
+}
+
+impl fmt::Display for MicroArchitecture {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            // Intel Microarchitectures
+            MicroArchitecture::AlderLake => write!(f, "alderlake"),
+            MicroArchitecture::AlderLakeN => write!(f, "alderlaken"),
+            MicroArchitecture::ArrowLake => write!(f, "arrowlake"),
+            MicroArchitecture::Bonnell => write!(f, "bonnell"),
+            MicroArchitecture::Broadwell => write!(f, "broadwell"),
+            MicroArchitecture::BroadwellDE => write!(f, "broadwellde"),
+            MicroArchitecture::BroadwellX => write!(f, "broadwellx"),
+            MicroArchitecture::CascadeLakeX => write!(f, "cascadelakex"),
+            MicroArchitecture::ClearwaterForest => write!(f, "clearwaterforest"),
+            MicroArchitecture::ElkhartLake => write!(f, "elkhartlake"),
+            MicroArchitecture::EmeraldRapids => write!(f, "emeraldrapids"),
+            MicroArchitecture::Goldmont => write!(f, "goldmont"),
+            MicroArchitecture::GoldmontPlus => write!(f, "goldmontplus"),
+            MicroArchitecture::GrandRidge => write!(f, "grandridge"),
+            MicroArchitecture::GraniteRapids => write!(f, "graniterapids"),
+            MicroArchitecture::Haswell => write!(f, "haswell"),
+            MicroArchitecture::HaswellX => write!(f, "haswellx"),
+            MicroArchitecture::IceLake => write!(f, "icelake"),
+            MicroArchitecture::IceLakeX => write!(f, "icelakex"),
+            MicroArchitecture::IvyBridge => write!(f, "ivybridge"),
+            MicroArchitecture::IvyTown => write!(f, "ivytown"),
+            MicroArchitecture::JakeTown => write!(f, "jaketown"),
+            MicroArchitecture::KnightsLanding => write!(f, "knightslanding"),
+            MicroArchitecture::LunarLake => write!(f, "lunarlake"),
+            MicroArchitecture::MeteorLake => write!(f, "meteorlake"),
+            MicroArchitecture::NehalemEP => write!(f, "nehalemep"),
+            MicroArchitecture::NehalemEX => write!(f, "nehalemex"),
+            MicroArchitecture::RocketLake => write!(f, "rocketlake"),
+            MicroArchitecture::SandyBridge => write!(f, "sandybridge"),
+            MicroArchitecture::SapphireRapids => write!(f, "sapphirerapids"),
+            MicroArchitecture::SierraForest => write!(f, "sierraforest"),
+            MicroArchitecture::Silvermont => write!(f, "silvermont"),
+            MicroArchitecture::Skylake => write!(f, "skylake"),
+            MicroArchitecture::SkylakeX => write!(f, "skylakex"),
+            MicroArchitecture::SnowRidgeX => write!(f, "snowridgex"),
+            MicroArchitecture::TigerLake => write!(f, "tigerlake"),
+            MicroArchitecture::WestmereEPDP => write!(f, "westmereep-dp"),
+            MicroArchitecture::WestmereEPSP => write!(f, "westmereep-sp"),
+            MicroArchitecture::WestmereEX => write!(f, "westmereex"),
+
+            // AMD Microarchitectures
+            MicroArchitecture::ZenV1 => write!(f, "amdzen1"),
+            MicroArchitecture::ZenV2 => write!(f, "amdzen2"),
+            MicroArchitecture::ZenV3 => write!(f, "amdzen3"),
+            MicroArchitecture::ZenV4 => write!(f, "amdzen4"),
+            MicroArchitecture::ZenV5 => write!(f, "amdzen5"),
+
+            // Unknown
+            MicroArchitecture::Unknown => write!(f, "unknown"),
+        }
+    }
+}
+
+// Function to detect microarchitecture using CPUID
+fn detect_microarchitecture() -> MicroArchitecture {
+    let cpuid = CpuId::new();
+
+    // Get vendor string and feature information
+    let vendor_info = cpuid.get_vendor_info().unwrap_or_default();
+    let feature_info = cpuid.get_feature_info().unwrap_or_default();
+
+    // Family and model are important for microarchitecture detection
+    let family = feature_info.family_id();
+    let model = feature_info.model_id();
+    let extended_model = feature_info.extended_model_id();
+    let full_model = (extended_model << 4) | model;
+
+    // Vendor-specific detection
+    match vendor_info.as_str() {
+        "GenuineIntel" => detect_intel_microarchitecture(family, full_model),
+        "AuthenticAMD" => detect_amd_microarchitecture(family, full_model),
+        _ => MicroArchitecture::Unknown,
+    }
+}
+
+// Detect Intel Microarchitecture
+fn detect_intel_microarchitecture(family: u8, model: u8) -> MicroArchitecture {
+    // Ensure we're dealing with Intel's family 6 processors
+    if family != 6 {
+        return MicroArchitecture::Unknown;
+    }
+
+    match model {
+        // // Alder Lake
+        // 0x97 | 0x9A | 0xB7 | 0xBA | 0xBF => MicroArchitecture::AlderLake,
+        // 0xBE => MicroArchitecture::AlderLakeN,
+
+        // // Arrow Lake
+        // 0xC5 | 0xC6 => MicroArchitecture::ArrowLake,
+
+        // // Bonnell
+        // 0x1C | 0x26 | 0x27 | 0x35 | 0x36 => MicroArchitecture::Bonnell,
+
+        // // Broadwell
+        // 0x3D | 0x47 => MicroArchitecture::Broadwell,
+        // 0x56 => MicroArchitecture::BroadwellDE,
+        // 0x4F => MicroArchitecture::BroadwellX,
+
+        // // Cascade Lake X
+        // 0x55 if (model & 0xF) >= 5 => MicroArchitecture::CascadeLakeX,
+
+        // // Other specific models
+        // 0xDD => MicroArchitecture::ClearwaterForest,
+        // 0x9C | 0x96 => MicroArchitecture::ElkhartLake,
+        // 0xCF => MicroArchitecture::EmeraldRapids,
+        // 0x5C | 0x5F => MicroArchitecture::Goldmont,
+        // 0x7A => MicroArchitecture::GoldmontPlus,
+        // 0xB6 => MicroArchitecture::GrandRidge,
+        // 0xAD | 0xAE | 0xA6 => MicroArchitecture::GraniteRapids,
+
+        // // Haswell
+        // 0x3C | 0x45 | 0x46 => MicroArchitecture::Haswell,
+        // 0x3F => MicroArchitecture::HaswellX,
+
+        // // Ice Lake
+        // 0x7D | 0x7E => MicroArchitecture::IceLake,
+        // 0x6A | 0x6C => MicroArchitecture::IceLakeX,
+
+        // // Ivy Bridge
+        // 0x3A => MicroArchitecture::IvyBridge,
+        // 0x3E => MicroArchitecture::IvyTown,
+        // 0x2D => MicroArchitecture::JakeTown,
+
+        // // Knights Landing
+        // 0x57 | 0x85 => MicroArchitecture::KnightsLanding,
+
+        // // Lunar Lake
+        // 0xBD => MicroArchitecture::LunarLake,
+
+        // // Meteor Lake
+        // 0xAA | 0xAC | 0xB5 => MicroArchitecture::MeteorLake,
+
+        // // Nehalem
+        // 0x1A | 0x1E | 0x1F => MicroArchitecture::NehalemEP,
+        // 0x2E => MicroArchitecture::NehalemEX,
+
+        // // Rocket Lake
+        // 0xA7 => MicroArchitecture::RocketLake,
+
+        // // Sandy Bridge
+        // 0x2A => MicroArchitecture::SandyBridge,
+
+        // // Sapphire Rapids
+        // 0x8F => MicroArchitecture::SapphireRapids,
+
+        // // Sierra Forest
+        // 0xAF => MicroArchitecture::SierraForest,
+
+        // // Silvermont
+        // 0x37 | 0x4A | 0x4C | 0x4D | 0x5A => MicroArchitecture::Silvermont,
+
+        // // Skylake
+        // 0x4E | 0x5E | 0x8E | 0x9E | 0xA5 | 0xA6 => MicroArchitecture::Skylake,
+        // 0x55 if (model & 0xF) <= 4 => MicroArchitecture::SkylakeX,
+
+        // // Snow Ridge X
+        // 0x86 => MicroArchitecture::SnowRidgeX,
+
+        // // Tiger Lake
+        // 0x8C | 0x8D => MicroArchitecture::TigerLake,
+
+        // // Westmere
+        // 0x2C => MicroArchitecture::WestmereEPDP,
+        // 0x25 => MicroArchitecture::WestmereEPSP,
+        // 0x2F => MicroArchitecture::WestmereEX,
+
+        _ => MicroArchitecture::Unknown,
+    }
+}
+
+// Detect AMD Microarchitecture
+fn detect_amd_microarchitecture(family: u8, model: u8) -> MicroArchitecture {
+    match family {
+        // Zen V1 (Ryzen 1000/2000 series)
+        23 if model >= 0x00 && model <= 0x2F => MicroArchitecture::ZenV1,
+
+        // Zen V2 (Ryzen 3000 series)
+        23 if model >= 0x30 && model <= 0x3F => MicroArchitecture::ZenV2,
+
+        // Zen V3 (Ryzen 5000 series)
+        25 if model >= 0x00 && model <= 0x2F => MicroArchitecture::ZenV3,
+
+        // Zen V4 (Ryzen 7000 series)
+        25 if model >= 0x30 && model <= 0x3F => MicroArchitecture::ZenV4,
+
+        // Zen V5 (Ryzen 8000 series)
+        26 => MicroArchitecture::ZenV5,
+
+        _ => MicroArchitecture::Unknown,
+    }
 }
