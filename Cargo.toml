@@ -46,7 +46,7 @@ walkdir = "2.5.0"
 plain = "0.2.3"
 core_affinity = "0.8.1"
 chrono = "0.4.39"
-raw-cpuid = "11.5.0"
+archspec = "0.1.3"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libbpf-rs = { version = "0.24.8" }
