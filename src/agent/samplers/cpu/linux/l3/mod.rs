@@ -512,16 +512,16 @@ fn detect_intel_microarchitecture(family: u8, model: u8) -> MicroArchitecture {
 fn detect_amd_microarchitecture(family: u8, model: u8) -> MicroArchitecture {
     match family {
         // Zen V1 (Ryzen 1000/2000 series)
-        23 if model >= 0x00 && model <= 0x2F => MicroArchitecture::ZenV1,
+        23 if model <= 0x2F => MicroArchitecture::ZenV1,
 
         // Zen V2 (Ryzen 3000 series)
-        23 if model >= 0x30 && model <= 0x3F => MicroArchitecture::ZenV2,
+        23 if model >= 0x30 => MicroArchitecture::ZenV2,
 
         // Zen V3 (Ryzen 5000 series)
-        25 if model >= 0x00 && model <= 0x2F => MicroArchitecture::ZenV3,
+        25 if model <= 0x2F => MicroArchitecture::ZenV3,
 
         // Zen V4 (Ryzen 7000 series)
-        25 if model >= 0x30 && model <= 0x3F => MicroArchitecture::ZenV4,
+        25 if model >= 0x30 => MicroArchitecture::ZenV4,
 
         // Zen V5 (Ryzen 8000 series)
         26 => MicroArchitecture::ZenV5,
