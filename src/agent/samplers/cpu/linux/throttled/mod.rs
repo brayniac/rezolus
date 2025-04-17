@@ -311,6 +311,114 @@ fn set_name(id: usize, name: String) {
     }
 }
 
+struct Throttled {
+    bpf: AsyncBpf,
+    monitor: Arc<Mutex<CgroupThrottleMonitor>>,
+}
+
+#[async_trait]
+impl Sampler for Throttled {
+    async fn refresh(&self) {
+        // Refresh BPF data
+        self.bpf.refresh().await;
+        
+        // Update cgroup throttling stats
+        let mut monitor = self.monitor.lock().await;
+        monitor.update_throttling_stats();
+    }
+}
+
+#[distributed_slice(SAMPLERS)]
+fn init(config: Arc<Config>) -> SamplerResult {
+    if !config.enabled(NAME) {
+        return Ok(None);
+    }
+
+    // Set the root cgroup name
+    set_name(1, "/".to_string());
+
+    // Create and initialize the BPF program
+    let bpf = BpfBuilder::new(ModSkelBuilder::default)
+        .packed_counters("cgroup_throttled_time", &CGROUP_CPU_THROTTLED_TIME)
+        .packed_counters("cgroup_throttled_count", &CGROUP_CPU_THROTTLED_COUNT)
+        .ringbuf_handler("cgroup_info", handle_event)
+        .build()?;
+
+    // Create and initialize the cgroup monitor
+    let mut monitor = CgroupThrottleMonitor::new();
+    monitor.scan_cgroups();
+    
+    let monitor = Arc::new(Mutex::new(monitor));
+    
+    // Spawn a background task to periodically scan for new cgroups
+    let monitor_clone = monitor.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            let mut monitor = monitor_clone.lock().await;
+            monitor.scan_cgroups();
+        }
+    });
+
+    Ok(Some(Box::new(Throttled {
+        bpf,
+        monitor,
+    })))
+}
+
+impl SkelExt for ModSkel<'_> {
+    fn map(&self, name: &str) -> &libbpf_rs::Map {
+        match name {
+            "cgroup_info" => &self.maps.cgroup_info,
+            "cgroup_throttled_time" => &self.maps.cgroup_throttled_time,
+            "cgroup_throttled_count" => &self.maps.cgroup_throttled_count,
+            _ => unimplemented!(),
+        }
+    }
+}
+
+impl OpenSkelExt for ModSkel<'_> {
+    fn log_prog_instructions(&self) {
+        debug!(
+            "{NAME} handle_sched_switch() BPF instruction count: {}",
+            self.progs.handle_sched_switch.insn_cnt()
+        );
+        debug!(
+            "{NAME} update_throttle_stats() BPF instruction count: {}",
+            self.progs.update_throttle_stats.insn_cnt()
+        );
+    }
+}
+_empty() {
+            if cgroup_info.level > 3 {
+                format!(".../{gpname}/{pname}/{name}")
+            } else {
+                format!("/{gpname}/{pname}/{name}")
+            }
+        } else if !pname.is_empty() {
+            format!("/{pname}/{name}")
+        } else if !name.is_empty() {
+            format!("/{name}")
+        } else {
+            "".to_string()
+        };
+
+        let id = cgroup_info.id;
+
+        set_name(id as usize, name)
+    }
+
+    0
+}
+
+fn set_name(id: usize, name: String) {
+    if !name.is_empty() {
+        CGROUP_CPU_THROTTLED_TIME.insert_metadata(id, "name".to_string(), name.clone());
+        CGROUP_CPU_THROTTLED_COUNT.insert_metadata(id, "name".to_string(), name);
+    }
+}
+
 #[distributed_slice(SAMPLERS)]
 fn init(config: Arc<Config>) -> SamplerResult {
     if !config.enabled(NAME) {
