@@ -155,6 +155,7 @@ impl CgroupThrottleMonitor {
     }
 }
 
+
 fn handle_event(data: &[u8]) -> i32 {
     let mut cgroup_info = bpf::types::cgroup_info::default();
 
@@ -175,6 +176,26 @@ fn handle_event(data: &[u8]) -> i32 {
             .replace("\\x2d", "-");
 
         let name = if !gpname.is_empty() {
+            if cgroup_info.level > 3 {
+                format!(".../{gpname}/{pname}/{name}")
+            } else {
+                format!("/{gpname}/{pname}/{name}")
+            }
+        } else if !pname.is_empty() {
+            format!("/{pname}/{name}")
+        } else if !name.is_empty() {
+            format!("/{name}")
+        } else {
+            "".to_string()
+        };
+
+        let id = cgroup_info.id;
+
+        set_name(id as usize, name)
+    }
+
+    0
+}_empty() {
             if cgroup_info.level > 3 {
                 format!(".../{gpname}/{pname}/{name}")
             } else {
