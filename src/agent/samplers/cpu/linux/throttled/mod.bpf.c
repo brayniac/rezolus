@@ -66,6 +66,7 @@ struct {
 // Helper to extract cgroup ID from task_struct
 static u32 get_cgroup_id_from_task(struct task_struct *p) {
     struct cgroup *cgrp;
+    u32 cgroup_id = 0;
     
     // Get the task's cgroup
     cgrp = BPF_CORE_READ(p, cgroups, subsys[0], cgroup);
@@ -73,12 +74,16 @@ static u32 get_cgroup_id_from_task(struct task_struct *p) {
         return 0;
     }
     
-    return BPF_CORE_READ(cgrp, id);
+    // In the kernel, cgroup IDs are stored in the css_set structure
+    cgroup_id = BPF_CORE_READ(cgrp, kn, id);
+    
+    return cgroup_id;
 }
 
 // Helper to extract cgroup ID from task_group
 static u32 get_cgroup_id_from_tg(struct task_group *tg) {
     struct cgroup *cgrp;
+    u32 cgroup_id = 0;
     
     // Get the task group's cgroup
     cgrp = BPF_CORE_READ(tg, css.cgroup);
@@ -86,7 +91,10 @@ static u32 get_cgroup_id_from_tg(struct task_group *tg) {
         return 0;
     }
     
-    return BPF_CORE_READ(cgrp, id);
+    // Get the cgroup ID from kernfs_node
+    cgroup_id = BPF_CORE_READ(cgrp, kn, id);
+    
+    return cgroup_id;
 }
 
 // Helper to get and update cgroup metadata
@@ -193,7 +201,7 @@ int BPF_KPROBE(cpu_cfs_throttle_enter, struct task_struct *p)
         return 0;
     }
     
-    u32 cgroup_id = BPF_CORE_READ(cgrp, id);
+    u32 cgroup_id = BPF_CORE_READ(cgrp, kn, id);
     if (!cgroup_id || cgroup_id >= MAX_CGROUPS) {
         return 0;
     }
@@ -237,7 +245,7 @@ int BPF_KPROBE(tg_throttle_down_enter, struct task_group *tg, unsigned long *fla
         return 0;
     }
     
-    u32 cgroup_id = BPF_CORE_READ(cgrp, id);
+    u32 cgroup_id = BPF_CORE_READ(cgrp, kn, id);
     if (!cgroup_id || cgroup_id >= MAX_CGROUPS) {
         return 0;
     }
