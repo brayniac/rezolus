@@ -14,6 +14,19 @@
 #define MAX_CGROUPS 4096
 #define RINGBUF_CAPACITY 262144
 
+// Define the tracepoint structure for cgroup tracepoints
+struct cgroup_throttle_args {
+    __u64 pad;
+    __u64 id;           // cgroup id
+    char  *path;        // cgroup path
+    __u64 cpu_id;       // cpu id
+    __u64 throttle_percent; // percentage throttled
+    __u64 throttle_period_us; // throttle period in us
+    __u64 quota_us;     // quota in us
+    __u64 nr_periods;   // number of periods
+    __u64 nr_throttled; // number of times throttled
+};
+
 // dummy instance for skeleton to generate definition
 struct cgroup_info _cgroup_info = {};
 
@@ -100,9 +113,9 @@ static void update_cgroup_info(u32 cgroup_id, u64 id) {
 
 // Handler for throttling start
 SEC("tracepoint/cgroup/cgroup_throttle_cpu")
-int handle_throttle_start(struct trace_event_raw_cgroup_subsys *ctx)
+int handle_throttle_start(struct cgroup_throttle_args *ctx)
 {
-    u32 cgroup_id = ctx->id;
+    u32 cgroup_id = (u32)ctx->id;
     u64 ts = bpf_ktime_get_ns();
     u64 *elem;
 
@@ -128,9 +141,9 @@ int handle_throttle_start(struct trace_event_raw_cgroup_subsys *ctx)
 
 // Handler for throttling end
 SEC("tracepoint/cgroup/cgroup_unthrottle_cpu")
-int handle_throttle_end(struct trace_event_raw_cgroup_subsys *ctx)
+int handle_throttle_end(struct cgroup_throttle_args *ctx)
 {
-    u32 cgroup_id = ctx->id;
+    u32 cgroup_id = (u32)ctx->id;
     u64 ts, *start_ts, *throttled_time;
     u64 duration;
 
