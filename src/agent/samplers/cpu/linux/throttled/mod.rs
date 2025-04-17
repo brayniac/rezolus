@@ -1,6 +1,6 @@
-//! Collects CPU Throttling stats using BPF and cgroup filesystem:
-//! * Uses scheduler tracepoints to identify cgroups
-//! * Reads throttling stats from cgroup filesystem
+//! Collects CPU Throttling stats using the cgroup filesystem:
+//! * Reads throttling stats directly from cgroup filesystem
+//! * Tracks changes in throttling metrics over time
 //!
 //! And produces these stats:
 //! * `cgroup_cpu_throttled_time`
@@ -10,20 +10,14 @@
 
 const NAME: &str = "cpu_throttled";
 
-mod bpf {
-    include!(concat!(env!("OUT_DIR"), "/cpu_throttled.bpf.rs"));
-}
-
-use bpf::*;
-
 use crate::agent::*;
 
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::sync::Mutex;
 use walkdir::WalkDir;
 
@@ -31,96 +25,176 @@ mod stats;
 
 use stats::*;
 
-unsafe impl plain::Plain for bpf::types::cgroup_info {}
-
 // Structure to track last seen throttling stats for a cgroup
 #[derive(Debug, Default, Clone)]
 struct ThrottleStats {
     nr_periods: u64,
     nr_throttled: u64,
     throttled_time: u64,
+    last_update: std::time::Instant,
+}
+
+// Structure for a cgroup
+#[derive(Debug, Clone)]
+struct CgroupInfo {
+    id: usize,
+    path: PathBuf,
+    name: String,
+    stats: ThrottleStats,
 }
 
 // Cgroup monitor that periodically scans cgroup stats
 struct CgroupThrottleMonitor {
-    // Last seen stats for each cgroup
-    last_stats: HashMap<u32, ThrottleStats>,
-    // Cgroup paths by ID
-    cgroup_paths: HashMap<u32, String>,
+    // Cgroups by ID
+    cgroups: HashMap<usize, CgroupInfo>,
+    // Next cgroup ID to assign
+    next_id: usize,
+    // Base path for cgroups
+    base_path: PathBuf,
 }
 
 impl CgroupThrottleMonitor {
     fn new() -> Self {
+        // Start IDs at 1 since we reserve 0 for the root cgroup
+        let next_id = 1;
+        
+        // Default base path for the CPU controller
+        let base_path = PathBuf::from("/sys/fs/cgroup/cpu,cpuacct");
+        
+        // Initialize with an empty cgroup map
         Self {
-            last_stats: HashMap::new(),
-            cgroup_paths: HashMap::new(),
+            cgroups: HashMap::new(),
+            next_id,
+            base_path,
         }
     }
 
-    // Find all cgroup directories
+    // Generate a unique ID for a cgroup
+    fn generate_id(&mut self) -> usize {
+        let id = self.next_id;
+        self.next_id += 1;
+        id
+    }
+
+    // Find all cgroup directories and update the map
     fn scan_cgroups(&mut self) {
-        // Scan for CPU controller cgroups
-        for entry in WalkDir::new("/sys/fs/cgroup/cpu,cpuacct")
-            .min_depth(1)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
+        debug!("Scanning for cgroups in: {}", self.base_path.display());
+        
+        // Track seen paths to detect removed cgroups
+        let mut seen_paths = Vec::new();
+        
+        // Scan cgroup filesystem recursively
+        let walker = WalkDir::new(&self.base_path)
+            .min_depth(0)  // Include base directory
+            .follow_links(false);
+            
+        for entry in walker.into_iter().filter_map(|e| e.ok()) {
+            let path = entry.path();
+            
+            // Track this path
+            seen_paths.push(path.to_path_buf());
+            
+            // Skip if not a directory
             if !entry.file_type().is_dir() {
                 continue;
             }
-
-            let path = entry.path();
             
-            // Check if this is a valid cgroup
-            if !path.join("cpu.stat").exists() {
+            // Check if this is a valid cgroup with CPU controller
+            let stat_path = path.join("cpu.stat");
+            if !stat_path.exists() {
                 continue;
             }
-
-            // Get cgroup ID
-            if let Some(id) = self.get_cgroup_id(&path) {
-                self.cgroup_paths.insert(id, path.to_string_lossy().to_string());
+            
+            // Calculate a relative path from the base for naming
+            let rel_path = path.strip_prefix(&self.base_path).unwrap_or(path);
+            let name = format!("/{}", rel_path.display());
+            
+            // Check if we already have this cgroup by path
+            let existing_id = self.cgroups.iter()
+                .find(|(_, info)| info.path == path)
+                .map(|(id, _)| *id);
+                
+            match existing_id {
+                Some(id) => {
+                    // Update existing cgroup name if needed
+                    if let Some(info) = self.cgroups.get_mut(&id) {
+                        if info.name != name {
+                            info.name = name;
+                            // Update metadata
+                            set_name(id, &name);
+                        }
+                    }
+                }
+                None => {
+                    // New cgroup found
+                    let id = self.generate_id();
+                    debug!("Found new cgroup: {} (ID: {})", name, id);
+                    
+                    // Initialize stats
+                    let stats = match self.read_throttling_stats(&stat_path) {
+                        Ok(stats) => stats,
+                        Err(e) => {
+                            debug!("Error reading stats for {}: {}", path.display(), e);
+                            ThrottleStats::default()
+                        }
+                    };
+                    
+                    // Create cgroup info
+                    let cgroup = CgroupInfo {
+                        id,
+                        path: path.to_path_buf(),
+                        name: name.clone(),
+                        stats,
+                    };
+                    
+                    // Save cgroup and set metadata
+                    self.cgroups.insert(id, cgroup);
+                    set_name(id, &name);
+                }
             }
         }
+        
+        // Remove cgroups that no longer exist
+        self.cgroups.retain(|_, info| {
+            seen_paths.contains(&info.path)
+        });
     }
 
-    // Get cgroup ID from kernel
-    fn get_cgroup_id(&self, path: &Path) -> Option<u32> {
-        // In a real implementation, we would get this from cgroup controller
-        // For now we use a hash of the path as a placeholder
-        let path_str = path.to_string_lossy();
-        let hash = path_str.as_bytes().iter().fold(0, |acc, &x| acc.wrapping_add(x as u32));
-        Some(hash % MAX_CGROUPS as u32)
-    }
-
-    // Read and update throttling stats
-    fn update_throttling_stats(&mut self) {
-        for (id, path) in &self.cgroup_paths {
-            let stat_path = Path::new(path).join("cpu.stat");
+    // Update throttling stats for all known cgroups
+    fn update_throttling_stats(&mut self) -> Result<(), std::io::Error> {
+        for (id, info) in &mut self.cgroups {
+            let stat_path = info.path.join("cpu.stat");
             if !stat_path.exists() {
                 continue;
             }
 
-            if let Ok(stats) = self.read_throttling_stats(&stat_path) {
-                let last_stats = self.last_stats.entry(*id).or_default();
-                
-                // Check for changes in throttling
-                if stats.nr_throttled > last_stats.nr_throttled {
-                    // Update throttled count
-                    let throttled_count = stats.nr_throttled - last_stats.nr_throttled;
-                    let _ = CGROUP_CPU_THROTTLED_COUNT.set(*id as usize, throttled_count);
+            match self.read_throttling_stats(&stat_path) {
+                Ok(new_stats) => {
+                    // Calculate the delta in throttling metrics
+                    let throttled_count_delta = new_stats.nr_throttled - info.stats.nr_throttled;
+                    let throttled_time_delta = new_stats.throttled_time - info.stats.throttled_time;
+                    
+                    // Only update metrics if there's been a change
+                    if throttled_count_delta > 0 {
+                        debug!("Cgroup {} throttled {} times", info.name, throttled_count_delta);
+                        let _ = CGROUP_CPU_THROTTLED_COUNT.set(*id, throttled_count_delta);
+                    }
+                    
+                    if throttled_time_delta > 0 {
+                        debug!("Cgroup {} throttled for {}ns", info.name, throttled_time_delta);
+                        let _ = CGROUP_CPU_THROTTLED_TIME.set(*id, throttled_time_delta);
+                    }
+                    
+                    // Update stored stats
+                    info.stats = new_stats;
                 }
-                
-                // Check for changes in throttled time
-                if stats.throttled_time > last_stats.throttled_time {
-                    // Update throttled time
-                    let throttled_time = stats.throttled_time - last_stats.throttled_time;
-                    let _ = CGROUP_CPU_THROTTLED_TIME.set(*id as usize, throttled_time);
+                Err(e) => {
+                    debug!("Error reading stats for {}: {}", info.path.display(), e);
                 }
-                
-                // Save current stats for next comparison
-                *last_stats = stats;
             }
         }
+        
+        Ok(())
     }
 
     // Read throttling stats from cpu.stat file
@@ -129,7 +203,10 @@ impl CgroupThrottleMonitor {
         let mut contents = String::new();
         file.read_to_string(&mut contents)?;
 
-        let mut stats = ThrottleStats::default();
+        let mut stats = ThrottleStats {
+            last_update: std::time::Instant::now(),
+            ..Default::default()
+        };
 
         for line in contents.lines() {
             let parts: Vec<&str> = line.split_whitespace().collect();
@@ -155,68 +232,24 @@ impl CgroupThrottleMonitor {
     }
 }
 
-fn handle_event(data: &[u8]) -> i32 {
-    let mut cgroup_info = bpf::types::cgroup_info::default();
-
-    if plain::copy_from_bytes(&mut cgroup_info, data).is_ok() {
-        let name = std::str::from_utf8(&cgroup_info.name)
-            .unwrap()
-            .trim_end_matches(char::from(0))
-            .replace("\\x2d", "-");
-
-        let pname = std::str::from_utf8(&cgroup_info.pname)
-            .unwrap()
-            .trim_end_matches(char::from(0))
-            .replace("\\x2d", "-");
-
-        let gpname = std::str::from_utf8(&cgroup_info.gpname)
-            .unwrap()
-            .trim_end_matches(char::from(0))
-            .replace("\\x2d", "-");
-
-        let name = if !gpname.is_empty() {
-            if cgroup_info.level > 3 {
-                format!(".../{gpname}/{pname}/{name}")
-            } else {
-                format!("/{gpname}/{pname}/{name}")
-            }
-        } else if !pname.is_empty() {
-            format!("/{pname}/{name}")
-        } else if !name.is_empty() {
-            format!("/{name}")
-        } else {
-            "".to_string()
-        };
-
-        let id = cgroup_info.id;
-
-        set_name(id as usize, name)
-    }
-
-    0
-}
-
-fn set_name(id: usize, name: String) {
+fn set_name(id: usize, name: &str) {
     if !name.is_empty() {
-        CGROUP_CPU_THROTTLED_TIME.insert_metadata(id, "name".to_string(), name.clone());
-        CGROUP_CPU_THROTTLED_COUNT.insert_metadata(id, "name".to_string(), name);
+        CGROUP_CPU_THROTTLED_TIME.insert_metadata(id, "name".to_string(), name.to_string());
+        CGROUP_CPU_THROTTLED_COUNT.insert_metadata(id, "name".to_string(), name.to_string());
     }
 }
 
 struct Throttled {
-    bpf: AsyncBpf,
     monitor: Arc<Mutex<CgroupThrottleMonitor>>,
 }
 
 #[async_trait]
 impl Sampler for Throttled {
     async fn refresh(&self) {
-        // Refresh BPF data
-        self.bpf.refresh().await;
-        
-        // Update cgroup throttling stats
         let mut monitor = self.monitor.lock().await;
-        monitor.update_throttling_stats();
+        if let Err(e) = monitor.update_throttling_stats() {
+            error!("Error updating throttling stats: {}", e);
+        }
     }
 }
 
@@ -227,17 +260,12 @@ fn init(config: Arc<Config>) -> SamplerResult {
     }
 
     // Set the root cgroup name
-    set_name(1, "/".to_string());
-
-    // Create and initialize the BPF program
-    let bpf = BpfBuilder::new(ModSkelBuilder::default)
-        .packed_counters("cgroup_throttled_time", &CGROUP_CPU_THROTTLED_TIME)
-        .packed_counters("cgroup_throttled_count", &CGROUP_CPU_THROTTLED_COUNT)
-        .ringbuf_handler("cgroup_info", handle_event)
-        .build()?;
+    set_name(0, "/");
 
     // Create and initialize the cgroup monitor
     let mut monitor = CgroupThrottleMonitor::new();
+    
+    // Initial scan for cgroups
     monitor.scan_cgroups();
     
     let monitor = Arc::new(Mutex::new(monitor));
@@ -254,31 +282,6 @@ fn init(config: Arc<Config>) -> SamplerResult {
     });
 
     Ok(Some(Box::new(Throttled {
-        bpf,
         monitor,
     })))
-}
-
-impl SkelExt for ModSkel<'_> {
-    fn map(&self, name: &str) -> &libbpf_rs::Map {
-        match name {
-            "cgroup_info" => &self.maps.cgroup_info,
-            "cgroup_throttled_time" => &self.maps.cgroup_throttled_time,
-            "cgroup_throttled_count" => &self.maps.cgroup_throttled_count,
-            _ => unimplemented!(),
-        }
-    }
-}
-
-impl OpenSkelExt for ModSkel<'_> {
-    fn log_prog_instructions(&self) {
-        debug!(
-            "{NAME} handle_sched_switch() BPF instruction count: {}",
-            self.progs.handle_sched_switch.insn_cnt()
-        );
-        debug!(
-            "{NAME} update_throttle_stats() BPF instruction count: {}",
-            self.progs.update_throttle_stats.insn_cnt()
-        );
-    }
 }
