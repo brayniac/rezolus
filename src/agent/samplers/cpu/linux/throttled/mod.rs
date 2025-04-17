@@ -70,7 +70,7 @@ impl CgroupThrottleMonitor {
         let next_id = 1;
 
         // Default base path for the CPU controller
-        let base_path = PathBuf::from("/sys/fs/cgroup/cpu,cpuacct");
+        let base_path = PathBuf::from("/sys/fs/cgroup");
 
         // Initialize with an empty cgroup map
         Self {
