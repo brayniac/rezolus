@@ -1,6 +1,8 @@
-//! Collects CPU Throttling stats using BPF and traces:
-//! * `cgroup/cgroup_throttle_cpu`
-//! * `cgroup/cgroup_unthrottle_cpu`
+//! Collects CPU Throttling stats using BPF and kprobes:
+//! * `cpu_cfs_throttle`
+//! * `cpu_cfs_unthrottle`
+//! * `tg_throttle_up`
+//! * `tg_throttle_down`
 //!
 //! And produces these stats:
 //! * `cgroup_cpu_throttled_time`
@@ -107,12 +109,20 @@ impl SkelExt for ModSkel<'_> {
 impl OpenSkelExt for ModSkel<'_> {
     fn log_prog_instructions(&self) {
         debug!(
-            "{NAME} handle_throttle_start() BPF instruction count: {}",
-            self.progs.handle_throttle_start.insn_cnt()
+            "{NAME} cpu_cfs_throttle_enter() BPF instruction count: {}",
+            self.progs.cpu_cfs_throttle_enter.insn_cnt()
         );
         debug!(
-            "{NAME} handle_throttle_end() BPF instruction count: {}",
-            self.progs.handle_throttle_end.insn_cnt()
+            "{NAME} cpu_cfs_unthrottle_enter() BPF instruction count: {}",
+            self.progs.cpu_cfs_unthrottle_enter.insn_cnt()
+        );
+        debug!(
+            "{NAME} tg_throttle_up_enter() BPF instruction count: {}",
+            self.progs.tg_throttle_up_enter.insn_cnt()
+        );
+        debug!(
+            "{NAME} tg_throttle_down_enter() BPF instruction count: {}",
+            self.progs.tg_throttle_down_enter.insn_cnt()
         );
     }
 }
