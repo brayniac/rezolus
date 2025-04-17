@@ -144,7 +144,7 @@ impl CgroupThrottleMonitor {
                     debug!("Found new cgroup: {} (ID: {})", name, id);
 
                     // Initialize stats
-                    let stats = match self.read_throttling_stats(&stat_path) {
+                    let stats = match read_throttling_stats(&stat_path) {
                         Ok(stats) => stats,
                         Err(e) => {
                             debug!("Error reading stats for {}: {}", path.display(), e);
