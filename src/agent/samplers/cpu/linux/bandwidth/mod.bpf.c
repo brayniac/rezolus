@@ -14,8 +14,16 @@
 #define MAX_CGROUPS 4096
 #define RINGBUF_CAPACITY 262144
 
+// struct to pass bandwidth info to userspace
+struct bandwidth_info {
+    u32 id;             // cgroup id
+    u64 quota;          // quota in nanoseconds
+    u64 period;         // period in nanoseconds
+};
+
 // dummy instance for skeleton to generate definition
 struct cgroup_info _cgroup_info = {};
+struct bandwidth_info _bandwidth_info = {};
 
 // ringbuf to pass cgroup info
 struct {
@@ -24,6 +32,14 @@ struct {
     __uint(value_size, 0);
     __uint(max_entries, RINGBUF_CAPACITY);
 } cgroup_info SEC(".maps");
+
+// ringbuf to pass bandwidth info
+struct {
+    __uint(type, BPF_MAP_TYPE_RINGBUF);
+    __uint(key_size, 0);
+    __uint(value_size, 0);
+    __uint(max_entries, RINGBUF_CAPACITY);
+} bandwidth_info SEC(".maps");
 
 // holds known cgroup serial numbers to help determine new or changed groups
 struct {
