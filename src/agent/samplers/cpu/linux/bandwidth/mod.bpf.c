@@ -1,8 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
-// Copyright (c) 2025 The Rezolus Authors
-
-// This BPF program probes CFS bandwidth control events to gather detailed metrics
-
 #include <vmlinux.h>
 #include "../../../agent/bpf/cgroup_info.h"
 #include "../../../agent/bpf/helpers.h"
@@ -51,7 +46,6 @@ struct {
 } cgroup_serial_numbers SEC(".maps");
 
 // counters
-
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __uint(map_flags, BPF_F_MMAPABLE);
@@ -101,13 +95,21 @@ struct {
     __type(value, u32);   // cgroup id
 } cfs_b_to_cgroup SEC(".maps");
 
-// Track the last time a cgroup consumed runtime
+// Track task execution time
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
     __uint(max_entries, MAX_CGROUPS);
-    __type(key, u32);
-    __type(value, u64);
-} last_runtime SEC(".maps");
+    __type(key, u32);     // pid
+    __type(value, u64);   // timestamp
+} task_start_time SEC(".maps");
+
+// Track cgroup runtime consumption
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, MAX_CGROUPS);
+    __type(key, u32);     // cgroup id
+    __type(value, u64);   // accumulated runtime
+} cgroup_runtime SEC(".maps");
 
 SEC("kprobe/tg_set_cfs_bandwidth")
 int tg_set_cfs_bandwidth(struct pt_regs *ctx)
@@ -180,66 +182,94 @@ int tg_set_cfs_bandwidth(struct pt_regs *ctx)
     return 0;
 }
 
-SEC("kprobe/tg_unthrottle_up")
-int tg_unthrottle_up(struct pt_regs *ctx)
+// Alternative to update_cpu_runtime - trace task enqueue and dequeue to estimate runtime
+SEC("kprobe/check_enqueue_task")
+int check_enqueue_task(struct pt_regs *ctx)
 {
-    struct task_group *tg = (struct task_group *)PT_REGS_PARM1(ctx);
+    struct rq *rq = (struct rq *)PT_REGS_PARM1(ctx);
+    struct task_struct *p = (struct task_struct *)PT_REGS_PARM2(ctx);
     
+    if (!p)
+        return 0;
+    
+    // Get the task_group
+    struct task_group *tg = BPF_CORE_READ(p, sched_task_group);
     if (!tg)
         return 0;
-
-    // Get cgroup information
+    
+    // Get the cgroup_id
     struct cgroup_subsys_state *css = &tg->css;
     if (!css)
         return 0;
-
+    
     u32 cgroup_id = BPF_CORE_READ(css, id);
     if (!cgroup_id || cgroup_id >= MAX_CGROUPS)
         return 0;
-
-    // Increment redistribution counter
-    array_incr(&redistribution, cgroup_id);
-
+    
+    // When a task gets context switched in, track its start time
+    u64 now = bpf_ktime_get_ns();
+    u32 pid = BPF_CORE_READ(p, pid);
+    
+    // Store task start time
+    bpf_map_update_elem(&task_start_time, &pid, &now, BPF_ANY);
+    
     return 0;
 }
 
-SEC("kprobe/update_cpu_runtime")
-int update_cpu_runtime(struct pt_regs *ctx)
+// When a task yields, estimate its runtime and add to quota consumption
+SEC("tp_btf/sched_switch")
+int handle_sched_switch(u64 *ctx)
 {
-    struct cfs_bandwidth *cfs_b = (struct cfs_bandwidth *)PT_REGS_PARM1(ctx);
-    u64 runtime = (u64)PT_REGS_PARM2(ctx);
+    /* TP_PROTO(bool preempt, struct task_struct *prev, struct task_struct *next) */
+    struct task_struct *prev = (struct task_struct *)ctx[1];
+    struct task_struct *next = (struct task_struct *)ctx[2];
     
-    if (!cfs_b)
-        return 0;
-
-    // Look up the cgroup_id using our mapping table
-    u32 *cgroup_id_ptr = bpf_map_lookup_elem(&cfs_b_to_cgroup, &cfs_b);
-    if (!cgroup_id_ptr || *cgroup_id_ptr == 0 || *cgroup_id_ptr >= MAX_CGROUPS)
+    u32 prev_pid = BPF_CORE_READ(prev, pid);
+    
+    // Lookup start time for the previous task
+    u64 *start_time = bpf_map_lookup_elem(&task_start_time, &prev_pid);
+    if (!start_time)
         return 0;
     
-    u32 cgroup_id = *cgroup_id_ptr;
-
-    // Get the last runtime value
-    u64 *last = bpf_map_lookup_elem(&last_runtime, &cgroup_id);
-    u64 prev_runtime = last ? *last : 0;
-
-    // If this is a new runtime measurement higher than the previous one,
-    // add the difference to the quota_consumed counter
-    if (runtime > prev_runtime) {
-        u64 consumed = runtime - prev_runtime;
-        array_add(&quota_consumed, cgroup_id, consumed);
+    // Get the task_group and cgroup for the task
+    struct task_group *tg = BPF_CORE_READ(prev, sched_task_group);
+    if (!tg)
+        goto cleanup;
+    
+    struct cgroup_subsys_state *css = &tg->css;
+    if (!css)
+        goto cleanup;
+    
+    u32 cgroup_id = BPF_CORE_READ(css, id);
+    if (!cgroup_id || cgroup_id >= MAX_CGROUPS)
+        goto cleanup;
+    
+    // Calculate runtime and add to quota consumption
+    u64 now = bpf_ktime_get_ns();
+    if (*start_time > 0 && *start_time < now) {
+        u64 runtime = now - *start_time;
+        
+        // Get current runtime for this cgroup
+        u64 *current_runtime = bpf_map_lookup_elem(&cgroup_runtime, &cgroup_id);
+        u64 new_runtime = current_runtime ? *current_runtime + runtime : runtime;
+        
+        // Update cgroup runtime
+        bpf_map_update_elem(&cgroup_runtime, &cgroup_id, &new_runtime, BPF_ANY);
+        
+        // Add to quota consumed
+        array_add(&quota_consumed, cgroup_id, runtime);
     }
-
-    // Update the last runtime
-    bpf_map_update_elem(&last_runtime, &cgroup_id, &runtime, BPF_ANY);
-
+    
+cleanup:
+    // Remove the start time entry
+    bpf_map_delete_elem(&task_start_time, &prev_pid);
     return 0;
 }
 
-SEC("kprobe/cfs_period_timer_fn")
-int cfs_period_timer_fn(struct pt_regs *ctx)
+// Alternative to cfs_period_timer_fn - trace timer start instead
+SEC("kprobe/start_cfs_bandwidth_timer")
+int start_cfs_bandwidth_timer(struct pt_regs *ctx)
 {
-    // This function is called when a CFS period expires
     struct cfs_bandwidth *cfs_b = (struct cfs_bandwidth *)PT_REGS_PARM1(ctx);
     
     if (!cfs_b)

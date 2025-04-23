@@ -1,8 +1,9 @@
+// src/agent/samplers/cpu/linux/bandwidth/mod.rs
+
 //! Collects CPU CFS bandwidth control and throttling stats using BPF and traces:
 //! * `tg_set_cfs_bandwidth`
-//! * `tg_unthrottle_up`
-//! * `update_cpu_runtime`
-//! * `cfs_period_timer_fn`
+//! * `check_enqueue_task`   // replacement for update_cpu_runtime
+//! * `start_cfs_bandwidth_timer` // replacement for cfs_period_timer_fn
 //! * `throttle_cfs_rq`
 //! * `unthrottle_cfs_rq`
 //!
@@ -14,10 +15,6 @@
 //! * `cgroup_cpu_bandwidth_period_duration`
 //! * `cgroup_cpu_throttled_time`
 //! * `cgroup_cpu_throttled`
-//!
-//! These stats can be used to understand CFS bandwidth control in detail,
-//! including quota assignment, hierarchical relationships, and resource
-//! distribution patterns.
 
 const NAME: &str = "cpu_bandwidth";
 
@@ -85,7 +82,7 @@ fn handle_bandwidth_info(data: &[u8]) -> i32 {
         let id = bandwidth_info.id;
         let quota = bandwidth_info.quota;
         let period = bandwidth_info.period;
-        
+
         if id < MAX_CGROUPS as u32 {
             let _ = CGROUP_CPU_BANDWIDTH_QUOTA.set(id as usize, quota as i64);
             let _ = CGROUP_CPU_BANDWIDTH_PERIOD_DURATION.set(id as usize, period as i64);
@@ -102,6 +99,7 @@ fn set_cgroup_name(id: usize, name: String) {
         CGROUP_CPU_BANDWIDTH_PERIOD_EVENTS.insert_metadata(id, "name".to_string(), name.clone());
         CGROUP_CPU_BANDWIDTH_REDISTRIBUTION.insert_metadata(id, "name".to_string(), name.clone());
         CGROUP_CPU_BANDWIDTH_PERIOD_DURATION.insert_metadata(id, "name".to_string(), name.clone());
+        // Add metadata for throttling metrics
         CGROUP_CPU_THROTTLED_TIME.insert_metadata(id, "name".to_string(), name.clone());
         CGROUP_CPU_THROTTLED.insert_metadata(id, "name".to_string(), name);
     }
@@ -119,6 +117,9 @@ fn init(config: Arc<Config>) -> SamplerResult {
         .packed_counters("quota_consumed", &CGROUP_CPU_BANDWIDTH_QUOTA_CONSUMED)
         .packed_counters("period_events", &CGROUP_CPU_BANDWIDTH_PERIOD_EVENTS)
         .packed_counters("redistribution", &CGROUP_CPU_BANDWIDTH_REDISTRIBUTION)
+        // Add throttling metrics from previous module
+        .packed_counters("throttled_time", &CGROUP_CPU_THROTTLED_TIME)
+        .packed_counters("throttled_count", &CGROUP_CPU_THROTTLED)
         .ringbuf_handler("cgroup_info", handle_cgroup_info)
         .ringbuf_handler("bandwidth_info", handle_bandwidth_info)
         .build()?;
@@ -148,16 +149,12 @@ impl OpenSkelExt for ModSkel<'_> {
             self.progs.tg_set_cfs_bandwidth.insn_cnt()
         );
         debug!(
-            "{NAME} tg_unthrottle_up() BPF instruction count: {}",
-            self.progs.tg_unthrottle_up.insn_cnt()
+            "{NAME} check_enqueue_task() BPF instruction count: {}",
+            self.progs.check_enqueue_task.insn_cnt()
         );
         debug!(
-            "{NAME} update_cpu_runtime() BPF instruction count: {}",
-            self.progs.update_cpu_runtime.insn_cnt()
-        );
-        debug!(
-            "{NAME} cfs_period_timer_fn() BPF instruction count: {}",
-            self.progs.cfs_period_timer_fn.insn_cnt()
+            "{NAME} start_cfs_bandwidth_timer() BPF instruction count: {}",
+            self.progs.start_cfs_bandwidth_timer.insn_cnt()
         );
         debug!(
             "{NAME} throttle_cfs_rq() BPF instruction count: {}",
