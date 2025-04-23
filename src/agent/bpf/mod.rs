@@ -1,6 +1,5 @@
 mod builder;
 mod counters;
-mod gauges;
 mod histogram;
 mod sync_primitive;
 
@@ -32,9 +31,6 @@ pub const MAX_CGROUPS: usize = 4096;
 const COUNTER_SIZE: usize = std::mem::size_of::<u64>();
 const COUNTERS_PER_CACHELINE: usize = CACHELINE_SIZE / COUNTER_SIZE;
 
-const GAUGE_SIZE: usize = std::mem::size_of::<i65>();
-const GAUGES_PER_CACHELINE: usize = CACHELINE_SIZE / GAUGE_SIZE;
-
 fn whole_cachelines<T>(count: usize) -> usize {
     (count * std::mem::size_of::<T>()).div_ceil(CACHELINE_SIZE)
 }
@@ -44,7 +40,6 @@ fn whole_pages<T>(count: usize) -> usize {
 }
 
 use counters::{Counters, CpuCounters, PackedCounters};
-use gauges::PackedGauges;
 use histogram::Histogram;
 use sync_primitive::SyncPrimitive;
 
