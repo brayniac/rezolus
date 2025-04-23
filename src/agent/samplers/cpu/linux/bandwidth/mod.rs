@@ -90,6 +90,11 @@ fn set_cgroup_name(id: usize, name: String) {
         for m in &[
             &CGROUP_CPU_BANDWIDTH_QUOTA,
             &CGROUP_CPU_BANDWIDTH_PERIOD,
+        ] {
+            m.insert_metadata(id, "name".to_string(), name.clone());
+        }
+
+        for m in &[
             &CGROUP_CPU_THROTTLED_TIME,
             &CGROUP_CPU_THROTTLED,
         ] {
