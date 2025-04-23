@@ -1,18 +1,11 @@
-// src/agent/samplers/cpu/linux/bandwidth/mod.rs
-
 //! Collects CPU CFS bandwidth control and throttling stats using BPF and traces:
 //! * `tg_set_cfs_bandwidth`
-//! * `check_enqueue_task`   // replacement for update_cpu_runtime
-//! * `start_cfs_bandwidth_timer` // replacement for cfs_period_timer_fn
 //! * `throttle_cfs_rq`
 //! * `unthrottle_cfs_rq`
 //!
 //! And produces these stats:
 //! * `cgroup_cpu_bandwidth_quota`
-//! * `cgroup_cpu_bandwidth_quota_consumed`
-//! * `cgroup_cpu_bandwidth_period_events`
-//! * `cgroup_cpu_bandwidth_redistribution`
-//! * `cgroup_cpu_bandwidth_period_duration`
+//! * `cgroup_cpu_bandwidth_period`
 //! * `cgroup_cpu_throttled_time`
 //! * `cgroup_cpu_throttled`
 
@@ -85,7 +78,7 @@ fn handle_bandwidth_info(data: &[u8]) -> i32 {
 
         if id < MAX_CGROUPS as u32 {
             let _ = CGROUP_CPU_BANDWIDTH_QUOTA.set(id as usize, quota as i64);
-            let _ = CGROUP_CPU_BANDWIDTH_PERIOD_DURATION.set(id as usize, period as i64);
+            let _ = CGROUP_CPU_BANDWIDTH_PERIOD.set(id as usize, period as i64);
         }
     }
 
@@ -94,14 +87,14 @@ fn handle_bandwidth_info(data: &[u8]) -> i32 {
 
 fn set_cgroup_name(id: usize, name: String) {
     if !name.is_empty() {
-        CGROUP_CPU_BANDWIDTH_QUOTA.insert_metadata(id, "name".to_string(), name.clone());
-        CGROUP_CPU_BANDWIDTH_QUOTA_CONSUMED.insert_metadata(id, "name".to_string(), name.clone());
-        CGROUP_CPU_BANDWIDTH_PERIOD_EVENTS.insert_metadata(id, "name".to_string(), name.clone());
-        CGROUP_CPU_BANDWIDTH_REDISTRIBUTION.insert_metadata(id, "name".to_string(), name.clone());
-        CGROUP_CPU_BANDWIDTH_PERIOD_DURATION.insert_metadata(id, "name".to_string(), name.clone());
-        // Add metadata for throttling metrics
-        CGROUP_CPU_THROTTLED_TIME.insert_metadata(id, "name".to_string(), name.clone());
-        CGROUP_CPU_THROTTLED.insert_metadata(id, "name".to_string(), name);
+        for m in &[
+            &CGROUP_CPU_BANDWIDTH_QUOTA,
+            &CGROUP_CPU_BANDWIDTH_PERIOD,
+            &CGROUP_CPU_THROTTLED_TIME,
+            &CGROUP_CPU_THROTTLED,
+        ] {
+            m.insert_metadata(id, "name".to_string(), name.clone());
+        }
     }
 }
 
@@ -114,10 +107,6 @@ fn init(config: Arc<Config>) -> SamplerResult {
     set_cgroup_name(1, "/".to_string());
 
     let bpf = BpfBuilder::new(ModSkelBuilder::default)
-        .packed_counters("quota_consumed", &CGROUP_CPU_BANDWIDTH_QUOTA_CONSUMED)
-        .packed_counters("period_events", &CGROUP_CPU_BANDWIDTH_PERIOD_EVENTS)
-        .packed_counters("redistribution", &CGROUP_CPU_BANDWIDTH_REDISTRIBUTION)
-        // Add throttling metrics from previous module
         .packed_counters("throttled_time", &CGROUP_CPU_THROTTLED_TIME)
         .packed_counters("throttled_count", &CGROUP_CPU_THROTTLED)
         .ringbuf_handler("cgroup_info", handle_cgroup_info)
@@ -132,9 +121,6 @@ impl SkelExt for ModSkel<'_> {
         match name {
             "cgroup_info" => &self.maps.cgroup_info,
             "bandwidth_info" => &self.maps.bandwidth_info,
-            "quota_consumed" => &self.maps.quota_consumed,
-            "period_events" => &self.maps.period_events,
-            "redistribution" => &self.maps.redistribution,
             "throttled_time" => &self.maps.throttled_time,
             "throttled_count" => &self.maps.throttled_count,
             _ => unimplemented!(),
@@ -147,14 +133,6 @@ impl OpenSkelExt for ModSkel<'_> {
         debug!(
             "{NAME} tg_set_cfs_bandwidth() BPF instruction count: {}",
             self.progs.tg_set_cfs_bandwidth.insn_cnt()
-        );
-        debug!(
-            "{NAME} check_enqueue_task() BPF instruction count: {}",
-            self.progs.check_enqueue_task.insn_cnt()
-        );
-        debug!(
-            "{NAME} start_cfs_bandwidth_timer() BPF instruction count: {}",
-            self.progs.start_cfs_bandwidth_timer.insn_cnt()
         );
         debug!(
             "{NAME} throttle_cfs_rq() BPF instruction count: {}",

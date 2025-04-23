@@ -116,6 +116,7 @@ pub struct Builder<T: 'static + SkelBuilder<'static>> {
     cpu_counters: Vec<(&'static str, Vec<&'static CounterGroup>)>,
     perf_events: Vec<(&'static str, PerfEvent, &'static CounterGroup)>,
     packed_counters: Vec<(&'static str, &'static CounterGroup)>,
+    packed_gauges: Vec<(&'static str, &'static GaugeGroup)>,
     ringbuf_handler: Vec<(&'static str, fn(&[u8]) -> i32)>,
 }
 
@@ -339,6 +340,12 @@ where
                 .map(|(name, counters)| PackedCounters::new(skel.map(name), counters))
                 .collect();
 
+            let mut packed_gauges: Vec<PackedGauges> = self
+                .packed_gauges
+                .into_iter()
+                .map(|(name, gauges)| PackedGauges::new(skel.map(name), gauges))
+                .collect();
+
             // load any data from userspace into BPF maps
             for (name, values) in self.maps.into_iter() {
                 let fd = skel.map(name).as_fd().as_raw_fd();
@@ -391,6 +398,10 @@ where
                 }
 
                 for v in &mut packed_counters {
+                    v.refresh();
+                }
+
+                for v in &mut packed_gauges {
                     v.refresh();
                 }
 
@@ -489,6 +500,15 @@ where
     /// the `counters` must exactly match the order in the BPF map.
     pub fn packed_counters(mut self, name: &'static str, counters: &'static CounterGroup) -> Self {
         self.packed_counters.push((name, counters));
+        self
+    }
+
+    /// Register a set of packed gauges. The `name` is the BPF map name and the
+    /// `gauges` are a set of userspace dynamic gauges. The BPF map is expected
+    /// to be densely packed, meaning there is no padding. The order of the
+    /// `gauges` must exactly match the order in the BPF map.
+    pub fn packed_counters(mut self, name: &'static str, gauges: &'static GaugeGroup) -> Self {
+        self.packed_gauges.push((name, gauges));
         self
     }
 

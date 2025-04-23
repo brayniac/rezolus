@@ -10,33 +10,13 @@ use crate::agent::*;
 pub static CGROUP_CPU_BANDWIDTH_QUOTA: GaugeGroup = GaugeGroup::new(MAX_CGROUPS);
 
 #[metric(
-    name = "cgroup_cpu_bandwidth_quota_consumed",
-    description = "The amount of CPU bandwidth quota consumed by the cgroup",
-    metadata = { unit = "nanoseconds" }
-)]
-pub static CGROUP_CPU_BANDWIDTH_QUOTA_CONSUMED: CounterGroup = CounterGroup::new(MAX_CGROUPS);
-
-#[metric(
-    name = "cgroup_cpu_bandwidth_period_events",
-    description = "The number of CFS bandwidth period events",
-    metadata = { unit = "events" }
-)]
-pub static CGROUP_CPU_BANDWIDTH_PERIOD_EVENTS: CounterGroup = CounterGroup::new(MAX_CGROUPS);
-
-#[metric(
-    name = "cgroup_cpu_bandwidth_redistribution",
-    description = "The number of CFS bandwidth redistribution events",
-    metadata = { unit = "events" }
-)]
-pub static CGROUP_CPU_BANDWIDTH_REDISTRIBUTION: CounterGroup = CounterGroup::new(MAX_CGROUPS);
-
-#[metric(
-    name = "cgroup_cpu_bandwidth_period_duration",
+    name = "cgroup_cpu_bandwidth_period",
     description = "The duration of the CFS bandwidth period in nanoseconds",
     metadata = { unit = "nanoseconds" }
 )]
 pub static CGROUP_CPU_BANDWIDTH_PERIOD_DURATION: GaugeGroup = GaugeGroup::new(MAX_CGROUPS);
 
+// Throttling metrics moved from cpu_throttled module
 #[metric(
     name = "cgroup_cpu_throttled_time",
     description = "The total time a cgroup has been throttled by the CPU controller in nanoseconds",
