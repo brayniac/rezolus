@@ -14,9 +14,8 @@ pub static CGROUP_CPU_BANDWIDTH_QUOTA: GaugeGroup = GaugeGroup::new(MAX_CGROUPS)
     description = "The duration of the CFS bandwidth period in nanoseconds",
     metadata = { unit = "nanoseconds" }
 )]
-pub static CGROUP_CPU_BANDWIDTH_PERIOD_DURATION: GaugeGroup = GaugeGroup::new(MAX_CGROUPS);
+pub static CGROUP_CPU_BANDWIDTH_PERIOD: GaugeGroup = GaugeGroup::new(MAX_CGROUPS);
 
-// Throttling metrics moved from cpu_throttled module
 #[metric(
     name = "cgroup_cpu_throttled_time",
     description = "The total time a cgroup has been throttled by the CPU controller in nanoseconds",
