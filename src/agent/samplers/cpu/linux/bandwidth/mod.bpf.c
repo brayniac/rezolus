@@ -93,6 +93,14 @@ struct {
     __uint(max_entries, MAX_CGROUPS);
 } throttled_count SEC(".maps");
 
+// Map to track cfs_bandwidth pointers to cgroup ids
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, MAX_CGROUPS);
+    __type(key, void *);  // cfs_bandwidth pointer
+    __type(value, u32);   // cgroup id
+} cfs_b_to_cgroup SEC(".maps");
+
 // Track the last time a cgroup consumed runtime
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
@@ -115,11 +123,14 @@ int tg_set_cfs_bandwidth(struct pt_regs *ctx)
     if (!css)
         return 0;
 
-    u64 cgroup_id = BPF_CORE_READ(css, id);
+    u32 cgroup_id = BPF_CORE_READ(css, id);
     if (!cgroup_id || cgroup_id >= MAX_CGROUPS)
         return 0;
 
     u64 serial_nr = BPF_CORE_READ(css, serial_nr);
+
+    // Store the mapping between cfs_bandwidth pointer and cgroup_id
+    bpf_map_update_elem(&cfs_b_to_cgroup, &cfs_b, &cgroup_id, BPF_ANY);
 
     // Check if this is a new cgroup by checking the serial number
     u64 *elem = bpf_map_lookup_elem(&cgroup_serial_numbers, &cgroup_id);
@@ -130,6 +141,8 @@ int tg_set_cfs_bandwidth(struct pt_regs *ctx)
         bpf_map_update_elem(&quota_consumed, &cgroup_id, &zero, BPF_ANY);
         bpf_map_update_elem(&period_events, &cgroup_id, &zero, BPF_ANY);
         bpf_map_update_elem(&redistribution, &cgroup_id, &zero, BPF_ANY);
+        bpf_map_update_elem(&throttled_time, &cgroup_id, &zero, BPF_ANY);
+        bpf_map_update_elem(&throttled_count, &cgroup_id, &zero, BPF_ANY);
 
         // Initialize the cgroup info
         struct cgroup_info cginfo = {
@@ -199,23 +212,12 @@ int update_cpu_runtime(struct pt_regs *ctx)
     if (!cfs_b)
         return 0;
 
-    // This is a bit tricky since we don't directly have the cgroup_id here
-    // In a real implementation, you'd need to maintain a map from cfs_bandwidth address to cgroup_id
-    // or use another approach to correlate this data
-    
-    // For simplicity in this example, let's assume we can get the task_group from cfs_b
-    // Note: This is a simplified approximation and might need adjustment for real-world use
-    struct task_group *tg = BPF_CORE_READ(cfs_b, tg);
-    if (!tg)
+    // Look up the cgroup_id using our mapping table
+    u32 *cgroup_id_ptr = bpf_map_lookup_elem(&cfs_b_to_cgroup, &cfs_b);
+    if (!cgroup_id_ptr || *cgroup_id_ptr == 0 || *cgroup_id_ptr >= MAX_CGROUPS)
         return 0;
     
-    struct cgroup_subsys_state *css = &tg->css;
-    if (!css)
-        return 0;
-
-    u32 cgroup_id = BPF_CORE_READ(css, id);
-    if (!cgroup_id || cgroup_id >= MAX_CGROUPS)
-        return 0;
+    u32 cgroup_id = *cgroup_id_ptr;
 
     // Get the last runtime value
     u64 *last = bpf_map_lookup_elem(&last_runtime, &cgroup_id);
@@ -243,18 +245,12 @@ int cfs_period_timer_fn(struct pt_regs *ctx)
     if (!cfs_b)
         return 0;
 
-    // Similar challenge as update_cpu_runtime
-    struct task_group *tg = BPF_CORE_READ(cfs_b, tg);
-    if (!tg)
+    // Look up the cgroup_id using our mapping table
+    u32 *cgroup_id_ptr = bpf_map_lookup_elem(&cfs_b_to_cgroup, &cfs_b);
+    if (!cgroup_id_ptr || *cgroup_id_ptr == 0 || *cgroup_id_ptr >= MAX_CGROUPS)
         return 0;
     
-    struct cgroup_subsys_state *css = &tg->css;
-    if (!css)
-        return 0;
-
-    u32 cgroup_id = BPF_CORE_READ(css, id);
-    if (!cgroup_id || cgroup_id >= MAX_CGROUPS)
-        return 0;
+    u32 cgroup_id = *cgroup_id_ptr;
 
     // Increment period events counter
     array_incr(&period_events, cgroup_id);
