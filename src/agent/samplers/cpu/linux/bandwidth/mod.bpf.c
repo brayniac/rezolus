@@ -185,10 +185,9 @@ int throttle_cfs_rq(struct pt_regs *ctx)
         bpf_ringbuf_output(&cgroup_info, &cginfo, sizeof(cginfo), 0);
 
         // get the bandwidth info and send to userspace
-        struct cfs_bandwidth *cfs_b = &BPF_CORE_READ(tg, cfs_bandwidth);
         if (cfs_b) {
-            u64 quota = BPF_CORE_READ(cfs_b, quota);
-            u64 period = BPF_CORE_READ(cfs_b, period);
+            u64 quota = BPF_CORE_READ(tg, cfs_bandwidth.quota);
+            u64 period = BPF_CORE_READ(tg, cfs_bandwidth.period);
 
             struct bandwidth_info bw_info = {
                 .id = cgroup_id,
