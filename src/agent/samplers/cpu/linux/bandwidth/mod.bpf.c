@@ -118,10 +118,10 @@ int tg_set_cfs_bandwidth(struct pt_regs *ctx)
         bpf_probe_read_kernel_str(&cginfo.name, CGROUP_NAME_LEN, BPF_CORE_READ(css, cgroup, kn, name));
         bpf_probe_read_kernel_str(&cginfo.pname, CGROUP_NAME_LEN, BPF_CORE_READ(css, cgroup, kn, parent, name));
         bpf_probe_read_kernel_str(&cginfo.gpname, CGROUP_NAME_LEN, BPF_CORE_READ(css, cgroup, kn, parent, parent, name));
-        
+
         // push the cgroup info into the ringbuf
         bpf_ringbuf_output(&cgroup_info, &cginfo, sizeof(cginfo), 0);
-        
+
         // update the serial number in the local map
         bpf_map_update_elem(&cgroup_serial_numbers, &cgroup_id, &serial_nr, BPF_ANY);
     }
@@ -180,7 +180,7 @@ int throttle_cfs_rq(struct pt_regs *ctx)
         bpf_probe_read_kernel_str(&cginfo.name, CGROUP_NAME_LEN, BPF_CORE_READ(css, cgroup, kn, name));
         bpf_probe_read_kernel_str(&cginfo.pname, CGROUP_NAME_LEN, BPF_CORE_READ(css, cgroup, kn, parent, name));
         bpf_probe_read_kernel_str(&cginfo.gpname, CGROUP_NAME_LEN, BPF_CORE_READ(css, cgroup, kn, parent, parent, name));
-        
+
         // push the cgroup info into the ringbuf
         bpf_ringbuf_output(&cgroup_info, &cginfo, sizeof(cginfo), 0);
 
@@ -193,7 +193,7 @@ int throttle_cfs_rq(struct pt_regs *ctx)
             .period = period
         };
         bpf_ringbuf_output(&bandwidth_info, &bw_info, sizeof(bw_info), 0);
-        
+
         // update the serial number in the local map
         bpf_map_update_elem(&cgroup_serial_numbers, &cgroup_id, &serial_nr, BPF_ANY);
     }

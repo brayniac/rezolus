@@ -87,17 +87,11 @@ fn handle_bandwidth_info(data: &[u8]) -> i32 {
 
 fn set_cgroup_name(id: usize, name: String) {
     if !name.is_empty() {
-        for m in &[
-            &CGROUP_CPU_BANDWIDTH_QUOTA,
-            &CGROUP_CPU_BANDWIDTH_PERIOD,
-        ] {
+        for m in &[&CGROUP_CPU_BANDWIDTH_QUOTA, &CGROUP_CPU_BANDWIDTH_PERIOD] {
             m.insert_metadata(id, "name".to_string(), name.clone());
         }
 
-        for m in &[
-            &CGROUP_CPU_THROTTLED_TIME,
-            &CGROUP_CPU_THROTTLED,
-        ] {
+        for m in &[&CGROUP_CPU_THROTTLED_TIME, &CGROUP_CPU_THROTTLED] {
             m.insert_metadata(id, "name".to_string(), name.clone());
         }
     }
