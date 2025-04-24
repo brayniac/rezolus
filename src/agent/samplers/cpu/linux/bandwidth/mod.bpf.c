@@ -185,18 +185,14 @@ int throttle_cfs_rq(struct pt_regs *ctx)
         bpf_ringbuf_output(&cgroup_info, &cginfo, sizeof(cginfo), 0);
 
         // get the bandwidth info and send to userspace
-        if (cfs_b) {
-            u64 quota = BPF_CORE_READ(tg, cfs_bandwidth.quota);
-            u64 period = BPF_CORE_READ(tg, cfs_bandwidth.period);
-
-            struct bandwidth_info bw_info = {
-                .id = cgroup_id,
-                .quota = quota,
-                .period = period
-            };
-
-            bpf_ringbuf_output(&bandwidth_info, &bw_info, sizeof(bw_info), 0);
-        }
+        u64 quota = BPF_CORE_READ(tg, cfs_bandwidth.quota);
+        u64 period = BPF_CORE_READ(tg, cfs_bandwidth.period);
+        struct bandwidth_info bw_info = {
+            .id = cgroup_id,
+            .quota = quota,
+            .period = period
+        };
+        bpf_ringbuf_output(&bandwidth_info, &bw_info, sizeof(bw_info), 0);
         
         // update the serial number in the local map
         bpf_map_update_elem(&cgroup_serial_numbers, &cgroup_id, &serial_nr, BPF_ANY);
