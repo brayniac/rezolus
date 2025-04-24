@@ -86,7 +86,8 @@ int tg_set_cfs_bandwidth(struct pt_regs *ctx)
     if (!tg || !cfs_b)
         return 0;
 
-    // Get cgroup information
+    // get the cgroup id and serial number
+
     struct cgroup_subsys_state *css = &tg->css;
     if (!css)
         return 0;
@@ -97,45 +98,42 @@ int tg_set_cfs_bandwidth(struct pt_regs *ctx)
 
     u64 serial_nr = BPF_CORE_READ(css, serial_nr);
 
-    // Check if this is a new cgroup by checking the serial number
+    // check if this is a new cgroup by checking the serial number and id
+
     u64 *elem = bpf_map_lookup_elem(&cgroup_serial_numbers, &cgroup_id);
 
     if (elem && *elem != serial_nr) {
-        // Zero the counters, they will not be exported until they are non-zero
+        // zero the counters, they will not be exported until they are non-zero
         u64 zero = 0;
         bpf_map_update_elem(&throttled_time, &cgroup_id, &zero, BPF_ANY);
         bpf_map_update_elem(&throttled_count, &cgroup_id, &zero, BPF_ANY);
 
-        // Initialize the cgroup info
+        // initialize the cgroup info
         struct cgroup_info cginfo = {
             .id = cgroup_id,
             .level = BPF_CORE_READ(css, cgroup, level),
         };
 
-        // Read the cgroup name hierarchy
+        // assemble cgroup name
         bpf_probe_read_kernel_str(&cginfo.name, CGROUP_NAME_LEN, BPF_CORE_READ(css, cgroup, kn, name));
         bpf_probe_read_kernel_str(&cginfo.pname, CGROUP_NAME_LEN, BPF_CORE_READ(css, cgroup, kn, parent, name));
         bpf_probe_read_kernel_str(&cginfo.gpname, CGROUP_NAME_LEN, BPF_CORE_READ(css, cgroup, kn, parent, parent, name));
         
-        // Push the cgroup info into the ringbuf
+        // push the cgroup info into the ringbuf
         bpf_ringbuf_output(&cgroup_info, &cginfo, sizeof(cginfo), 0);
         
-        // Update the serial number in the local map
+        // update the serial number in the local map
         bpf_map_update_elem(&cgroup_serial_numbers, &cgroup_id, &serial_nr, BPF_ANY);
     }
 
-    // Read the quota and period values
+    // get the bandwidth info and send to userspace
     u64 quota = BPF_CORE_READ(cfs_b, quota);
     u64 period = BPF_CORE_READ(cfs_b, period);
-
-    // Create bandwidth info to send to userspace
     struct bandwidth_info bw_info = {
         .id = cgroup_id,
         .quota = quota,
         .period = period
     };
-
-    // Send bandwidth info to userspace
     bpf_ringbuf_output(&bandwidth_info, &bw_info, sizeof(bw_info), 0);
 
     return 0;
@@ -185,6 +183,21 @@ int throttle_cfs_rq(struct pt_regs *ctx)
         
         // push the cgroup info into the ringbuf
         bpf_ringbuf_output(&cgroup_info, &cginfo, sizeof(cginfo), 0);
+
+        // get the bandwidth info and send to userspace
+        struct cfs_bandwidth *cfs_b = &BPF_CORE_READ(tg, cfs_bandwidth);
+        if (cfs_b) {
+            u64 quota = BPF_CORE_READ(cfs_b, quota);
+            u64 period = BPF_CORE_READ(cfs_b, period);
+
+            struct bandwidth_info bw_info = {
+                .id = cgroup_id,
+                .quota = quota,
+                .period = period
+            };
+
+            bpf_ringbuf_output(&bandwidth_info, &bw_info, sizeof(bw_info), 0);
+        }
         
         // update the serial number in the local map
         bpf_map_update_elem(&cgroup_serial_numbers, &cgroup_id, &serial_nr, BPF_ANY);
@@ -218,6 +231,12 @@ int unthrottle_cfs_rq(struct pt_regs *ctx)
 
     u64 cgroup_id = BPF_CORE_READ(css, id);
     if (!cgroup_id || cgroup_id >= MAX_CGROUPS)
+        return 0;
+
+    // skip accounting if the serial number doesn't match
+    u64 serial_nr = BPF_CORE_READ(css, serial_nr);
+    u64 *elem = bpf_map_lookup_elem(&cgroup_serial_numbers, &cgroup_id);
+    if (!elem || *elem != serial_nr)
         return 0;
 
     // lookup start time
