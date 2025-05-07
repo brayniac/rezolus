@@ -30,7 +30,6 @@ mod stats;
 use stats::*;
 
 unsafe impl plain::Plain for bpf::types::cgroup_info {}
-unsafe impl plain::Plain for bpf::types::task_info {}
 
 fn handle_cgroup_info(data: &[u8]) -> i32 {
     let mut cgroup_info = bpf::types::cgroup_info::default();
