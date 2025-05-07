@@ -254,7 +254,6 @@ int handle__sched_switch(u64 *ctx)
         u32 cgroup_id = 0;
         if (prev) {
             cgroup_id = update_cgroup_info(prev);
-            update_pid_info(prev);
         }
 
         if (!last_switch || !*last_switch) {
