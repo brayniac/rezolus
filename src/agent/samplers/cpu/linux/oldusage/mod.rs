@@ -105,14 +105,14 @@ fn init(config: Arc<Config>) -> SamplerResult {
     ];
     let bpf = BpfBuilder::new(ModSkelBuilder::default)
         .cpu_counters("cpu_usage", cpu_usage)
-        .packed_counters("cgroup_user", &CGROUP_CPU_USAGE_USER)
-        .packed_counters("cgroup_nice", &CGROUP_CPU_USAGE_NICE)
-        .packed_counters("cgroup_system", &CGROUP_CPU_USAGE_SYSTEM)
-        .packed_counters("cgroup_softirq", &CGROUP_CPU_USAGE_SOFTIRQ)
-        .packed_counters("cgroup_irq", &CGROUP_CPU_USAGE_IRQ)
-        .packed_counters("cgroup_steal", &CGROUP_CPU_USAGE_STEAL)
-        .packed_counters("cgroup_guest", &CGROUP_CPU_USAGE_GUEST)
-        .packed_counters("cgroup_guest_nice", &CGROUP_CPU_USAGE_GUEST_NICE)
+        .packed_counters("cgroup_user", &CGROUP_CPU_OLDUSAGE_USER)
+        .packed_counters("cgroup_nice", &CGROUP_CPU_OLDUSAGE_NICE)
+        .packed_counters("cgroup_system", &CGROUP_CPU_OLDUSAGE_SYSTEM)
+        .packed_counters("cgroup_softirq", &CGROUP_CPU_OLDUSAGE_SOFTIRQ)
+        .packed_counters("cgroup_irq", &CGROUP_CPU_OLDUSAGE_IRQ)
+        .packed_counters("cgroup_steal", &CGROUP_CPU_OLDUSAGE_STEAL)
+        .packed_counters("cgroup_guest", &CGROUP_CPU_OLDUSAGE_GUEST)
+        .packed_counters("cgroup_guest_nice", &CGROUP_CPU_OLDUSAGE_GUEST_NICE)
         .ringbuf_handler("cgroup_info", handle_event)
         .build()?;
 
