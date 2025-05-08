@@ -3,6 +3,7 @@ mod cores;
 mod frequency;
 mod l3;
 mod migrations;
+mod oldusage;
 mod perf;
 mod tlb_flush;
 mod usage;
