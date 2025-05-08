@@ -1,5 +1,9 @@
 //! Collects CPU usage stats using BPF and traces:
-//! * `cpuacct_account_field`
+//! * `sched_switch`
+//! * `sys_enter`
+//! * `sys_exit`
+//! * `irq_entry`
+//! * `irq_exit`
 //! * `softirq_entry`
 //! * `softirq_exit`
 //!
@@ -161,6 +165,16 @@ impl OpenSkelExt for ModSkel<'_> {
         debug!(
             "{NAME} sys_exit() BPF instruction count: {}",
             self.progs.sys_exit.insn_cnt()
+        );
+
+        debug!(
+            "{NAME} irq_enter() BPF instruction count: {}",
+            self.progs.irq_enter.insn_cnt()
+        );
+
+        debug!(
+            "{NAME} irq_exit() BPF instruction count: {}",
+            self.progs.irq_exit.insn_cnt()
         );
 
         debug!(

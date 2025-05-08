@@ -90,6 +90,14 @@ struct {
     __uint(max_entries, MAX_CGROUPS);
 } cgroup_serial_numbers SEC(".maps");
 
+// track the start time of irq
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, MAX_CPUS);
+    __type(key, u32);
+    __type(value, u64);
+} irq_start SEC(".maps");
+
 // track the start time of softirq
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
@@ -148,15 +156,6 @@ struct {
     __type(value, u64);
     __uint(max_entries, MAX_CPUS * CPU_USAGE_GROUP_WIDTH);
 } cpu_usage SEC(".maps");
-
-// per-task (process) cpu usage (total)
-struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __uint(map_flags, BPF_F_MMAPABLE);
-    __type(key, u32);
-    __type(value, u64);
-    __uint(max_entries, MAX_PID);
-} task_usage SEC(".maps");
 
 // per-cgroup user
 struct {
@@ -439,6 +438,46 @@ int sys_exit(struct trace_event_raw_sys_exit *args)
     return 0;
 }
 
+SEC("tracepoint/irq/irq_handler_entry")
+int irq_enter(struct irqaction *args)
+{
+    u32 cpu = bpf_get_smp_processor_id();
+    u64 ts = bpf_ktime_get_ns();
+
+    bpf_map_update_elem(&irq_start, &cpu, &ts, 0);
+
+    return 0;
+}
+
+SEC("tracepoint/irq/irq_handler_exit")
+int irq_exit(struct irqaction *args)
+{
+    u32 cpu = bpf_get_smp_processor_id();
+    u64 *elem, *start_ts, dur = 0;
+    u32 idx, group = 0;
+
+    u32 irq_id = 0;
+
+    // lookup the start time
+    start_ts = bpf_map_lookup_elem(&irq_start, &cpu);
+
+    // possible we missed the start
+    if (!start_ts || *start_ts == 0) {
+        return 0;
+    }
+
+    // calculate the duration
+    dur = bpf_ktime_get_ns() - *start_ts;
+
+    // update the cpu usage
+    idx = CPU_USAGE_GROUP_WIDTH * cpu + IRQ_OFFSET;
+    array_add(&cpu_usage, idx, dur);
+
+    // clear the start timestamp
+    *start_ts = 0;
+
+    return 0;
+}
 
 SEC("tracepoint/irq/softirq_entry")
 int softirq_enter(struct trace_event_raw_softirq *args)
