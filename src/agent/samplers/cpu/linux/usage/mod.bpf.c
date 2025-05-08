@@ -288,8 +288,6 @@ int handle__sched_switch(u64 *ctx)
                 array_add(&cgroup_system, cgroup_id, delta);
             }
         }
-
-        array_add(&task_usage, prev_pid, delta);
     }
 
     if (next) {
@@ -364,8 +362,6 @@ int sys_enter(struct trace_event_raw_sys_enter *args)
         array_add(&cgroup_user, cgroup_id, delta);
     }
 
-    array_add(&task_usage, pid, delta);
-
     *last_switch = now;
 
     return 0;
@@ -430,8 +426,6 @@ int sys_exit(struct trace_event_raw_sys_exit *args)
     if (cgroup_id) {
         array_add(&cgroup_system, cgroup_id, delta);
     }
-
-    array_add(&task_usage, pid, delta);
 
     bpf_map_update_elem(&task_last_switch, &pid, &now, BPF_ANY);
 

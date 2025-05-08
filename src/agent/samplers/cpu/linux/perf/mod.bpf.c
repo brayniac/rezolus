@@ -164,14 +164,14 @@ int handle__sched_switch(u64 *ctx)
 
 				// read the cgroup grandparent name
 				bpf_probe_read_kernel_str(&cginfo.gpname, CGROUP_NAME_LEN, prev->sched_task_group->css.cgroup->kn->parent->parent->name);
-				
+
 				// push the cgroup info into the ringbuf
 				bpf_ringbuf_output(&cgroup_info, &cginfo, sizeof(cginfo), 0);
 
 				// update the serial number in the local map
 				bpf_map_update_elem(&cgroup_serial_numbers, &cgroup_id, &serial_nr, BPF_ANY);
 			}
-		
+
 			// update cgroup cycles
 
 			elem = bpf_map_lookup_elem(&cycles_prev, &processor_id);
