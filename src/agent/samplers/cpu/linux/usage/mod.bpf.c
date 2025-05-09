@@ -63,7 +63,7 @@ struct {
     __type(key, u32);
     __type(value, u64);
     __uint(max_entries, MAX_PID);
-} task_state SEC(".maps");
+} task_syscall_depth SEC(".maps");
 
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
@@ -244,7 +244,7 @@ int handle__sched_switch(u64 *ctx)
 
     u64 now = bpf_ktime_get_ns();
 
-    u64 *last_switch, *state;
+    u64 *last_switch;
 
     // Account for time spent by the previous process
     if (prev_pid > 0 && prev_pid < MAX_PID) {
@@ -256,50 +256,23 @@ int handle__sched_switch(u64 *ctx)
         }
 
         if (!last_switch || !*last_switch) {
-            if (prev->mm != NULL) {
-                u64 state = 1;
-                bpf_map_update_elem(&task_state, &prev_pid, &state, BPF_ANY);
-            }
-
             // missed a sched_switch, this is moving off-cpu so don't update last
             return 0;
         }
 
         u64 delta = now - *last_switch;
 
-        state = bpf_map_lookup_elem(&task_state, &prev_pid);
-
-        if (!state) {
-            return 0;
+        if (cpu < MAX_CPUS) {
+            u32 idx = CPU_USAGE_GROUP_WIDTH * cpu + SYSTEM_OFFSET;
+            array_add(&cpu_usage, idx, delta);
         }
 
-        if (*state) {
-            if (cpu < MAX_CPUS) {
-                u32 idx = CPU_USAGE_GROUP_WIDTH * cpu + USER_OFFSET;
-                array_add(&cpu_usage, idx, delta);
-            }
-
-            if (cgroup_id) {
-                array_add(&cgroup_user, cgroup_id, delta);
-            }
-        } else {
-            if (cpu < MAX_CPUS) {
-                u32 idx = CPU_USAGE_GROUP_WIDTH * cpu + SYSTEM_OFFSET;
-                array_add(&cpu_usage, idx, delta);
-            }
-
-            if (cgroup_id) {
-                array_add(&cgroup_system, cgroup_id, delta);
-            }
+        if (cgroup_id) {
+            array_add(&cgroup_system, cgroup_id, delta);
         }
     }
 
     if (next) {
-        if (next->mm != NULL) {
-            u64 state = 1;
-            bpf_map_update_elem(&task_state, &next_pid, &state, BPF_ANY);
-        }
-
         update_cgroup_info(next);
     }
 
@@ -322,12 +295,10 @@ int BPF_KPROBE(vtime_user_enter, struct task_struct *task)
     u64 now = bpf_ktime_get_ns();
     u32 pid = BPF_CORE_READ(task, pid);
     u64 *last_switch;
-    u64 state = 1;
 
     // get last switch time and update the map with the current time
     last_switch = bpf_map_lookup_elem(&task_last_switch, &pid);
     bpf_map_update_elem(&task_last_switch, &pid, &now, BPF_ANY);
-    bpf_map_update_elem(&task_state, &pid, &state, BPF_ANY);
 
     if (!last_switch || !*last_switch) {
         // missed a switch, return early
@@ -362,12 +333,10 @@ int BPF_KPROBE(vtime_user_exit, struct task_struct *task)
     u64 now = bpf_ktime_get_ns();
     u32 pid = BPF_CORE_READ(task, pid);
     u64 *last_switch;
-    u64 state = 0;
 
     // get last switch time and update the map with the current time
     last_switch = bpf_map_lookup_elem(&task_last_switch, &pid);
     bpf_map_update_elem(&task_last_switch, &pid, &now, BPF_ANY);
-    bpf_map_update_elem(&task_state, &pid, &state, BPF_ANY);
 
     if (!last_switch || !*last_switch) {
         // missed a switch, return early
@@ -387,7 +356,7 @@ int BPF_KPROBE(vtime_user_exit, struct task_struct *task)
     u32 cgroup_id = update_cgroup_info(task);
 
     if (cgroup_id > 0 && cgroup_id < MAX_CGROUPS) {
-        array_add(&cgroup_system, cgroup_id, delta);
+        array_add(&cgroup_user, cgroup_id, delta);
     }
 }
 
