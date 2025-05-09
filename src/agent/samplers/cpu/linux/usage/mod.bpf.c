@@ -262,24 +262,13 @@ int handle__sched_switch(u64 *ctx)
 
         u64 delta = now - *last_switch;
 
-        if (prev->mm != NULL) {
-            if (cpu < MAX_CPUS) {
-                u32 idx = CPU_USAGE_GROUP_WIDTH * cpu + USER_OFFSET;
-                array_add(&cpu_usage, idx, delta);
-            }
+        if (cpu < MAX_CPUS) {
+            u32 idx = CPU_USAGE_GROUP_WIDTH * cpu + SYSTEM_OFFSET;
+            array_add(&cpu_usage, idx, delta);
+        }
 
-            if (cgroup_id) {
-                array_add(&cgroup_user, cgroup_id, delta);
-            }
-        } else {
-            if (cpu < MAX_CPUS) {
-                u32 idx = CPU_USAGE_GROUP_WIDTH * cpu + SYSTEM_OFFSET;
-                array_add(&cpu_usage, idx, delta);
-            }
-
-            if (cgroup_id) {
-                array_add(&cgroup_system, cgroup_id, delta);
-            }
+        if (cgroup_id) {
+            array_add(&cgroup_system, cgroup_id, delta);
         }
     }
 
@@ -321,15 +310,15 @@ int BPF_KPROBE(vtime_user_enter, struct task_struct *task)
     u64 delta = now - *last_switch;
 
     if (cpu < MAX_CPUS) {
-        u32 idx = CPU_USAGE_GROUP_WIDTH * cpu + SYSTEM_OFFSET;
-        // array_add(&cpu_usage, idx, delta);
+        u32 idx = CPU_USAGE_GROUP_WIDTH * cpu + USER_OFFSET;
+        array_add(&cpu_usage, idx, delta);
     }
 
 
     u32 cgroup_id = update_cgroup_info(task);
 
     if (cgroup_id > 0 && cgroup_id < MAX_CGROUPS) {
-        array_add(&cgroup_system, cgroup_id, delta);
+        array_add(&cgroup_user, cgroup_id, delta);
     }
 }
 
@@ -359,15 +348,15 @@ int BPF_KPROBE(vtime_user_exit, struct task_struct *task)
     u64 delta = now - *last_switch;
 
     if (cpu < MAX_CPUS) {
-        u32 idx = CPU_USAGE_GROUP_WIDTH * cpu + USER_OFFSET;
-        // array_add(&cpu_usage, idx, delta);
+        u32 idx = CPU_USAGE_GROUP_WIDTH * cpu + SYSTEM_OFFSET;
+        array_add(&cpu_usage, idx, delta);
     }
 
 
     u32 cgroup_id = update_cgroup_info(task);
 
     if (cgroup_id > 0 && cgroup_id < MAX_CGROUPS) {
-        array_add(&cgroup_user, cgroup_id, delta);
+        array_add(&cgroup_system, cgroup_id, delta);
     }
 }
 
