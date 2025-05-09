@@ -158,13 +158,13 @@ impl OpenSkelExt for ModSkel<'_> {
         );
 
         debug!(
-            "{NAME} sys_enter() BPF instruction count: {}",
-            self.progs.sys_enter.insn_cnt()
+            "{NAME} vtime_user_enter() BPF instruction count: {}",
+            self.progs.vtime_user_enter.insn_cnt()
         );
 
         debug!(
-            "{NAME} sys_exit() BPF instruction count: {}",
-            self.progs.sys_exit.insn_cnt()
+            "{NAME} vtime_user_exit() BPF instruction count: {}",
+            self.progs.vtime_user_exit.insn_cnt()
         );
 
         debug!(

@@ -244,7 +244,7 @@ int handle__sched_switch(u64 *ctx)
 
     u64 now = bpf_ktime_get_ns();
 
-    u64 *syscall_depth, *last_switch;
+    u64 *last_switch;
 
     // Account for time spent by the previous process
     if (prev_pid > 0 && prev_pid < MAX_PID) {
@@ -260,33 +260,15 @@ int handle__sched_switch(u64 *ctx)
             return 0;
         }
 
-        syscall_depth = bpf_map_lookup_elem(&task_syscall_depth, &prev_pid);
-
-        if (!syscall_depth) {
-            return 0;
-        }
-
         u64 delta = now - *last_switch;
 
-        if (*syscall_depth == 0) {
-            if (cpu < MAX_CPUS) {
-                u32 idx = CPU_USAGE_GROUP_WIDTH * cpu + USER_OFFSET;
-                array_add(&cpu_usage, idx, delta);
-            }
+        if (cpu < MAX_CPUS) {
+            u32 idx = CPU_USAGE_GROUP_WIDTH * cpu + SYSTEM_OFFSET;
+            array_add(&cpu_usage, idx, delta);
+        }
 
-            if (cgroup_id) {
-                array_add(&cgroup_user, cgroup_id, delta);
-            }
-
-        } else {
-            if (cpu < MAX_CPUS) {
-                u32 idx = CPU_USAGE_GROUP_WIDTH * cpu + SYSTEM_OFFSET;
-                array_add(&cpu_usage, idx, delta);
-            }
-
-            if (cgroup_id) {
-                array_add(&cgroup_system, cgroup_id, delta);
-            }
+        if (cgroup_id) {
+            array_add(&cgroup_system, cgroup_id, delta);
         }
     }
 
@@ -302,35 +284,17 @@ int handle__sched_switch(u64 *ctx)
     return 0;
 }
 
-SEC("tracepoint/raw_syscalls/sys_enter")
-int sys_enter(struct trace_event_raw_sys_enter *args)
+SEC("kprobe/vtime_user_enter")
+int BPF_KPROBE(vtime_user_enter, struct task_struct *task)
 {
-    u32 pid = bpf_get_current_pid_tgid();
-
-    if (pid >= MAX_PID) {
-        return 0;
+    if (!task) {
+        return -1;
     }
 
     u32 cpu = bpf_get_smp_processor_id();
     u64 now = bpf_ktime_get_ns();
-
-    u64 *syscall_depth, *last_switch;
-
-    syscall_depth = bpf_map_lookup_elem(&task_syscall_depth, &pid);
-    last_switch = bpf_map_lookup_elem(&task_last_switch, &pid);
-
-    if (!syscall_depth) {
-        return 0;
-    }
-
-    array_incr(&task_syscall_depth, pid);
-
-    if (*syscall_depth > 0) {
-        // task was already in a syscall, return early
-        return 0;
-    }
-
-    // task switched from user to system mode
+    u32 pid = BPF_CORE_READ(task, pid);
+    u64 *last_switch;
 
     // get last switch time and update the map with the current time
     last_switch = bpf_map_lookup_elem(&task_last_switch, &pid);
@@ -350,52 +314,25 @@ int sys_enter(struct trace_event_raw_sys_enter *args)
         array_add(&cpu_usage, idx, delta);
     }
 
-    struct task_struct *task = bpf_get_current_task_btf();
-
-    if (!task) {
-        return 0;
-    }
 
     u32 cgroup_id = update_cgroup_info(task);
 
     if (cgroup_id > 0 && cgroup_id < MAX_CGROUPS) {
         array_add(&cgroup_user, cgroup_id, delta);
     }
-
-    *last_switch = now;
-
-    return 0;
 }
 
-SEC("tracepoint/raw_syscalls/sys_exit")
-int sys_exit(struct trace_event_raw_sys_exit *args)
+SEC("kprobe/vtime_user_exit")
+int BPF_KPROBE(vtime_user_exit, struct task_struct *task)
 {
-    u32 pid = bpf_get_current_pid_tgid();
-
-    if (pid >= MAX_PID) {
-        return 0;
+    if (!task) {
+        return -1;
     }
 
     u32 cpu = bpf_get_smp_processor_id();
     u64 now = bpf_ktime_get_ns();
-
-    u64 *syscall_depth, *last_switch;
-
-    syscall_depth = bpf_map_lookup_elem(&task_syscall_depth, &pid);
-
-    if (!syscall_depth || !*syscall_depth) {
-        // missed one or more sys_enter, return without doing anything
-        return 0;
-    }
-
-    array_decr(&task_syscall_depth, pid);
-
-    if (*syscall_depth) {
-        // still in a syscall, return without doing anything
-        return 0;
-    }
-
-    // task switched from system to user mode
+    u32 pid = BPF_CORE_READ(task, pid);
+    u64 *last_switch;
 
     // get last switch time and update the map with the current time
     last_switch = bpf_map_lookup_elem(&task_last_switch, &pid);
@@ -406,7 +343,7 @@ int sys_exit(struct trace_event_raw_sys_exit *args)
         return 0;
     }
 
-    // account time that was in system mode
+    // account time that was in user mode
 
     u64 delta = now - *last_switch;
 
@@ -415,21 +352,12 @@ int sys_exit(struct trace_event_raw_sys_exit *args)
         array_add(&cpu_usage, idx, delta);
     }
 
-    struct task_struct *task = bpf_get_current_task_btf();
-
-    if (!task) {
-        return 0;
-    }
 
     u32 cgroup_id = update_cgroup_info(task);
 
-    if (cgroup_id) {
-        array_add(&cgroup_system, cgroup_id, delta);
+    if (cgroup_id > 0 && cgroup_id < MAX_CGROUPS) {
+        array_add(&cgroup_user, cgroup_id, delta);
     }
-
-    bpf_map_update_elem(&task_last_switch, &pid, &now, BPF_ANY);
-
-    return 0;
 }
 
 SEC("tracepoint/irq/irq_handler_entry")
