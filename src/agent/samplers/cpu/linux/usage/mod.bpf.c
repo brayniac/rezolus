@@ -356,7 +356,7 @@ int BPF_KPROBE(vtime_user_exit, struct task_struct *task)
     u32 cgroup_id = update_cgroup_info(task);
 
     if (cgroup_id > 0 && cgroup_id < MAX_CGROUPS) {
-        array_add(&cgroup_user, cgroup_id, delta);
+        array_add(&cgroup_system, cgroup_id, delta);
     }
 }
 
