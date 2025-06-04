@@ -47,6 +47,11 @@ impl Sampler for Nvidia {
         })
         .await;
     }
+
+    // reduce the priority since this sampler can be slow
+    fn priority(&self) -> Priority {
+        Priority::Low
+    }
 }
 
 struct NvidiaInner {

@@ -63,4 +63,8 @@ impl Sampler for Rusage {
             RU_NIVCSW.set(rusage.ru_nivcsw as u64);
         }
     }
+
+    fn priority(&self) -> Priority {
+        Priority::High
+    }
 }

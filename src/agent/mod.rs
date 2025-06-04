@@ -6,7 +6,7 @@ mod metrics;
 mod samplers;
 
 use config::Config;
-use samplers::{Sampler, SamplerResult, SAMPLERS};
+use samplers::{Priority, Sampler, SamplerResult, SAMPLERS};
 
 #[allow(unused_imports)]
 use metrics::{CounterGroup, CounterGroupError, GaugeGroup, GaugeGroupError};
@@ -78,6 +78,9 @@ pub fn run(config: PathBuf) {
             samplers.push(s);
         }
     }
+
+    // sort the samplers by priority
+    samplers.sort_by_key(|s| s.priority());
 
     let samplers = Arc::new(samplers.into_boxed_slice());
 

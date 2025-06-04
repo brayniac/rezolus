@@ -83,4 +83,14 @@ impl Sampler for AsyncBpf {
 
         futures::future::join_all(perf_futures.into_iter()).await;
     }
+
+    // An AsyncBpf sampler that has associated per-core threads for reading perf
+    // counters will be run with low priority, otherwise use default priority.
+    fn priority(&self) -> Priority {
+        if self.perf_sync.is_empty() {
+            Priority::default()
+        } else {
+            Priority::Low
+        }
+    }
 }
