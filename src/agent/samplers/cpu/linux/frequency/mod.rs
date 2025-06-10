@@ -70,7 +70,7 @@ impl FrequencyInner {
     pub async fn refresh(&mut self) -> Result<(), std::io::Error> {
         let mut s = Vec::new();
         for core in &mut self.cores {
-            s.push(tokio::spawn_blocking(|| {
+            s.push(tokio::spawn_blocking(async || {
                 let core = core.lock().await;
 
                 if let Ok(group) = core.tsc.read_group() {
