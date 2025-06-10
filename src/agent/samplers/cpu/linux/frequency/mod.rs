@@ -73,7 +73,7 @@ impl FrequencyInner {
             let core = core.clone();
 
             s.push(tokio::task::spawn_blocking(async move || {
-                let core = core.lock().await;
+                let mut core = core.lock().await;
 
                 if let Ok(group) = core.tsc.read_group() {
                     if let (Some(aperf), Some(mperf), Some(tsc)) = (
