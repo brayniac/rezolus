@@ -68,8 +68,9 @@ impl FrequencyInner {
     }
 
     pub async fn refresh(&mut self) -> Result<(), std::io::Error> {
-        let s = for core in &mut self.cores {
-            tokio::spawn_blocking(|| {
+        let mut s = Vec::new();
+        for core in &mut self.cores {
+            s.push(tokio::spawn_blocking(|| {
                 let core = core.lock().await;
 
                 if let Ok(group) = core.tsc.read_group() {
@@ -87,7 +88,7 @@ impl FrequencyInner {
                         let _ = CPU_TSC.set(core.id, tsc);
                     }
                 }
-            })
+            }));
         }.collect();
 
         futures::future::join_all(s).await;
@@ -216,7 +217,7 @@ fn logical_cores() -> Result<Vec<usize>, std::io::Error> {
     Ok(cores.iter().copied().collect())
 }
 
-fn get_cores() -> Result<Vec<Core>, std::io::Error> {
+fn get_cores() -> Result<Vec<Mutex<Core>>, std::io::Error> {
     let mut logical_cores = logical_cores()?;
 
     let mut cores = Vec::new();
