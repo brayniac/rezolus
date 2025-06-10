@@ -71,8 +71,8 @@ impl FrequencyInner {
         let mut s = Vec::new();
         for core in &mut self.cores {
             let core = core.clone();
-            
-            s.push(tokio::task::spawn_blocking(async || {
+
+            s.push(tokio::task::spawn_blocking(async move || {
                 let core = core.lock().await;
 
                 if let Ok(group) = core.tsc.read_group() {
