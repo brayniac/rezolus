@@ -89,7 +89,7 @@ impl FrequencyInner {
                     }
                 }
             }));
-        }.collect();
+        };
 
         futures::future::join_all(s).await;
 
