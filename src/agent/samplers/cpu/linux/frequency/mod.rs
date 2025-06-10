@@ -57,7 +57,7 @@ impl Sampler for Frequency {
 }
 
 struct FrequencyInner {
-    cores: Vec<Mutex<Core>>,
+    cores: Vec<Arc<Mutex<Core>>>,
 }
 
 impl FrequencyInner {
@@ -70,6 +70,8 @@ impl FrequencyInner {
     pub async fn refresh(&mut self) -> Result<(), std::io::Error> {
         let mut s = Vec::new();
         for core in &mut self.cores {
+            let core = core.clone();
+            
             s.push(tokio::task::spawn_blocking(async || {
                 let core = core.lock().await;
 
@@ -217,14 +219,14 @@ fn logical_cores() -> Result<Vec<usize>, std::io::Error> {
     Ok(cores.iter().copied().collect())
 }
 
-fn get_cores() -> Result<Vec<Mutex<Core>>, std::io::Error> {
+fn get_cores() -> Result<Vec<Arc<Mutex<Core>>>, std::io::Error> {
     let mut logical_cores = logical_cores()?;
 
     let mut cores = Vec::new();
 
     for core in logical_cores.drain(..) {
         if let Ok(core) = Core::new(core) {
-            cores.push(Mutex::new(core));
+            cores.push(Arc::new(Mutex::new(core)));
         }
     }
 
