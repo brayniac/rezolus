@@ -67,6 +67,58 @@ pub fn run_event(name: &'static str, event: impl Event + Clone) {
             return;
         }
     }
+
+    // get the latency for reading the same event on all cores
+    if let Ok(cores) = logical_cores() {
+        let mut counters = Vec::new();
+
+        for id in cores {
+            if let Ok(counter) = Counter::new(id, event.clone() {
+                counters.push(counter);
+            } else {
+                warn!("perf event {name} all: could not initialize perf counter");
+                return;
+            }
+        }
+
+        let iterations = 500_000;
+        let iterations_per_core = iterations / counters.len();
+        let iterations = iterations_per_core * counters.len();
+        let start = Instant::now();
+
+        for _ in 0..iterations {
+            for counter in counters.iter() {
+                black_box(counter.value());
+            }
+        }
+
+        let latency = start.elapsed().as_nanos() / iterations;
+        info!("perf event {name} all: {latency}ns");
+    }
+}
+
+fn logical_cores() -> Result<Vec<usize>, std::io::Error> {
+    let mut cores: BTreeSet<usize> = BTreeSet::new();
+
+    // walk the cpu devices directory
+    for entry in WalkDir::new("/sys/devices/system/cpu")
+        .min_depth(1)
+        .max_depth(1)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        let path = entry.path();
+        let filename = path.file_name().and_then(|v| v.to_str()).unwrap_or("");
+
+        // check if this is a cpu directory
+        if filename.starts_with("cpu") && filename[3..].chars().all(char::is_numeric) {
+            if let Ok(core_id) = filename[3..].parse() {
+                cores.insert(core_id);
+            }
+        }
+    }
+
+    Ok(cores.iter().copied().collect())
 }
 
 struct Counter {
