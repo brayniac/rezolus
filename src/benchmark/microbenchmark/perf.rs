@@ -80,9 +80,7 @@ pub fn run_event(name: &'static str, event: impl Event + Clone) {
             }
         }
 
-        let iterations = 500_000;
-        let iterations_per_core = iterations / counters.len();
-        let iterations = iterations_per_core * counters.len();
+        let iterations = 500_000 / counters.len();
         let start = Instant::now();
 
         for _ in 0..iterations {
@@ -91,7 +89,7 @@ pub fn run_event(name: &'static str, event: impl Event + Clone) {
             }
         }
 
-        let latency = start.elapsed().as_nanos() as usize / iterations;
+        let latency = start.elapsed().as_nanos() as usize / (iterations * counters.len();
         info!("perf event {name} all: {latency}ns");
     }
 }
