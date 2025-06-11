@@ -20,6 +20,12 @@ pub fn run() {
     } else {
         warn!("perf event: APERF MSR not found");
     }
+
+    if let Ok(cycles) = Event::Hardware(perf_event::events::Hardware::CPU_CYCLES) {
+        run_event("Cycles", cycles);
+    } else {
+        warn!("perf event: Cycles Event not found");
+    }
 }
 
 pub fn run_event(name: &'static str, event: impl Event + Clone) {
