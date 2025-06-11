@@ -75,7 +75,7 @@ impl FrequencyInner {
         // check that no perf threads have exited
         for thread in self.perf_threads.iter() {
             if thread.is_finished() {
-                panic!("{} perf thread exited early", self.name);
+                panic!("{} perf thread exited early", NAME);
             }
         }
 
@@ -252,7 +252,7 @@ fn get_cores() -> Result<(Vec<JoinHandle>, Vec<SyncPrimitive>), std::io::Error> 
             let unpinned = unpinned_tx.clone();
             let pt_pending = pt_pending.clone();
 
-            perf_thread.push(std::thread::spawn(move || {
+            perf_threads.push(std::thread::spawn(move || {
                 if !core_affinity::set_for_current(core_affinity::CoreId { id: cpu }) {
                     unpinned.push(counters);
                     pt_pending.fetch_sub(1, Ordering::Relaxed);
