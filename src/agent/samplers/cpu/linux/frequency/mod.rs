@@ -255,7 +255,7 @@ fn get_cores() -> Result<(Vec<JoinHandle<()>>, Vec<SyncPrimitive>), std::io::Err
             let pt_pending = pt_pending.clone();
 
             perf_threads.push(std::thread::spawn(move || {
-                if !core_affinity::set_for_current(core_affinity::CoreId { id: cpu }) {
+                if !core_affinity::set_for_current(core_affinity::CoreId { id: core.id }) {
                     unpinned.push(core);
                     pt_pending.fetch_sub(1, Ordering::Relaxed);
                     return;
