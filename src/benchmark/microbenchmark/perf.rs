@@ -89,7 +89,7 @@ pub fn run_event(name: &'static str, event: impl Event + Clone) {
             }
         }
 
-        let latency = start.elapsed().as_nanos() as usize / (iterations * counters.len();
+        let latency = start.elapsed().as_nanos() as usize / (iterations * counters.len());
         info!("perf event {name} all: {latency}ns");
     }
 }
