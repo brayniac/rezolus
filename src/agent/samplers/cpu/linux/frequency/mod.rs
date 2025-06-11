@@ -244,7 +244,6 @@ fn get_cores() -> Result<(Vec<JoinHandle<()>>, Vec<SyncPrimitive>), std::io::Err
 
     let mut perf_threads = Vec::new();
     let mut perf_sync = Vec::new();
-    let mut unpinned = Vec::new();
 
     for core in logical_cores.drain(..) {
         if let Ok(core) = Core::new(core) {
