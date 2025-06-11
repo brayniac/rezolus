@@ -4,8 +4,8 @@ use super::*;
 pub mod perf;
 
 pub fn run() {
-	info!("running microbenchmarks");
-	
-	#[cfg(target_os = "linux")]
-	perf::run();
+    info!("running microbenchmarks");
+
+    #[cfg(target_os = "linux")]
+    perf::run();
 }

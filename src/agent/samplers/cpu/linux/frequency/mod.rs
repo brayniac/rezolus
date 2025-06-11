@@ -65,7 +65,10 @@ impl FrequencyInner {
     pub fn new() -> Result<Self, std::io::Error> {
         let (perf_threads, perf_sync) = get_cores()?;
 
-        Ok(Self { perf_threads, perf_sync })
+        Ok(Self {
+            perf_threads,
+            perf_sync,
+        })
     }
 
     pub async fn refresh(&mut self) -> Result<(), std::io::Error> {
@@ -291,21 +294,18 @@ fn get_cores() -> Result<(Vec<JoinHandle>, Vec<SyncPrimitive>), std::io::Error> 
         let psync = SyncPrimitive::new();
         let psync2 = psync.clone();
 
-        perf_threads
-            .push(std::thread::spawn(move || loop {
-                psync.wait_trigger();
+        perf_threads.push(std::thread::spawn(move || loop {
+            psync.wait_trigger();
 
-                for core in unpinned.iter_mut() {
-                    core.refresh();
-                }
+            for core in unpinned.iter_mut() {
+                core.refresh();
+            }
 
-                psync.notify();
-            }))
-            .expect("failed to send perf thread handle");
+            psync.notify();
+        }));
 
-        perf_sync.push(psync2);;
+        perf_sync.push(psync2);
     }
-
 
     Ok((perf_threads, perf_sync))
 }

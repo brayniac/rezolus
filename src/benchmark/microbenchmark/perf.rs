@@ -1,7 +1,7 @@
 use super::*;
 
-use perf_event::events::Event;
 use perf_event::events::x86::{Msr, MsrId};
+use perf_event::events::Event;
 use perf_event::ReadFormat;
 use walkdir::WalkDir;
 
@@ -22,7 +22,6 @@ pub fn run() {
     } else {
         warn!("perf event: APERF MSR not found");
     }
-
 
     run_event("Cycles", perf_event::events::Hardware::CPU_CYCLES);
 }
@@ -90,7 +89,10 @@ pub fn run_event(name: &'static str, event: impl Event + Clone) {
         }
 
         let latency = start.elapsed().as_nanos() as usize / iterations;
-        info!("perf event {name} all: {latency}ns for all {} cores", counters.len());
+        info!(
+            "perf event {name} all: {latency}ns for all {} cores",
+            counters.len()
+        );
     }
 }
 
@@ -138,17 +140,12 @@ impl Counter {
         {
             Ok(mut counter) => {
                 if counter.enable_group().is_ok() {
-                    Ok(Self {
-                        counter,
-                        core,
-                    })
+                    Ok(Self { counter, core })
                 } else {
                     Err(())
                 }
             }
-            Err(e) => {
-                Err(())
-            }
+            Err(e) => Err(()),
         }
     }
 
