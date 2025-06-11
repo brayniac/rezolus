@@ -3,8 +3,10 @@ use super::*;
 use perf_event::events::Event;
 use perf_event::events::x86::{Msr, MsrId};
 use perf_event::ReadFormat;
+use walkdir::WalkDir;
 
 use core::hint::black_box;
+use std::collections::BTreeSet;
 
 pub fn run() {
     info!("perf event microbenchmark");
@@ -21,7 +23,7 @@ pub fn run() {
         warn!("perf event: APERF MSR not found");
     }
 
-    if let Ok(cycles) = Event::Hardware(perf_event::events::Hardware::CPU_CYCLES) {
+    if let Ok(cycles) = perf_event::events::Hardware::CPU_CYCLES {
         run_event("Cycles", cycles);
     } else {
         warn!("perf event: Cycles Event not found");
@@ -92,7 +94,7 @@ pub fn run_event(name: &'static str, event: impl Event + Clone) {
             }
         }
 
-        let latency = start.elapsed().as_nanos() / iterations;
+        let latency = start.elapsed().as_nanos() as usize / iterations;
         info!("perf event {name} all: {latency}ns");
     }
 }
