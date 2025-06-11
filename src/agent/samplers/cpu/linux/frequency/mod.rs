@@ -284,7 +284,7 @@ fn get_cores() -> Result<(Vec<JoinHandle<()>>, Vec<SyncPrimitive>), std::io::Err
 
     debug!("{} checking for unpinned perf threads", NAME);
 
-    let mut unpinned: Vec<_> = unpinned_rx.try_iter().collect();
+    let mut unpinned: Vec<Core> = unpinned_rx.try_iter().collect();
 
     debug!(
         "{} there are {} perf threads which could not be pinned",
