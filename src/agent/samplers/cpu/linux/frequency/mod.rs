@@ -195,9 +195,9 @@ impl Core {
     pub fn refresh(&mut self) {
         if let Ok(group) = self.tsc.read_group() {
             if let (Some(aperf), Some(mperf), Some(tsc)) = (
-                group.get(&core.aperf),
-                group.get(&core.mperf),
-                group.get(&core.tsc),
+                group.get(&self.aperf),
+                group.get(&self.mperf),
+                group.get(&self.tsc),
             ) {
                 let aperf = aperf.value();
                 let mperf = mperf.value();
