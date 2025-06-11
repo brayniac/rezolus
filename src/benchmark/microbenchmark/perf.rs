@@ -23,11 +23,8 @@ pub fn run() {
         warn!("perf event: APERF MSR not found");
     }
 
-    if let Ok(cycles) = perf_event::events::Hardware::CPU_CYCLES {
-        run_event("Cycles", cycles);
-    } else {
-        warn!("perf event: Cycles Event not found");
-    }
+
+    run_event("Cycles", perf_event::events::Hardware::CPU_CYCLES);
 }
 
 pub fn run_event(name: &'static str, event: impl Event + Clone) {
@@ -89,7 +86,7 @@ pub fn run_event(name: &'static str, event: impl Event + Clone) {
         let start = Instant::now();
 
         for _ in 0..iterations {
-            for counter in counters.iter() {
+            for counter in counters.iter_mut() {
                 black_box(counter.value());
             }
         }
