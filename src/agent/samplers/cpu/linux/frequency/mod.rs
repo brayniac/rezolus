@@ -235,7 +235,7 @@ fn logical_cores() -> Result<Vec<usize>, std::io::Error> {
     Ok(cores.iter().copied().collect())
 }
 
-fn get_cores() -> Result<(Vec<JoinHandle>, Vec<SyncPrimitive>), std::io::Error> {
+fn get_cores() -> Result<(Vec<JoinHandle<()>>, Vec<SyncPrimitive>), std::io::Error> {
     let mut logical_cores = logical_cores()?;
 
     let (unpinned_tx, unpinned_rx) = sync_channel(logical_cores.len());
@@ -256,7 +256,7 @@ fn get_cores() -> Result<(Vec<JoinHandle>, Vec<SyncPrimitive>), std::io::Error> 
 
             perf_threads.push(std::thread::spawn(move || {
                 if !core_affinity::set_for_current(core_affinity::CoreId { id: cpu }) {
-                    unpinned.push(counters);
+                    unpinned.push(core);
                     pt_pending.fetch_sub(1, Ordering::Relaxed);
                     return;
                 }
