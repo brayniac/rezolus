@@ -73,7 +73,7 @@ pub fn run_event(name: &'static str, event: impl Event + Clone) {
         let mut counters = Vec::new();
 
         for id in cores {
-            if let Ok(counter) = Counter::new(id, event.clone() {
+            if let Ok(counter) = Counter::new(id, event.clone()) {
                 counters.push(counter);
             } else {
                 warn!("perf event {name} all: could not initialize perf counter");
