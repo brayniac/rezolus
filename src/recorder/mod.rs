@@ -33,6 +33,7 @@ impl TryFrom<ArgMatches> for Config {
 
 pub fn command() -> Command {
     Command::new("record")
+        .alias("recorder")
         .about("On-demand recording to a file")
         .arg(
             clap::Arg::new("URL")

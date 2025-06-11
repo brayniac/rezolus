@@ -26,6 +26,7 @@ use snapshot::snapshot;
 
 pub fn command() -> Command {
     Command::new("exporter")
+        .alias("export")
         .about("Exposition of metrics from a Rezolus agent")
         .arg(
             clap::Arg::new("CONFIG")

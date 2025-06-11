@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 
 /// modules for each mode of operation
 mod agent;
+mod benchmark;
 mod exporter;
 mod hindsight;
 mod recorder;
@@ -60,6 +61,7 @@ fn main() {
                 .required(true)
                 .index(1),
         )
+        .subcommand(benchmark::command())
         .subcommand(exporter::command())
         .subcommand(hindsight::command())
         .subcommand(recorder::command())
@@ -72,7 +74,12 @@ fn main() {
 
             agent::run(config)
         }
-        Some(("exporter", args)) => {
+        Some(("bench", args)) | Some(("benchmark", args)) => {
+            let config = benchmark::Config::try_from(args.clone()).expect("failed to configure");
+
+            benchmark::run(config)
+        }
+        Some(("export", args)) | Some(("exporter", args)) => {
             let config = exporter::Config::try_from(args.clone()).expect("failed to configure");
 
             exporter::run(config)
@@ -82,12 +89,12 @@ fn main() {
 
             hindsight::run(config)
         }
-        Some(("record", args)) => {
+        Some(("record", args)) | Some(("recorder", args)) => {
             let config = recorder::Config::try_from(args.clone()).expect("failed to configure");
 
             recorder::run(config)
         }
-        Some(("view", args)) => {
+        Some(("view", args)) | Some(("viewer", args)) => {
             let config = viewer::Config::try_from(args.clone()).expect("failed to configure");
 
             viewer::run(config)

@@ -35,6 +35,7 @@ use tsdb::*;
 
 pub fn command() -> Command {
     Command::new("view")
+        .alias("viewer")
         .about("View a Rezolus artifact")
         .arg(
             clap::Arg::new("INPUT")
