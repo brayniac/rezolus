@@ -246,7 +246,7 @@ fn get_cores() -> Result<(Vec<JoinHandle<()>>, Vec<SyncPrimitive>), std::io::Err
     let mut perf_sync = Vec::new();
 
     for core in logical_cores.drain(..) {
-        if let Ok(core) = Core::new(core) {
+        if let Ok(mut core) = Core::new(core) {
             let psync = SyncPrimitive::new();
             let psync2 = psync.clone();
 
