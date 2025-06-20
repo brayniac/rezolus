@@ -75,8 +75,8 @@ codegen-units = 1
 
 [profile.release]
 debug = true
-lto = true
-codegen-units = 1
+lto = "thin"
+codegen-units = 8
 
 [package.metadata.generate-rpm]
 auto_req = "builtin"
