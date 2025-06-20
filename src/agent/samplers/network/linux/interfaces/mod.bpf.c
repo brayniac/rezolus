@@ -38,7 +38,7 @@ int net_dev_xmit(struct trace_event_raw_net_dev_xmit *args)
 
 	idx = offset + TX;
 
-	array_incr(&counters, idx)
+	array_incr(&counters, idx);
 
 	return 0;
 }
