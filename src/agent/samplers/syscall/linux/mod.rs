@@ -1,5 +1,5 @@
-mod counts;
-mod latency;
+pub(mod) mod counts;
+pub(mod) mod latency;
 
 pub const MAX_SYSCALL_ID: usize = 1024;
 
