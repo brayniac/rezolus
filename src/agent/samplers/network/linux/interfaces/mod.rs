@@ -25,6 +25,8 @@ fn init(config: Arc<Config>) -> SamplerResult {
         return Ok(None);
     }
 
+    let counters = vec![&NETWORK_TX_DROPPED];
+
     let bpf = BpfBuilder::new(
         NAME,
         BpfProgStats {
@@ -33,6 +35,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
         },
         ModSkelBuilder::default,
     )
+    .counters("counters", counters)
     .build()?;
 
     Ok(Some(Box::new(bpf)))

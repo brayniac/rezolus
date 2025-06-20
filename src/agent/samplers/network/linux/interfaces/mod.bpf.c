@@ -23,6 +23,14 @@ struct {
 SEC("tracepoint/net/net_dev_xmit")
 int net_dev_xmit(struct trace_event_raw_net_dev_xmit *args)
 {
+	u32 offset = COUNTER_GROUP_WIDTH * bpf_get_smp_processor_id();
+
+	if args->rc != 0 {
+		u32 idx = offset;
+
+		array_incr(counters, offset);
+	}
+
 	return 0;
 }
 
