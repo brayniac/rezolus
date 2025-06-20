@@ -18,6 +18,8 @@ mod stats;
 use bpf::*;
 use stats::*;
 
+use stats::{BPF_RUN_TIME, BPF_RUN_COUNT};
+
 use super::syscall_lut;
 use super::counts::stats::*;
 use crate::agent::*;
