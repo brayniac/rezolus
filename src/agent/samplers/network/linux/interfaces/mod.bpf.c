@@ -8,6 +8,7 @@
 #include <bpf/bpf_core_read.h>
 
 #define COUNTER_GROUP_WIDTH 8
+#define MAX_CPUS 1024
 
 // counters
 struct {
@@ -20,7 +21,7 @@ struct {
 
 
 SEC("tracepoint/net/net_dev_xmit")
-int net_dev_xmit(struct trace_event_net_dev_xmit *args)
+int net_dev_xmit(struct trace_event_raw_net_dev_xmit *args)
 {
 	return 0;
 }
