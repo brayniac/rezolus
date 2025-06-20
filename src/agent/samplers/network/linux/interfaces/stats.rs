@@ -49,6 +49,14 @@ pub static NETWORK_RX_DROPPED: LazyCounter = LazyCounter::new(Counter::default);
 )]
 pub static NETWORK_RX_MISSED_ERRORS: LazyCounter = LazyCounter::new(Counter::default);
 
+
+#[metric(
+    name = "network_transmit",
+    description = "The number of packets transmitted.",
+    metadata = { unit = "packets" }
+)]
+pub static NETWORK_TX: LazyCounter = LazyCounter::new(Counter::default);
+
 #[metric(
     name = "network_transmit_dropped",
     description = "The number of packets dropped on the transmit path. Usually due to lack of resources.",
