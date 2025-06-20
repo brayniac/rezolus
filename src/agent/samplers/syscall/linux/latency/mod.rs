@@ -3,9 +3,11 @@
 //! * `raw_syscalls/sys_exit`
 //!
 //! And produces these stats:
+//! * `syscall`
+//! * `cgroup_syscall`
 //! * `syscall_latency`
 
-const NAME: &str = "syscall_latency";
+pub const NAME: &str = "syscall_latency";
 
 mod bpf {
     include!(concat!(env!("OUT_DIR"), "/syscall_latency.bpf.rs"));
