@@ -12,6 +12,7 @@
 // syscall counts and latencies.
 
 #include <vmlinux.h>
+#include "../../../agent/bpf/cgroup_info.h"
 #include "../../../agent/bpf/helpers.h"
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
