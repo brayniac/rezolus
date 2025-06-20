@@ -4,6 +4,8 @@
 //! And produces these stats:
 //! * `syscall`
 //! * `cgroup_syscall`
+//!
+//! Note: if syscall_latency is enabled, it takes over for tracking the counts.
 
 const NAME: &str = "syscall_counts";
 
@@ -11,7 +13,7 @@ mod bpf {
     include!(concat!(env!("OUT_DIR"), "/syscall_counts.bpf.rs"));
 }
 
-mod stats;
+pub mod stats;
 
 use bpf::*;
 use stats::*;
@@ -91,7 +93,8 @@ fn set_name(id: usize, name: String) {
 
 #[distributed_slice(SAMPLERS)]
 fn init(config: Arc<Config>) -> SamplerResult {
-    if !config.enabled(NAME) {
+    // if the syscall_latency sampler is enabled, it will update the counts
+    if !config.enabled(NAME) || config.enabled(super::latency::NAME) {
         return Ok(None);
     }
 
