@@ -25,7 +25,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
         return Ok(None);
     }
 
-    let counters = vec![&NETWORK_TX, &NETWORK_TX_DROPPED];
+    let counters = vec![&NETWORK_TX_BUSY, &NETWORK_TX_COMPLETE, &NETWORK_TX_TIMEOUT];
 
     let bpf = BpfBuilder::new(
         NAME,

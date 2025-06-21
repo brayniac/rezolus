@@ -10,8 +10,9 @@
 #define COUNTER_GROUP_WIDTH 8
 #define MAX_CPUS 1024
 
-#define TX 0
-#define TX_DROPPED 1
+#define TX_BUSY 0
+#define TX_COMPLETE 1
+#define TX_TIMEOUT 2
 
 // counters
 struct {
@@ -31,16 +32,26 @@ int net_dev_xmit(struct trace_event_raw_net_dev_xmit *args)
 	u32 idx = 0;
 
 	if (args->rc != 0) {
-		idx = offset + TX_DROPPED;
+		idx = offset + TX_BUSY;
+
+		array_incr(&counters, idx);
+	} else {
+		idx = offset + TX_COMPLETE;
 
 		array_incr(&counters, idx);
 	}
 
-	idx = offset + TX;
-
-	array_incr(&counters, idx);
-
 	return 0;
 }
+
+SEC("kprobe/virtnet_tx_timeout")
+int trace_virtio_timeout(struct pt_regs *ctx) {
+	u32 idx = COUNTER_GROUP_WIDTH * bpf_get_smp_processor_id() + TX_TIMEOUT;
+
+    array_incr(&counters, idx);
+
+    return 0;
+}
+
 
 char LICENSE[] SEC("license") = "GPL";

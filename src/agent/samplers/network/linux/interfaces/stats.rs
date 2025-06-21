@@ -49,17 +49,33 @@ pub static NETWORK_RX_DROPPED: LazyCounter = LazyCounter::new(Counter::default);
 )]
 pub static NETWORK_RX_MISSED_ERRORS: LazyCounter = LazyCounter::new(Counter::default);
 
-
-#[metric(
-    name = "network_transmit",
-    description = "The number of packets transmitted.",
-    metadata = { unit = "packets" }
-)]
-pub static NETWORK_TX: LazyCounter = LazyCounter::new(Counter::default);
-
 #[metric(
     name = "network_transmit_dropped",
     description = "The number of packets dropped on the transmit path. Usually due to lack of resources.",
     metadata = { unit = "packets" }
 )]
 pub static NETWORK_TX_DROPPED: LazyCounter = LazyCounter::new(Counter::default);
+
+// new metrics below
+
+
+#[metric(
+    name = "network_transmit_busy",
+    description = "Packets encountering retryable device busy status. High rates indicate transmit path backpressure.",
+    metadata = { unit = "packets" }
+)]
+pub static NETWORK_TX_BUSY: LazyCounter = LazyCounter::new(Counter::default);
+
+#[metric(
+    name = "network_transmit_complete",
+    description = "Packets successfully transmitted by the driver. Compare with network_transmit_packets to detect transmission issues."
+    metadata = { unit = "packets" }
+)]
+pub static NETWORK_TX_COMPLETE: LazyCounter = LazyCounter::new(Counter::default);
+
+#[metric(
+    name = "network_transmit_timeout",
+    description = "Transmit timeout events indicating hardware lockup or severe transmission delays. These are serious issues requiring investigation."
+    metadata = { unit = "events" }
+)]
+pub static NETWORK_TX_TIMEOUT: LazyCounter = LazyCounter::new(Counter::default);
