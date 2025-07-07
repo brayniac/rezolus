@@ -1,4 +1,5 @@
 mod builder;
+pub mod cgroup;
 mod counters;
 mod histogram;
 mod sync_primitive;

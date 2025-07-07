@@ -5,7 +5,7 @@
 // settings to capture metrics about throttling and cpu quota
 
 #include <vmlinux.h>
-#include "../../../agent/bpf/cgroup_info.h"
+#include "../../../agent/bpf/cgroup.h"
 #include "../../../agent/bpf/helpers.h"
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_core_read.h>

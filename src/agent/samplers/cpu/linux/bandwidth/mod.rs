@@ -20,49 +20,29 @@ mod stats;
 use bpf::*;
 use stats::*;
 
+use crate::agent::bpf::cgroup;
 use crate::agent::*;
 
 use std::sync::Arc;
 
-unsafe impl plain::Plain for bpf::types::cgroup_info {}
+crate::impl_cgroup_info!(bpf::types::cgroup_info);
 unsafe impl plain::Plain for bpf::types::bandwidth_info {}
 
-fn handle_cgroup_info(data: &[u8]) -> i32 {
+fn handle_cgroup_event(data: &[u8]) -> i32 {
     let mut cgroup_info = bpf::types::cgroup_info::default();
 
     if plain::copy_from_bytes(&mut cgroup_info, data).is_ok() {
-        let name = std::str::from_utf8(&cgroup_info.name)
-            .unwrap()
-            .trim_end_matches(char::from(0))
-            .replace("\\x2d", "-");
+        let name = cgroup::format_cgroup_name(&cgroup_info);
+        let id = cgroup::CgroupInfo::id(&cgroup_info) as usize;
 
-        let pname = std::str::from_utf8(&cgroup_info.pname)
-            .unwrap()
-            .trim_end_matches(char::from(0))
-            .replace("\\x2d", "-");
-
-        let gpname = std::str::from_utf8(&cgroup_info.gpname)
-            .unwrap()
-            .trim_end_matches(char::from(0))
-            .replace("\\x2d", "-");
-
-        let name = if !gpname.is_empty() {
-            if cgroup_info.level > 3 {
-                format!(".../{gpname}/{pname}/{name}")
-            } else {
-                format!("/{gpname}/{pname}/{name}")
-            }
-        } else if !pname.is_empty() {
-            format!("/{pname}/{name}")
-        } else if !name.is_empty() {
-            format!("/{name}")
-        } else {
-            "".to_string()
-        };
-
-        let id = cgroup_info.id;
-
-        set_cgroup_name(id as usize, name)
+        // Set metadata for all metrics
+        cgroup::set_cgroup_metadata_gauge(id, &name, &CGROUP_CPU_BANDWIDTH_QUOTA);
+        cgroup::set_cgroup_metadata_gauge(id, &name, &CGROUP_CPU_BANDWIDTH_PERIOD_DURATION);
+        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_CPU_THROTTLED_TIME);
+        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_CPU_THROTTLED);
+        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_CPU_BANDWIDTH_PERIODS);
+        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_CPU_BANDWIDTH_THROTTLED_PERIODS);
+        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_CPU_BANDWIDTH_THROTTLED_TIME);
     }
 
     0
@@ -85,34 +65,20 @@ fn handle_bandwidth_info(data: &[u8]) -> i32 {
     0
 }
 
-fn set_cgroup_name(id: usize, name: String) {
-    if !name.is_empty() {
-        for m in &[
-            &CGROUP_CPU_BANDWIDTH_QUOTA,
-            &CGROUP_CPU_BANDWIDTH_PERIOD_DURATION,
-        ] {
-            m.insert_metadata(id, "name".to_string(), name.clone());
-        }
-
-        for m in &[
-            &CGROUP_CPU_THROTTLED_TIME,
-            &CGROUP_CPU_THROTTLED,
-            &CGROUP_CPU_BANDWIDTH_PERIODS,
-            &CGROUP_CPU_BANDWIDTH_THROTTLED_PERIODS,
-            &CGROUP_CPU_BANDWIDTH_THROTTLED_TIME,
-        ] {
-            m.insert_metadata(id, "name".to_string(), name.clone());
-        }
-    }
-}
-
 #[distributed_slice(SAMPLERS)]
 fn init(config: Arc<Config>) -> SamplerResult {
     if !config.enabled(NAME) {
         return Ok(None);
     }
 
-    set_cgroup_name(1, "/".to_string());
+    // Set root cgroup name for all metrics
+    cgroup::set_cgroup_metadata_gauge(1, "/", &CGROUP_CPU_BANDWIDTH_QUOTA);
+    cgroup::set_cgroup_metadata_gauge(1, "/", &CGROUP_CPU_BANDWIDTH_PERIOD_DURATION);
+    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_CPU_THROTTLED_TIME);
+    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_CPU_THROTTLED);
+    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_CPU_BANDWIDTH_PERIODS);
+    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_CPU_BANDWIDTH_THROTTLED_PERIODS);
+    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_CPU_BANDWIDTH_THROTTLED_TIME);
 
     let bpf = BpfBuilder::new(
         NAME,
@@ -133,7 +99,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
         "bandwidth_throttled_time",
         &CGROUP_CPU_BANDWIDTH_THROTTLED_TIME,
     )
-    .ringbuf_handler("cgroup_info", handle_cgroup_info)
+    .ringbuf_handler("cgroup_info", handle_cgroup_event)
     .ringbuf_handler("bandwidth_info", handle_bandwidth_info)
     .build()?;
 

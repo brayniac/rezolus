@@ -2,7 +2,7 @@
 // Copyright (c) 2023 The Rezolus Authors
 
 #include <vmlinux.h>
-#include "../../../agent/bpf/cgroup_info.h"
+#include "../../../agent/bpf/cgroup.h"
 #include "../../../agent/bpf/helpers.h"
 #include <bpf/bpf_core_read.h>
 #include <bpf/bpf_helpers.h>
