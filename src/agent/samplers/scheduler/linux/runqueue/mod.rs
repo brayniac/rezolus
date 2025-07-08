@@ -35,9 +35,9 @@ fn handle_cgroup_event(data: &[u8]) -> i32 {
         let id = cgroup::CgroupInfo::id(&cgroup_info) as usize;
         
         // Set metadata for all metrics
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SCHEDULER_IVCSW);
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SCHEDULER_OFFCPU);
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SCHEDULER_RUNQUEUE_WAIT);
+        cgroup::set_name(id, &name, &CGROUP_SCHEDULER_IVCSW);
+        cgroup::set_name(id, &name, &CGROUP_SCHEDULER_OFFCPU);
+        cgroup::set_name(id, &name, &CGROUP_SCHEDULER_RUNQUEUE_WAIT);
     }
     
     0
@@ -50,9 +50,9 @@ fn init(config: Arc<Config>) -> SamplerResult {
     }
 
     // Set root cgroup name for all metrics
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SCHEDULER_IVCSW);
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SCHEDULER_OFFCPU);
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SCHEDULER_RUNQUEUE_WAIT);
+    cgroup::set_name(1, "/", &CGROUP_SCHEDULER_IVCSW);
+    cgroup::set_name(1, "/", &CGROUP_SCHEDULER_OFFCPU);
+    cgroup::set_name(1, "/", &CGROUP_SCHEDULER_RUNQUEUE_WAIT);
 
     let counters = vec![&SCHEDULER_IVCSW, &SCHEDULER_RUNQUEUE_WAIT];
 

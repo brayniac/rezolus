@@ -40,8 +40,8 @@ fn handle_cgroup_event(data: &[u8]) -> i32 {
         let id = cgroup::CgroupInfo::id(&cgroup_info) as usize;
         
         // Set metadata for all metrics
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_CPU_USAGE_USER);
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_CPU_USAGE_SYSTEM);
+        cgroup::set_name(id, &name, &CGROUP_CPU_USAGE_USER);
+        cgroup::set_name(id, &name, &CGROUP_CPU_USAGE_SYSTEM);
     }
     
     0
@@ -54,8 +54,8 @@ fn init(config: Arc<Config>) -> SamplerResult {
     }
 
     // Set root cgroup name for all metrics
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_CPU_USAGE_USER);
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_CPU_USAGE_SYSTEM);
+    cgroup::set_name(1, "/", &CGROUP_CPU_USAGE_USER);
+    cgroup::set_name(1, "/", &CGROUP_CPU_USAGE_SYSTEM);
 
     let cpu_usage = vec![&CPU_USAGE_USER, &CPU_USAGE_SYSTEM];
 

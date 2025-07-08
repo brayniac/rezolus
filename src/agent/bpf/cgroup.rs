@@ -45,15 +45,25 @@ pub trait CgroupInfo {
     fn gpname(&self) -> &[u8];
 }
 
-/// Set cgroup name metadata on a CounterGroup
-pub fn set_cgroup_metadata_counter(id: usize, name: &str, metric: &crate::agent::CounterGroup) {
-    if !name.is_empty() {
-        metric.insert_metadata(id, "name".to_string(), name.to_string());
+/// Trait for metric groups that support metadata
+pub trait MetricGroup {
+    fn insert_metadata(&self, idx: usize, key: String, value: String);
+}
+
+impl MetricGroup for crate::agent::CounterGroup {
+    fn insert_metadata(&self, idx: usize, key: String, value: String) {
+        self.insert_metadata(idx, key, value);
     }
 }
 
-/// Set cgroup name metadata on a GaugeGroup
-pub fn set_cgroup_metadata_gauge(id: usize, name: &str, metric: &crate::agent::GaugeGroup) {
+impl MetricGroup for crate::agent::GaugeGroup {
+    fn insert_metadata(&self, idx: usize, key: String, value: String) {
+        self.insert_metadata(idx, key, value);
+    }
+}
+
+/// Set cgroup name metadata on any metric group
+pub fn set_name<T: MetricGroup>(id: usize, name: &str, metric: &T) {
     if !name.is_empty() {
         metric.insert_metadata(id, "name".to_string(), name.to_string());
     }

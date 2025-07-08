@@ -36,13 +36,13 @@ fn handle_cgroup_event(data: &[u8]) -> i32 {
         let id = cgroup::CgroupInfo::id(&cgroup_info) as usize;
 
         // Set metadata for all metrics
-        cgroup::set_cgroup_metadata_gauge(id, &name, &CGROUP_CPU_BANDWIDTH_QUOTA);
-        cgroup::set_cgroup_metadata_gauge(id, &name, &CGROUP_CPU_BANDWIDTH_PERIOD_DURATION);
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_CPU_THROTTLED_TIME);
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_CPU_THROTTLED);
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_CPU_BANDWIDTH_PERIODS);
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_CPU_BANDWIDTH_THROTTLED_PERIODS);
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_CPU_BANDWIDTH_THROTTLED_TIME);
+        cgroup::set_name(id, &name, &CGROUP_CPU_BANDWIDTH_QUOTA);
+        cgroup::set_name(id, &name, &CGROUP_CPU_BANDWIDTH_PERIOD_DURATION);
+        cgroup::set_name(id, &name, &CGROUP_CPU_THROTTLED_TIME);
+        cgroup::set_name(id, &name, &CGROUP_CPU_THROTTLED);
+        cgroup::set_name(id, &name, &CGROUP_CPU_BANDWIDTH_PERIODS);
+        cgroup::set_name(id, &name, &CGROUP_CPU_BANDWIDTH_THROTTLED_PERIODS);
+        cgroup::set_name(id, &name, &CGROUP_CPU_BANDWIDTH_THROTTLED_TIME);
     }
 
     0
@@ -72,13 +72,13 @@ fn init(config: Arc<Config>) -> SamplerResult {
     }
 
     // Set root cgroup name for all metrics
-    cgroup::set_cgroup_metadata_gauge(1, "/", &CGROUP_CPU_BANDWIDTH_QUOTA);
-    cgroup::set_cgroup_metadata_gauge(1, "/", &CGROUP_CPU_BANDWIDTH_PERIOD_DURATION);
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_CPU_THROTTLED_TIME);
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_CPU_THROTTLED);
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_CPU_BANDWIDTH_PERIODS);
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_CPU_BANDWIDTH_THROTTLED_PERIODS);
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_CPU_BANDWIDTH_THROTTLED_TIME);
+    cgroup::set_name(1, "/", &CGROUP_CPU_BANDWIDTH_QUOTA);
+    cgroup::set_name(1, "/", &CGROUP_CPU_BANDWIDTH_PERIOD_DURATION);
+    cgroup::set_name(1, "/", &CGROUP_CPU_THROTTLED_TIME);
+    cgroup::set_name(1, "/", &CGROUP_CPU_THROTTLED);
+    cgroup::set_name(1, "/", &CGROUP_CPU_BANDWIDTH_PERIODS);
+    cgroup::set_name(1, "/", &CGROUP_CPU_BANDWIDTH_THROTTLED_PERIODS);
+    cgroup::set_name(1, "/", &CGROUP_CPU_BANDWIDTH_THROTTLED_TIME);
 
     let bpf = BpfBuilder::new(
         NAME,

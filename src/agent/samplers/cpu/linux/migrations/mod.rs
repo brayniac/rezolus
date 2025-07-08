@@ -33,7 +33,7 @@ fn handle_cgroup_event(data: &[u8]) -> i32 {
     if plain::copy_from_bytes(&mut cgroup_info, data).is_ok() {
         let name = cgroup::format_cgroup_name(&cgroup_info);
         let id = cgroup::CgroupInfo::id(&cgroup_info) as usize;
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_CPU_MIGRATIONS);
+        cgroup::set_name(id, &name, &CGROUP_CPU_MIGRATIONS);
     }
 
     0
@@ -46,7 +46,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
     }
 
     // Set root cgroup name
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_CPU_MIGRATIONS);
+    cgroup::set_name(1, "/", &CGROUP_CPU_MIGRATIONS);
 
     let migrations = vec![&CPU_MIGRATIONS_FROM, &CPU_MIGRATIONS_TO];
 

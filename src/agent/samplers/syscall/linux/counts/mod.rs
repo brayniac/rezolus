@@ -32,22 +32,22 @@ fn handle_cgroup_event(data: &[u8]) -> i32 {
         let id = cgroup::CgroupInfo::id(&cgroup_info) as usize;
         
         // Set metadata for all metrics
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_OTHER);
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_READ);
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_WRITE);
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_POLL);
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_LOCK);
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_TIME);
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_SLEEP);
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_SOCKET);
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_YIELD);
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_FILESYSTEM);
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_MEMORY);
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_PROCESS);
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_QUERY);
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_IPC);
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_TIMER);
-        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_EVENT);
+        cgroup::set_name(id, &name, &CGROUP_SYSCALL_OTHER);
+        cgroup::set_name(id, &name, &CGROUP_SYSCALL_READ);
+        cgroup::set_name(id, &name, &CGROUP_SYSCALL_WRITE);
+        cgroup::set_name(id, &name, &CGROUP_SYSCALL_POLL);
+        cgroup::set_name(id, &name, &CGROUP_SYSCALL_LOCK);
+        cgroup::set_name(id, &name, &CGROUP_SYSCALL_TIME);
+        cgroup::set_name(id, &name, &CGROUP_SYSCALL_SLEEP);
+        cgroup::set_name(id, &name, &CGROUP_SYSCALL_SOCKET);
+        cgroup::set_name(id, &name, &CGROUP_SYSCALL_YIELD);
+        cgroup::set_name(id, &name, &CGROUP_SYSCALL_FILESYSTEM);
+        cgroup::set_name(id, &name, &CGROUP_SYSCALL_MEMORY);
+        cgroup::set_name(id, &name, &CGROUP_SYSCALL_PROCESS);
+        cgroup::set_name(id, &name, &CGROUP_SYSCALL_QUERY);
+        cgroup::set_name(id, &name, &CGROUP_SYSCALL_IPC);
+        cgroup::set_name(id, &name, &CGROUP_SYSCALL_TIMER);
+        cgroup::set_name(id, &name, &CGROUP_SYSCALL_EVENT);
     }
     
     0
@@ -60,22 +60,22 @@ fn init(config: Arc<Config>) -> SamplerResult {
     }
 
     // Set root cgroup name for all metrics
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_OTHER);
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_READ);
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_WRITE);
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_POLL);
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_LOCK);
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_TIME);
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_SLEEP);
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_SOCKET);
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_YIELD);
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_FILESYSTEM);
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_MEMORY);
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_PROCESS);
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_QUERY);
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_IPC);
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_TIMER);
-    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_EVENT);
+    cgroup::set_name(1, "/", &CGROUP_SYSCALL_OTHER);
+    cgroup::set_name(1, "/", &CGROUP_SYSCALL_READ);
+    cgroup::set_name(1, "/", &CGROUP_SYSCALL_WRITE);
+    cgroup::set_name(1, "/", &CGROUP_SYSCALL_POLL);
+    cgroup::set_name(1, "/", &CGROUP_SYSCALL_LOCK);
+    cgroup::set_name(1, "/", &CGROUP_SYSCALL_TIME);
+    cgroup::set_name(1, "/", &CGROUP_SYSCALL_SLEEP);
+    cgroup::set_name(1, "/", &CGROUP_SYSCALL_SOCKET);
+    cgroup::set_name(1, "/", &CGROUP_SYSCALL_YIELD);
+    cgroup::set_name(1, "/", &CGROUP_SYSCALL_FILESYSTEM);
+    cgroup::set_name(1, "/", &CGROUP_SYSCALL_MEMORY);
+    cgroup::set_name(1, "/", &CGROUP_SYSCALL_PROCESS);
+    cgroup::set_name(1, "/", &CGROUP_SYSCALL_QUERY);
+    cgroup::set_name(1, "/", &CGROUP_SYSCALL_IPC);
+    cgroup::set_name(1, "/", &CGROUP_SYSCALL_TIMER);
+    cgroup::set_name(1, "/", &CGROUP_SYSCALL_EVENT);
 
     let counters = vec![
         &SYSCALL_OTHER,
