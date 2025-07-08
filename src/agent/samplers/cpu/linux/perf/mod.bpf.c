@@ -133,45 +133,23 @@ int handle__sched_switch(u64* ctx) {
     u64 i = bpf_perf_event_read(&instructions, BPF_F_CURRENT_CPU);
 
     if (bpf_core_field_exists(prev->sched_task_group)) {
-        int cgroup_id = prev->sched_task_group->css.id;
-        u64 serial_nr = prev->sched_task_group->css.serial_nr;
+        u64 serial_nr = BPF_CORE_READ(prev, sched_task_group, css.serial_nr);
+        struct cgroup_info cginfo = {};
 
-        if (cgroup_id && cgroup_id < MAX_CGROUPS) {
+        if (read_cgroup_info(prev, &cginfo) == 0) {
+            u32 cgroup_id = cginfo.id;
 
-            // we check to see if this is a new cgroup by checking the serial number
+            // Check if this is a new cgroup by checking the serial number
+            if (is_new_cgroup(&cgroup_serial_numbers, cgroup_id, serial_nr)) {
+                // Zero the counters, they will not be exported until non-zero
+                zero_cgroup_counter(&cgroup_cycles, cgroup_id);
+                zero_cgroup_counter(&cgroup_instructions, cgroup_id);
 
-            elem = bpf_map_lookup_elem(&cgroup_serial_numbers, &cgroup_id);
-
-            if (elem && *elem != serial_nr) {
-                // zero the counters, they will not be exported until they are non-zero
-                u64 zero = 0;
-                bpf_map_update_elem(&cgroup_cycles, &cgroup_id, &zero, BPF_ANY);
-                bpf_map_update_elem(&cgroup_instructions, &cgroup_id, &zero, BPF_ANY);
-
-                // initialize the cgroup info
-                struct cgroup_info cginfo = {
-                    .id = cgroup_id,
-                    .level = prev->sched_task_group->css.cgroup->level,
-                };
-
-                // read the cgroup name
-                bpf_probe_read_kernel_str(&cginfo.name, CGROUP_NAME_LEN,
-                                          prev->sched_task_group->css.cgroup->kn->name);
-
-                // read the cgroup parent name
-                bpf_probe_read_kernel_str(&cginfo.pname, CGROUP_NAME_LEN,
-                                          prev->sched_task_group->css.cgroup->kn->parent->name);
-
-                // read the cgroup grandparent name
-                bpf_probe_read_kernel_str(
-                    &cginfo.gpname, CGROUP_NAME_LEN,
-                    prev->sched_task_group->css.cgroup->kn->parent->parent->name);
-
-                // push the cgroup info into the ringbuf
+                // Push the cgroup info into the ringbuf
                 bpf_ringbuf_output(&cgroup_info, &cginfo, sizeof(cginfo), 0);
 
-                // update the serial number in the local map
-                bpf_map_update_elem(&cgroup_serial_numbers, &cgroup_id, &serial_nr, BPF_ANY);
+                // Update the serial number in the local map
+                update_cgroup_serial(&cgroup_serial_numbers, cgroup_id, serial_nr);
             }
 
             // update cgroup cycles
