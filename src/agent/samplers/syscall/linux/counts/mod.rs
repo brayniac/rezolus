@@ -24,31 +24,58 @@ use std::sync::Arc;
 
 crate::impl_cgroup_info!(bpf::types::cgroup_info);
 
+fn handle_cgroup_event(data: &[u8]) -> i32 {
+    let mut cgroup_info = bpf::types::cgroup_info::default();
+    
+    if plain::copy_from_bytes(&mut cgroup_info, data).is_ok() {
+        let name = cgroup::format_cgroup_name(&cgroup_info);
+        let id = cgroup::CgroupInfo::id(&cgroup_info) as usize;
+        
+        // Set metadata for all metrics
+        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_OTHER);
+        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_READ);
+        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_WRITE);
+        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_POLL);
+        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_LOCK);
+        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_TIME);
+        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_SLEEP);
+        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_SOCKET);
+        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_YIELD);
+        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_FILESYSTEM);
+        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_MEMORY);
+        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_PROCESS);
+        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_QUERY);
+        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_IPC);
+        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_TIMER);
+        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_SYSCALL_EVENT);
+    }
+    
+    0
+}
+
 #[distributed_slice(SAMPLERS)]
 fn init(config: Arc<Config>) -> SamplerResult {
     if !config.enabled(NAME) {
         return Ok(None);
     }
 
-    let metric_names = [
-        &CGROUP_SYSCALL_OTHER,
-        &CGROUP_SYSCALL_READ,
-        &CGROUP_SYSCALL_WRITE,
-        &CGROUP_SYSCALL_POLL,
-        &CGROUP_SYSCALL_LOCK,
-        &CGROUP_SYSCALL_TIME,
-        &CGROUP_SYSCALL_SLEEP,
-        &CGROUP_SYSCALL_SOCKET,
-        &CGROUP_SYSCALL_YIELD,
-        &CGROUP_SYSCALL_FILESYSTEM,
-        &CGROUP_SYSCALL_MEMORY,
-        &CGROUP_SYSCALL_PROCESS,
-        &CGROUP_SYSCALL_QUERY,
-        &CGROUP_SYSCALL_IPC,
-        &CGROUP_SYSCALL_TIMER,
-        &CGROUP_SYSCALL_EVENT,
-    ];
-    cgroup::set_cgroup_metadata(1, "/", &metric_names);
+    // Set root cgroup name for all metrics
+    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_OTHER);
+    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_READ);
+    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_WRITE);
+    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_POLL);
+    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_LOCK);
+    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_TIME);
+    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_SLEEP);
+    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_SOCKET);
+    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_YIELD);
+    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_FILESYSTEM);
+    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_MEMORY);
+    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_PROCESS);
+    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_QUERY);
+    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_IPC);
+    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_TIMER);
+    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_SYSCALL_EVENT);
 
     let counters = vec![
         &SYSCALL_OTHER,
@@ -95,7 +122,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
     .packed_counters("cgroup_syscall_ipc", &CGROUP_SYSCALL_IPC)
     .packed_counters("cgroup_syscall_timer", &CGROUP_SYSCALL_TIMER)
     .packed_counters("cgroup_syscall_event", &CGROUP_SYSCALL_EVENT)
-    .ringbuf_handler("cgroup_info", cgroup::create_cgroup_handler(&metric_names))
+    .ringbuf_handler("cgroup_info", handle_cgroup_event)
     .build()?;
 
     Ok(Some(Box::new(bpf)))

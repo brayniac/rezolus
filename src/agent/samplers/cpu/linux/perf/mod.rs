@@ -31,14 +31,30 @@ use stats::*;
 
 crate::impl_cgroup_info!(bpf::types::cgroup_info);
 
+fn handle_cgroup_event(data: &[u8]) -> i32 {
+    let mut cgroup_info = bpf::types::cgroup_info::default();
+    
+    if plain::copy_from_bytes(&mut cgroup_info, data).is_ok() {
+        let name = cgroup::format_cgroup_name(&cgroup_info);
+        let id = cgroup::CgroupInfo::id(&cgroup_info) as usize;
+        
+        // Set metadata for all metrics
+        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_CPU_CYCLES);
+        cgroup::set_cgroup_metadata_counter(id, &name, &CGROUP_CPU_INSTRUCTIONS);
+    }
+    
+    0
+}
+
 #[distributed_slice(SAMPLERS)]
 fn init(config: Arc<Config>) -> SamplerResult {
     if !config.enabled(NAME) {
         return Ok(None);
     }
 
-    let metric_names = [&CGROUP_CPU_CYCLES, &CGROUP_CPU_INSTRUCTIONS];
-    cgroup::set_cgroup_metadata(1, "/", &metric_names);
+    // Set root cgroup name for all metrics
+    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_CPU_CYCLES);
+    cgroup::set_cgroup_metadata_counter(1, "/", &CGROUP_CPU_INSTRUCTIONS);
 
     let bpf = BpfBuilder::new(
         NAME,
@@ -52,7 +68,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
     .perf_event("instructions", PerfEvent::instructions(), &CPU_INSTRUCTIONS)
     .packed_counters("cgroup_cycles", &CGROUP_CPU_CYCLES)
     .packed_counters("cgroup_instructions", &CGROUP_CPU_INSTRUCTIONS)
-    .ringbuf_handler("cgroup_info", cgroup::create_cgroup_handler(&metric_names))
+    .ringbuf_handler("cgroup_info", handle_cgroup_event)
     .build()?;
 
     Ok(Some(Box::new(bpf)))
