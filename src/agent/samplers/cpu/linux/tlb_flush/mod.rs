@@ -35,21 +35,6 @@ static CGROUP_METRICS: &[&dyn cgroup::MetricGroup] = &[
     &CGROUP_TLB_FLUSH_REMOTE_SEND_IPI,
 ];
 
-fn handle_cgroup_event(data: &[u8]) -> i32 {
-    let mut cgroup_info = bpf::types::cgroup_info::default();
-    
-    if plain::copy_from_bytes(&mut cgroup_info, data).is_ok() {
-        let name = cgroup::format_cgroup_name(&cgroup_info);
-        let id = cgroup::CgroupInfo::id(&cgroup_info) as usize;
-        
-        // Set metadata for all metrics
-        for metric in CGROUP_METRICS {
-            cgroup::set_name(id, &name, metric);
-        }
-    }
-    
-    0
-}
 
 #[distributed_slice(SAMPLERS)]
 fn init(config: Arc<Config>) -> SamplerResult {
@@ -90,7 +75,9 @@ fn init(config: Arc<Config>) -> SamplerResult {
         &CGROUP_TLB_FLUSH_LOCAL_MM_SHOOTDOWN,
     )
     .packed_counters("cgroup_remote_send_ipi", &CGROUP_TLB_FLUSH_REMOTE_SEND_IPI)
-    .ringbuf_handler("cgroup_info", handle_cgroup_event)
+    .ringbuf_handler("cgroup_info", |data| {
+        cgroup::handle_cgroup_event::<bpf::types::cgroup_info>(data, CGROUP_METRICS)
+    })
     .build()?;
 
     Ok(Some(Box::new(bpf)))

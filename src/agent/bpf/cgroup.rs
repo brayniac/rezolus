@@ -69,6 +69,26 @@ pub fn set_name<T: MetricGroup>(id: usize, name: &str, metric: &T) {
     }
 }
 
+/// Generic handler for cgroup events
+pub fn handle_cgroup_event<T>(data: &[u8], metrics: &[&dyn MetricGroup]) -> i32
+where
+    T: CgroupInfo + Default + plain::Plain,
+{
+    let mut cgroup_info = T::default();
+    
+    if plain::copy_from_bytes(&mut cgroup_info, data).is_ok() {
+        let name = format_cgroup_name(&cgroup_info);
+        let id = cgroup_info.id() as usize;
+        
+        // Set metadata for all metrics
+        for metric in metrics {
+            set_name(id, &name, *metric);
+        }
+    }
+    
+    0
+}
+
 /// Macro to implement CgroupInfo trait for BPF-generated cgroup_info types
 #[macro_export]
 macro_rules! impl_cgroup_info {
