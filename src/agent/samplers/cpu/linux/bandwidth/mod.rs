@@ -28,6 +28,17 @@ use std::sync::Arc;
 crate::impl_cgroup_info!(bpf::types::cgroup_info);
 unsafe impl plain::Plain for bpf::types::bandwidth_info {}
 
+// Define all cgroup metrics in one place
+static CGROUP_METRICS: &[&dyn cgroup::MetricGroup] = &[
+    &CGROUP_CPU_BANDWIDTH_QUOTA,
+    &CGROUP_CPU_BANDWIDTH_PERIOD_DURATION,
+    &CGROUP_CPU_THROTTLED_TIME,
+    &CGROUP_CPU_THROTTLED,
+    &CGROUP_CPU_BANDWIDTH_PERIODS,
+    &CGROUP_CPU_BANDWIDTH_THROTTLED_PERIODS,
+    &CGROUP_CPU_BANDWIDTH_THROTTLED_TIME,
+];
+
 fn handle_cgroup_event(data: &[u8]) -> i32 {
     let mut cgroup_info = bpf::types::cgroup_info::default();
 
@@ -36,13 +47,9 @@ fn handle_cgroup_event(data: &[u8]) -> i32 {
         let id = cgroup::CgroupInfo::id(&cgroup_info) as usize;
 
         // Set metadata for all metrics
-        cgroup::set_name(id, &name, &CGROUP_CPU_BANDWIDTH_QUOTA);
-        cgroup::set_name(id, &name, &CGROUP_CPU_BANDWIDTH_PERIOD_DURATION);
-        cgroup::set_name(id, &name, &CGROUP_CPU_THROTTLED_TIME);
-        cgroup::set_name(id, &name, &CGROUP_CPU_THROTTLED);
-        cgroup::set_name(id, &name, &CGROUP_CPU_BANDWIDTH_PERIODS);
-        cgroup::set_name(id, &name, &CGROUP_CPU_BANDWIDTH_THROTTLED_PERIODS);
-        cgroup::set_name(id, &name, &CGROUP_CPU_BANDWIDTH_THROTTLED_TIME);
+        for metric in CGROUP_METRICS {
+            cgroup::set_name(id, &name, metric);
+        }
     }
 
     0
@@ -72,13 +79,9 @@ fn init(config: Arc<Config>) -> SamplerResult {
     }
 
     // Set root cgroup name for all metrics
-    cgroup::set_name(1, "/", &CGROUP_CPU_BANDWIDTH_QUOTA);
-    cgroup::set_name(1, "/", &CGROUP_CPU_BANDWIDTH_PERIOD_DURATION);
-    cgroup::set_name(1, "/", &CGROUP_CPU_THROTTLED_TIME);
-    cgroup::set_name(1, "/", &CGROUP_CPU_THROTTLED);
-    cgroup::set_name(1, "/", &CGROUP_CPU_BANDWIDTH_PERIODS);
-    cgroup::set_name(1, "/", &CGROUP_CPU_BANDWIDTH_THROTTLED_PERIODS);
-    cgroup::set_name(1, "/", &CGROUP_CPU_BANDWIDTH_THROTTLED_TIME);
+    for metric in CGROUP_METRICS {
+        cgroup::set_name(1, "/", metric);
+    }
 
     let bpf = BpfBuilder::new(
         NAME,

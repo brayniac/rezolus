@@ -24,6 +24,26 @@ use std::sync::Arc;
 
 crate::impl_cgroup_info!(bpf::types::cgroup_info);
 
+// Define all cgroup metrics in one place
+static CGROUP_METRICS: &[&dyn cgroup::MetricGroup] = &[
+    &CGROUP_SYSCALL_OTHER,
+    &CGROUP_SYSCALL_READ,
+    &CGROUP_SYSCALL_WRITE,
+    &CGROUP_SYSCALL_POLL,
+    &CGROUP_SYSCALL_LOCK,
+    &CGROUP_SYSCALL_TIME,
+    &CGROUP_SYSCALL_SLEEP,
+    &CGROUP_SYSCALL_SOCKET,
+    &CGROUP_SYSCALL_YIELD,
+    &CGROUP_SYSCALL_FILESYSTEM,
+    &CGROUP_SYSCALL_MEMORY,
+    &CGROUP_SYSCALL_PROCESS,
+    &CGROUP_SYSCALL_QUERY,
+    &CGROUP_SYSCALL_IPC,
+    &CGROUP_SYSCALL_TIMER,
+    &CGROUP_SYSCALL_EVENT,
+];
+
 fn handle_cgroup_event(data: &[u8]) -> i32 {
     let mut cgroup_info = bpf::types::cgroup_info::default();
     
@@ -32,22 +52,9 @@ fn handle_cgroup_event(data: &[u8]) -> i32 {
         let id = cgroup::CgroupInfo::id(&cgroup_info) as usize;
         
         // Set metadata for all metrics
-        cgroup::set_name(id, &name, &CGROUP_SYSCALL_OTHER);
-        cgroup::set_name(id, &name, &CGROUP_SYSCALL_READ);
-        cgroup::set_name(id, &name, &CGROUP_SYSCALL_WRITE);
-        cgroup::set_name(id, &name, &CGROUP_SYSCALL_POLL);
-        cgroup::set_name(id, &name, &CGROUP_SYSCALL_LOCK);
-        cgroup::set_name(id, &name, &CGROUP_SYSCALL_TIME);
-        cgroup::set_name(id, &name, &CGROUP_SYSCALL_SLEEP);
-        cgroup::set_name(id, &name, &CGROUP_SYSCALL_SOCKET);
-        cgroup::set_name(id, &name, &CGROUP_SYSCALL_YIELD);
-        cgroup::set_name(id, &name, &CGROUP_SYSCALL_FILESYSTEM);
-        cgroup::set_name(id, &name, &CGROUP_SYSCALL_MEMORY);
-        cgroup::set_name(id, &name, &CGROUP_SYSCALL_PROCESS);
-        cgroup::set_name(id, &name, &CGROUP_SYSCALL_QUERY);
-        cgroup::set_name(id, &name, &CGROUP_SYSCALL_IPC);
-        cgroup::set_name(id, &name, &CGROUP_SYSCALL_TIMER);
-        cgroup::set_name(id, &name, &CGROUP_SYSCALL_EVENT);
+        for metric in CGROUP_METRICS {
+            cgroup::set_name(id, &name, metric);
+        }
     }
     
     0
@@ -60,22 +67,9 @@ fn init(config: Arc<Config>) -> SamplerResult {
     }
 
     // Set root cgroup name for all metrics
-    cgroup::set_name(1, "/", &CGROUP_SYSCALL_OTHER);
-    cgroup::set_name(1, "/", &CGROUP_SYSCALL_READ);
-    cgroup::set_name(1, "/", &CGROUP_SYSCALL_WRITE);
-    cgroup::set_name(1, "/", &CGROUP_SYSCALL_POLL);
-    cgroup::set_name(1, "/", &CGROUP_SYSCALL_LOCK);
-    cgroup::set_name(1, "/", &CGROUP_SYSCALL_TIME);
-    cgroup::set_name(1, "/", &CGROUP_SYSCALL_SLEEP);
-    cgroup::set_name(1, "/", &CGROUP_SYSCALL_SOCKET);
-    cgroup::set_name(1, "/", &CGROUP_SYSCALL_YIELD);
-    cgroup::set_name(1, "/", &CGROUP_SYSCALL_FILESYSTEM);
-    cgroup::set_name(1, "/", &CGROUP_SYSCALL_MEMORY);
-    cgroup::set_name(1, "/", &CGROUP_SYSCALL_PROCESS);
-    cgroup::set_name(1, "/", &CGROUP_SYSCALL_QUERY);
-    cgroup::set_name(1, "/", &CGROUP_SYSCALL_IPC);
-    cgroup::set_name(1, "/", &CGROUP_SYSCALL_TIMER);
-    cgroup::set_name(1, "/", &CGROUP_SYSCALL_EVENT);
+    for metric in CGROUP_METRICS {
+        cgroup::set_name(1, "/", metric);
+    }
 
     let counters = vec![
         &SYSCALL_OTHER,

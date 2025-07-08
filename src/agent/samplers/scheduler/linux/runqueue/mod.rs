@@ -27,6 +27,13 @@ use std::sync::Arc;
 
 crate::impl_cgroup_info!(bpf::types::cgroup_info);
 
+// Define all cgroup metrics in one place
+static CGROUP_METRICS: &[&dyn cgroup::MetricGroup] = &[
+    &CGROUP_SCHEDULER_IVCSW,
+    &CGROUP_SCHEDULER_OFFCPU,
+    &CGROUP_SCHEDULER_RUNQUEUE_WAIT,
+];
+
 fn handle_cgroup_event(data: &[u8]) -> i32 {
     let mut cgroup_info = bpf::types::cgroup_info::default();
     
@@ -35,9 +42,9 @@ fn handle_cgroup_event(data: &[u8]) -> i32 {
         let id = cgroup::CgroupInfo::id(&cgroup_info) as usize;
         
         // Set metadata for all metrics
-        cgroup::set_name(id, &name, &CGROUP_SCHEDULER_IVCSW);
-        cgroup::set_name(id, &name, &CGROUP_SCHEDULER_OFFCPU);
-        cgroup::set_name(id, &name, &CGROUP_SCHEDULER_RUNQUEUE_WAIT);
+        for metric in CGROUP_METRICS {
+            cgroup::set_name(id, &name, metric);
+        }
     }
     
     0
@@ -50,9 +57,9 @@ fn init(config: Arc<Config>) -> SamplerResult {
     }
 
     // Set root cgroup name for all metrics
-    cgroup::set_name(1, "/", &CGROUP_SCHEDULER_IVCSW);
-    cgroup::set_name(1, "/", &CGROUP_SCHEDULER_OFFCPU);
-    cgroup::set_name(1, "/", &CGROUP_SCHEDULER_RUNQUEUE_WAIT);
+    for metric in CGROUP_METRICS {
+        cgroup::set_name(1, "/", metric);
+    }
 
     let counters = vec![&SCHEDULER_IVCSW, &SCHEDULER_RUNQUEUE_WAIT];
 

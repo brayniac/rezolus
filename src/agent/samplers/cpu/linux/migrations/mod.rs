@@ -27,13 +27,22 @@ use std::sync::Arc;
 
 crate::impl_cgroup_info!(bpf::types::cgroup_info);
 
+// Define all cgroup metrics in one place
+static CGROUP_METRICS: &[&dyn cgroup::MetricGroup] = &[
+    &CGROUP_CPU_MIGRATIONS,
+];
+
 fn handle_cgroup_event(data: &[u8]) -> i32 {
     let mut cgroup_info = bpf::types::cgroup_info::default();
 
     if plain::copy_from_bytes(&mut cgroup_info, data).is_ok() {
         let name = cgroup::format_cgroup_name(&cgroup_info);
         let id = cgroup::CgroupInfo::id(&cgroup_info) as usize;
-        cgroup::set_name(id, &name, &CGROUP_CPU_MIGRATIONS);
+        
+        // Set metadata for all metrics
+        for metric in CGROUP_METRICS {
+            cgroup::set_name(id, &name, metric);
+        }
     }
 
     0
@@ -45,8 +54,10 @@ fn init(config: Arc<Config>) -> SamplerResult {
         return Ok(None);
     }
 
-    // Set root cgroup name
-    cgroup::set_name(1, "/", &CGROUP_CPU_MIGRATIONS);
+    // Set root cgroup name for all metrics
+    for metric in CGROUP_METRICS {
+        cgroup::set_name(1, "/", metric);
+    }
 
     let migrations = vec![&CPU_MIGRATIONS_FROM, &CPU_MIGRATIONS_TO];
 

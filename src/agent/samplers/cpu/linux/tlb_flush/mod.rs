@@ -26,6 +26,15 @@ use stats::*;
 
 crate::impl_cgroup_info!(bpf::types::cgroup_info);
 
+// Define all cgroup metrics in one place
+static CGROUP_METRICS: &[&dyn cgroup::MetricGroup] = &[
+    &CGROUP_TLB_FLUSH_TASK_SWITCH,
+    &CGROUP_TLB_FLUSH_REMOTE_SHOOTDOWN,
+    &CGROUP_TLB_FLUSH_LOCAL_SHOOTDOWN,
+    &CGROUP_TLB_FLUSH_LOCAL_MM_SHOOTDOWN,
+    &CGROUP_TLB_FLUSH_REMOTE_SEND_IPI,
+];
+
 fn handle_cgroup_event(data: &[u8]) -> i32 {
     let mut cgroup_info = bpf::types::cgroup_info::default();
     
@@ -34,11 +43,9 @@ fn handle_cgroup_event(data: &[u8]) -> i32 {
         let id = cgroup::CgroupInfo::id(&cgroup_info) as usize;
         
         // Set metadata for all metrics
-        cgroup::set_name(id, &name, &CGROUP_TLB_FLUSH_TASK_SWITCH);
-        cgroup::set_name(id, &name, &CGROUP_TLB_FLUSH_REMOTE_SHOOTDOWN);
-        cgroup::set_name(id, &name, &CGROUP_TLB_FLUSH_LOCAL_SHOOTDOWN);
-        cgroup::set_name(id, &name, &CGROUP_TLB_FLUSH_LOCAL_MM_SHOOTDOWN);
-        cgroup::set_name(id, &name, &CGROUP_TLB_FLUSH_REMOTE_SEND_IPI);
+        for metric in CGROUP_METRICS {
+            cgroup::set_name(id, &name, metric);
+        }
     }
     
     0
@@ -59,11 +66,9 @@ fn init(config: Arc<Config>) -> SamplerResult {
     ];
 
     // Set root cgroup name for all metrics
-    cgroup::set_name(1, "/", &CGROUP_TLB_FLUSH_TASK_SWITCH);
-    cgroup::set_name(1, "/", &CGROUP_TLB_FLUSH_REMOTE_SHOOTDOWN);
-    cgroup::set_name(1, "/", &CGROUP_TLB_FLUSH_LOCAL_SHOOTDOWN);
-    cgroup::set_name(1, "/", &CGROUP_TLB_FLUSH_LOCAL_MM_SHOOTDOWN);
-    cgroup::set_name(1, "/", &CGROUP_TLB_FLUSH_REMOTE_SEND_IPI);
+    for metric in CGROUP_METRICS {
+        cgroup::set_name(1, "/", metric);
+    }
 
     let bpf = BpfBuilder::new(
         NAME,
