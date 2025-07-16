@@ -23,7 +23,7 @@ This guide walks you through all the available metrics, organized by category.
   - [gpu_nvidia](#gpu_nvidia)
 - [Memory](#memory)
   - [memory_meminfo](#memory_meminfo)
-  - [memory_vmstat](#memory_vmstat)
+  - [memory_numa](#memory_numa)
 - [Network](#network)
   - [network_interfaces](#network_interfaces)
   - [network_traffic](#network_traffic)
@@ -221,9 +221,9 @@ utilized across the system.
 | `memory_buffers` | The amount of system memory used for buffers | |
 | `memory_cached` | The amount of system memory used by the page cache | |
 
-### memory_vmstat
+### memory_numa
 
-Memory NUMA metrics from /proc/vmstat. NUMA (Non-Uniform Memory Access) metrics
+Memory NUMA metrics collected using BPF by hooking the kernel's zone statistics functions. NUMA (Non-Uniform Memory Access) metrics
 can be particularly relevant for multi-socket systems where memory access times
 vary depending on which CPU is accessing which memory. These metrics may help
 identify inefficient NUMA access patterns that can impact performance on NUMA

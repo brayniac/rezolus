@@ -1,2 +1,2 @@
 mod meminfo;
-mod vmstat;
+mod numa;

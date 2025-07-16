@@ -77,8 +77,8 @@ enabled = true
 # Memory utilization from /proc/meminfo
 [samplers.memory_meminfo]
 
-# Memory NUMA metrics from /proc/vmstat
-[samplers.memory_vmstat]
+# Memory NUMA metrics using BPF
+[samplers.memory_numa]
 
 # Produces network interface statistics from /sys/class/net for TX/RX errors
 [samplers.network_interfaces]
