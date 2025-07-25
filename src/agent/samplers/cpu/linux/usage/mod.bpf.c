@@ -224,7 +224,7 @@ int BPF_KPROBE(cpuacct_account_field_kprobe, struct task_struct* task, u32 index
             }
 
             array_add(&cgroup_user, cgroup_id, delta_utime);
-            array_add(&cgroup_user, cgroup_id, delta_stime);
+            array_add(&cgroup_system, cgroup_id, delta_stime);
         }
     }
 }
