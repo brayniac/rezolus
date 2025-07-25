@@ -189,11 +189,11 @@ int BPF_KPROBE(cpuacct_account_field_kprobe, struct task_struct* task, u32 index
 
     // check if we've had a counter reset, in which case this is pid re-use and
     // we use the current time as the delta (since delta would be from zero)
-    if (delta_utime > 1 << 63 || *last_utime = 0) {
+    if (delta_utime > 1 << 63 || *last_utime == 0) {
         delta_utime = 0;
     }
 
-    if (delta_stime > 1 << 63 || *last_stime = 0) {
+    if (delta_stime > 1 << 63 || *last_stime == 0) {
         delta_stime = 0;
     }
 
