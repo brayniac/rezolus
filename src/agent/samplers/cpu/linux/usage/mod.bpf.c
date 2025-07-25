@@ -164,7 +164,6 @@ SEC("kprobe/cpuacct_account_field")
 int BPF_KPROBE(cpuacct_account_field_kprobe, struct task_struct* task, u32 index, u64 delta) {
     u32 idx, offset;
     u64* elem;
-    void* task_time;
     u64 curr_time;
     u64* last_time;
     u32 pid = BPF_CORE_READ(task, pid);
@@ -178,8 +177,8 @@ int BPF_KPROBE(cpuacct_account_field_kprobe, struct task_struct* task, u32 index
     curr_utime = BPF_CORE_READ(task, utime);
     curr_stime = BPF_CORE_READ(task, stime);
 
-    last_utime = bpf_map_lookup_elem(task_utime, &pid);
-    last_stime = bpf_map_lookup_elem(task_stime, &pid);
+    last_utime = bpf_map_lookup_elem(&task_utime, &pid);
+    last_stime = bpf_map_lookup_elem(&task_stime, &pid);
 
     if (last_utime == NULL || last_stime == NULL)
         return;
