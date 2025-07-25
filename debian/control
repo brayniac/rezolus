@@ -8,7 +8,7 @@ Build-Depends:
     pkg-config,
     libelf-dev,
     libelf-dev:native,
-    clang:native (< 15)
+    clang:native
 
 Package: rezolus
 Architecture: any

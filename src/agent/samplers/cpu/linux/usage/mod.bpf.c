@@ -155,52 +155,57 @@ struct {
     __uint(max_entries, MAX_CGROUPS);
 } cgroup_system SEC(".maps");
 
-static void account_cpu_usage(struct task_struct* task, u32 index) {
+// The kprobe handler is not always invoked, so using the delta to count the CPU usage could cause
+// undercounting. Kernel increases the task utime/stime before invoking cpuacct_account_field. So we
+// count the CPU usage by tracking the per-task utime/stime. The user time includes both the
+// CPUTIME_NICE and CPUTIME_USER. The system time includes CPUTIME_SYSTEM, CPUTIME_SOFTIRQ and
+// CPUTIME_IRQ.
+SEC("kprobe/cpuacct_account_field")
+int BPF_KPROBE(cpuacct_account_field_kprobe, struct task_struct* task, u32 index, u64 delta) {
     u32 idx, offset;
     u64* elem;
     void* task_time;
     u64 curr_time;
     u64* last_time;
     u32 pid = BPF_CORE_READ(task, pid);
+
     if (pid == 0 || pid >= MAX_PID)
         return;
-    switch (index) {
-    case USER:
-        offset = USER_OFFSET;
-        task_time = &task_utime;
-        curr_time = BPF_CORE_READ(task, utime);
-        break;
-    case SYSTEM:
-        offset = SYSTEM_OFFSET;
-        task_time = &task_stime;
-        curr_time = BPF_CORE_READ(task, stime);
-        break;
-    default:
+
+    u64 curr_utime, curr_stime;
+    u64* last_utime, last_stime;
+
+    curr_utime = BPF_CORE_READ(task, utime);
+    curr_stime = BPF_CORE_READ(task, stime);
+
+    last_utime = bpf_map_lookup_elem(task_utime, &pid);
+    last_stime = bpf_map_lookup_elem(task_stime, &pid);
+
+    if (last_utime == NULL || last_stime == NULL)
         return;
-    }
-    last_time = bpf_map_lookup_elem(task_time, &pid);
-    if (last_time == NULL)
-        return;
-    // nothing needs to update
-    if (*last_time == curr_time)
-        return;
-    // first time counting this task
-    if (*last_time == 0) {
-        *last_time = curr_time;
-        return;
-    }
+
     // calculate the counter index and increment the counter
-    u64 delta = curr_time - *last_time;
+    u64 delta_utime = curr_utime - *last_utime;
+    u64 delta_stime = curr_stime - *last_stime;
 
     // check if we've had a counter reset, in which case this is pid re-use and
     // we use the current time as the delta (since delta would be from zero)
-    if (delta > 1 << 63) {
-        delta = curr_time;
+    if (delta_utime > 1 << 63 || *last_utime = 0) {
+        delta_utime = 0;
     }
 
-    *last_time = curr_time;
-    idx = CPU_USAGE_GROUP_WIDTH * bpf_get_smp_processor_id() + offset;
-    array_add(&cpu_usage, idx, delta);
+    if (delta_stime > 1 << 63 || *last_stime = 0) {
+        delta_stime = 0;
+    }
+
+    *last_utime = curr_utime;
+    *last_stime = curr_stime;
+
+    idx = CPU_USAGE_GROUP_WIDTH * bpf_get_smp_processor_id() + USER_OFFSET;
+    array_add(&cpu_usage, idx, delta_utime);
+
+    idx = CPU_USAGE_GROUP_WIDTH * bpf_get_smp_processor_id() + SYSTEM_OFFSET;
+    array_add(&cpu_usage, idx, delta_stime);
 
     // additional accounting on a per-cgroup basis follows
     if (bpf_core_field_exists(task->sched_task_group)) {
@@ -219,30 +224,10 @@ static void account_cpu_usage(struct task_struct* task, u32 index) {
                 bpf_map_update_elem(&cgroup_system, &cgroup_id, &zero, BPF_ANY);
             }
 
-            switch (index) {
-            case USER:
-                array_add(&cgroup_user, cgroup_id, delta);
-                break;
-            case SYSTEM:
-                array_add(&cgroup_system, cgroup_id, delta);
-                break;
-            default:
-                break;
-            }
+            array_add(&cgroup_user, cgroup_id, delta_utime);
+            array_add(&cgroup_user, cgroup_id, delta_stime);
         }
     }
-}
-
-// The kprobe handler is not always invoked, so using the delta to count the CPU usage could cause
-// undercounting. Kernel increases the task utime/stime before invoking cpuacct_account_field. So we
-// count the CPU usage by tracking the per-task utime/stime. The user time includes both the
-// CPUTIME_NICE and CPUTIME_USER. The system time includes CPUTIME_SYSTEM, CPUTIME_SOFTIRQ and
-// CPUTIME_IRQ.
-SEC("kprobe/cpuacct_account_field")
-int BPF_KPROBE(cpuacct_account_field_kprobe, struct task_struct* task, u32 index, u64 delta) {
-    account_cpu_usage(task, SYSTEM);
-    account_cpu_usage(task, USER);
-    return 0;
 }
 
 SEC("tracepoint/irq/softirq_entry")
