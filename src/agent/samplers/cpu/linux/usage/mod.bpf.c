@@ -169,19 +169,19 @@ int BPF_KPROBE(cpuacct_account_field_kprobe, struct task_struct* task, u32 index
     u32 pid = BPF_CORE_READ(task, pid);
 
     if (pid == 0 || pid >= MAX_PID)
-        return;
+        return 0;
 
     u64 curr_utime, curr_stime;
-    u64* last_utime, last_stime;
+    u64 *last_utime, *last_stime;
 
     curr_utime = BPF_CORE_READ(task, utime);
     curr_stime = BPF_CORE_READ(task, stime);
 
-    last_utime = bpf_map_lookup_elem(&task_utime, &pid);
-    last_stime = bpf_map_lookup_elem(&task_stime, &pid);
+    last_utime = bpf_map_lookup_elem(task_utime, &pid);
+    last_stime = bpf_map_lookup_elem(task_stime, &pid);
 
     if (last_utime == NULL || last_stime == NULL)
-        return;
+        return 0;
 
     // calculate the counter index and increment the counter
     u64 delta_utime = curr_utime - *last_utime;
