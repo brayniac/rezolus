@@ -1,59 +1,57 @@
 use super::*;
 
+/// Declarative Network dashboard using the Builder pattern
 pub fn generate(data: &Tsdb, sections: Vec<Section>) -> View {
-    let mut view = View::new(data, sections);
+    DashboardBuilder::new(data, sections)
+        .group(traffic_group())
+        .group(tcp_group())
+        .build()
+}
 
-    /*
-     * Traffic
-     */
+/// Network Traffic metrics group
+fn traffic_group<'a>() -> GroupConfig<'a> {
+    GroupConfig::new("Traffic", "traffic")
+        // Bandwidth Transmit
+        .plot(
+            PlotConfig::line("Bandwidth Transmit", "bandwidth-tx", Unit::Bitrate)
+                .data(DataSource::counter_as_bitrate("network_bytes", [("direction", "transmit")]))
+                .build()
+        )
+        // Bandwidth Receive
+        .plot(
+            PlotConfig::line("Bandwidth Receive", "bandwidth-rx", Unit::Bitrate)
+                .data(DataSource::counter_as_bitrate("network_bytes", [("direction", "receive")]))
+                .build()
+        )
+        // Packets Transmit
+        .plot(
+            PlotConfig::line("Packets Transmit", "packets-tx", Unit::Rate)
+                .data(
+                    DataSource::counter_with_labels("network_packets", [("direction", "transmit")])
+                )
+                .build()
+        )
+        // Packets Receive
+        .plot(
+            PlotConfig::line("Packets Receive", "packets-rx", Unit::Rate)
+                .data(
+                    DataSource::counter_with_labels("network_packets", [("direction", "receive")])
+                )
+                .build()
+        )
+}
 
-    let mut traffic = Group::new("Traffic", "traffic");
-
-    traffic.plot(
-        PlotOpts::line("Bandwidth Transmit", "bandwidth-tx", Unit::Bitrate)
-            .with_unit_system("bitrate"),
-        data.counters("network_bytes", [("direction", "transmit")])
-            .map(|v| v.rate().sum())
-            .map(|v| v * 8.0),
-    );
-
-    traffic.plot(
-        PlotOpts::line("Bandwidth Receive", "bandwidth-rx", Unit::Bitrate)
-            .with_unit_system("bitrate"),
-        data.counters("network_bytes", [("direction", "receive")])
-            .map(|v| v.rate().sum())
-            .map(|v| v * 8.0),
-    );
-
-    traffic.plot(
-        PlotOpts::line("Packets Transmit", "packets-tx", Unit::Rate),
-        data.counters("network_packets", [("direction", "transmit")])
-            .map(|v| v.rate().sum()),
-    );
-
-    traffic.plot(
-        PlotOpts::line("Packets Receive", "packets-rx", Unit::Rate),
-        data.counters("network_packets", [("direction", "receive")])
-            .map(|v| v.rate().sum()),
-    );
-
-    view.group(traffic);
-
-    /*
-     * TCP
-     */
-
-    let mut tcp = Group::new("TCP", "tcp");
-
-    tcp.scatter(
-        PlotOpts::scatter("Packet Latency", "tcp-packet-latency", Unit::Time)
-            .with_axis_label("Latency")
-            .with_unit_system("time")
-            .with_log_scale(true),
-        data.percentiles("tcp_packet_latency", (), PERCENTILES),
-    );
-
-    view.group(tcp);
-
-    view
+/// TCP metrics group
+fn tcp_group<'a>() -> GroupConfig<'a> {
+    GroupConfig::new("TCP", "tcp")
+        .plot(
+            PlotConfig::percentile_scatter(
+                "Packet Latency",
+                "tcp-packet-latency",
+                Unit::Time,
+                "tcp_packet_latency",
+                (),
+                true
+            )
+        )
 }

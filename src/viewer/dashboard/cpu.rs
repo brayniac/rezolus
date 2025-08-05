@@ -17,8 +17,8 @@ fn utilization_group<'a>() -> GroupConfig<'a> {
         .plot(
             PlotConfig::line("Busy %", "busy-pct", Unit::Percentage)
                 .data(
-                    DataSource::cpu_avg("cpu_usage")
-                        .with_transform(|v| v / 1000000000.0)
+                    DataSource::cpu_avg("cpu_usage", ())
+                        .with_transform(|v| v / NANOSECONDS_PER_SECOND)
                 )
                 .build()
         )
@@ -26,8 +26,8 @@ fn utilization_group<'a>() -> GroupConfig<'a> {
         .plot(
             PlotConfig::heatmap("Busy %", "busy-pct-heatmap", Unit::Percentage)
                 .data(
-                    HeatmapSource::cpu_heatmap("cpu_usage")
-                        .with_transform(|v| v / 1000000000.0)
+                    HeatmapSource::cpu_heatmap("cpu_usage", ())
+                        .with_transform(|v| v / NANOSECONDS_PER_SECOND)
                 )
                 .build()
         )
@@ -35,8 +35,8 @@ fn utilization_group<'a>() -> GroupConfig<'a> {
         .plot(
             PlotConfig::line("User %", "user-pct", Unit::Percentage)
                 .data(
-                    DataSource::cpu_avg_with_labels("cpu_usage", [("state", "user")])
-                        .with_transform(|v| v / 1000000000.0)
+                    DataSource::cpu_avg("cpu_usage", [("state", "user")])
+                        .with_transform(|v| v / NANOSECONDS_PER_SECOND)
                 )
                 .build()
         )
@@ -44,8 +44,7 @@ fn utilization_group<'a>() -> GroupConfig<'a> {
         .plot(
             PlotConfig::heatmap("User %", "user-pct-heatmap", Unit::Percentage)
                 .data(
-                    HeatmapSource::cpu_heatmap_with_labels("cpu_usage", [("state", "user")])
-                        .with_transform(|v| v / 1000000000.0)
+                    HeatmapSource::cpu_heatmap_as_percentage("cpu_usage", [("state", "user")])
                 )
                 .build()
         )
@@ -53,8 +52,8 @@ fn utilization_group<'a>() -> GroupConfig<'a> {
         .plot(
             PlotConfig::line("System %", "system-pct", Unit::Percentage)
                 .data(
-                    DataSource::cpu_avg_with_labels("cpu_usage", [("state", "system")])
-                        .with_transform(|v| v / 1000000000.0)
+                    DataSource::cpu_avg("cpu_usage", [("state", "system")])
+                        .with_transform(|v| v / NANOSECONDS_PER_SECOND)
                 )
                 .build()
         )
@@ -62,8 +61,7 @@ fn utilization_group<'a>() -> GroupConfig<'a> {
         .plot(
             PlotConfig::heatmap("System %", "system-pct-heatmap", Unit::Percentage)
                 .data(
-                    HeatmapSource::cpu_heatmap_with_labels("cpu_usage", [("state", "system")])
-                        .with_transform(|v| v / 1000000000.0)
+                    HeatmapSource::cpu_heatmap_as_percentage("cpu_usage", [("state", "system")])
                 )
                 .build()
         )
@@ -134,7 +132,7 @@ fn ipns_plot<'a>() -> PlotConfig<'a> {
                     data.gauges("cpu_cores", ()).map(|v| v.sum()),
                 ) {
                     (Some(cycles), Some(instructions), Some(aperf), Some(mperf), Some(tsc), Some(cores)) => {
-                        Some(instructions / cycles * tsc * aperf / mperf / 1000000000.0 / cores)
+                        Some(instructions / cycles * tsc * aperf / mperf / NANOSECONDS_PER_SECOND / cores)
                     }
                     _ => None,
                 }
@@ -156,7 +154,7 @@ fn ipns_heatmap<'a>() -> PlotConfig<'a> {
                     data.cpu_heatmap("cpu_tsc", ()),
                 ) {
                     (Some(cycles), Some(instructions), Some(aperf), Some(mperf), Some(tsc)) => {
-                        Some(instructions / cycles * tsc * aperf / mperf / 1000000000.0)
+                        Some(instructions / cycles * tsc * aperf / mperf / NANOSECONDS_PER_SECOND)
                     }
                     _ => None,
                 }
@@ -252,7 +250,7 @@ fn migrations_group<'a>() -> GroupConfig<'a> {
         .plot(
             PlotConfig::heatmap("To", "cpu-migrations-to-heatmap", Unit::Rate)
                 .data(
-                    HeatmapSource::cpu_heatmap_with_labels("cpu_migrations", [("direction", "to")])
+                    HeatmapSource::cpu_heatmap("cpu_migrations", [("direction", "to")])
                 )
                 .build()
         )
@@ -267,7 +265,7 @@ fn migrations_group<'a>() -> GroupConfig<'a> {
         .plot(
             PlotConfig::heatmap("From", "cpu-migrations-from-heatmap", Unit::Rate)
                 .data(
-                    HeatmapSource::cpu_heatmap_with_labels("cpu_migrations", [("direction", "from")])
+                    HeatmapSource::cpu_heatmap("cpu_migrations", [("direction", "from")])
                 )
                 .build()
         )
@@ -284,7 +282,7 @@ fn tlb_flush_group<'a>() -> GroupConfig<'a> {
         )
         .plot(
             PlotConfig::heatmap("Total", "tlb-total-heatmap", Unit::Rate)
-                .data(HeatmapSource::cpu_heatmap("cpu_tlb_flush"))
+                .data(HeatmapSource::cpu_heatmap("cpu_tlb_flush", ()))
                 .build()
         );
 
@@ -308,7 +306,7 @@ fn tlb_flush_group<'a>() -> GroupConfig<'a> {
             .plot(
                 PlotConfig::heatmap(label, &format!("{}-heatmap", id), Unit::Rate)
                     .data(
-                        HeatmapSource::cpu_heatmap_with_labels("cpu_tlb_flush", [("reason", metric_suffix)])
+                        HeatmapSource::cpu_heatmap("cpu_tlb_flush", [("reason", metric_suffix)])
                     )
                     .build()
             );

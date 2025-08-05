@@ -81,15 +81,17 @@ mod tests {
 /// Declarative dashboard builder following the Builder pattern
 pub struct DashboardBuilder<'a> {
     data: &'a Tsdb,
-    sections: Vec<Section>,
     view: View,
 }
+
+// Common transformation constants
+const NANOSECONDS_PER_SECOND: f64 = 1e9;
+const BITS_PER_BYTE: f64 = 8.0;
 
 impl<'a> DashboardBuilder<'a> {
     pub fn new(data: &'a Tsdb, sections: Vec<Section>) -> Self {
         Self {
             data,
-            sections: sections.clone(),
             view: View::new(data, sections),
         }
     }
@@ -159,13 +161,14 @@ pub enum PlotConfig<'a> {
         title: String,
         id: String,
         unit: Unit,
-        data_sources: Vec<DataSource<'a>>,
+        compute: Box<dyn Fn(&Tsdb) -> Option<Vec<UntypedSeries>> + 'a>,
+        log_scale: bool,
     },
     Multi {
         title: String,
         id: String,
         unit: Unit,
-        data_sources: Vec<(String, DataSource<'a>)>,
+        compute: Box<dyn Fn(&Tsdb) -> Option<Vec<(String, UntypedSeries)>> + 'a>,
     },
     Conditional {
         condition: Box<dyn Fn(&Tsdb) -> bool + 'a>,
@@ -174,25 +177,52 @@ pub enum PlotConfig<'a> {
 }
 
 impl<'a> PlotConfig<'a> {
-    /// Create a line plot configuration
+    /// Create a line plot builder
     pub fn line<S: Into<String>>(title: S, id: S, unit: Unit) -> PlotBuilder<'a> {
         PlotBuilder::line(title, id, unit)
     }
 
-    /// Create a heatmap plot configuration
+    /// Create a heatmap plot builder
     pub fn heatmap<S: Into<String>>(title: S, id: S, unit: Unit) -> HeatmapBuilder<'a> {
         HeatmapBuilder::new(title, id, unit)
     }
-
-    /// Create a scatter plot configuration
+    
+    /// Create a scatter plot builder
     pub fn scatter<S: Into<String>>(title: S, id: S, unit: Unit) -> ScatterBuilder<'a> {
         ScatterBuilder::new(title, id, unit)
     }
-
-    /// Create a multi-series plot configuration
+    
+    /// Create a multi-series plot builder
     pub fn multi<S: Into<String>>(title: S, id: S, unit: Unit) -> MultiBuilder<'a> {
         MultiBuilder::new(title, id, unit)
     }
+    
+    /// Create a conditional plot wrapper
+    pub fn conditional<F>(condition: F, plot: PlotConfig<'a>) -> PlotConfig<'a>
+    where
+        F: Fn(&Tsdb) -> bool + 'a,
+    {
+        PlotConfig::Conditional {
+            condition: Box::new(condition),
+            plot: Box::new(plot),
+        }
+    }
+    
+    /// Helper to create a scatter plot with percentiles
+    pub fn percentile_scatter<S, L>(title: S, id: S, unit: Unit, metric: &'a str, labels: L, log_scale: bool) -> PlotConfig<'a>
+    where
+        S: Into<String>,
+        L: Into<Labels>,
+    {
+        let labels_val = labels.into();
+        PlotConfig::scatter(title, id, unit)
+            .compute(move |data| {
+                data.percentiles(metric, labels_val.clone(), PERCENTILES)
+            })
+            .log_scale(log_scale)
+            .build()
+    }
+
 
     /// Apply this configuration to a group
     fn apply_to_group(self, group: &mut Group, data: &Tsdb) {
@@ -205,19 +235,21 @@ impl<'a> PlotConfig<'a> {
                 let heatmap = data_source.fetch(data);
                 group.heatmap(PlotOpts::heatmap(title, id, unit), heatmap);
             }
-            PlotConfig::Scatter { title, id, unit, data_sources } => {
-                let data_vec: Option<Vec<_>> = data_sources
-                    .into_iter()
-                    .map(|source| source.fetch(data))
-                    .collect::<Option<Vec<_>>>();
-                group.scatter(PlotOpts::scatter(title, id, unit), data_vec);
+            PlotConfig::Scatter { title, id, unit, compute, log_scale } => {
+                // Only add the scatter plot if data exists
+                if let Some(data_vec) = compute(data) {
+                    let mut opts = PlotOpts::scatter(title, id, unit);
+                    if log_scale {
+                        opts = opts.with_log_scale(true);
+                    }
+                    group.scatter(opts, Some(data_vec));
+                }
             }
-            PlotConfig::Multi { title, id, unit, data_sources } => {
-                let data_vec: Option<Vec<_>> = data_sources
-                    .into_iter()
-                    .map(|(label, source)| source.fetch(data).map(|s| (label, s)))
-                    .collect::<Option<Vec<_>>>();
-                group.multi(PlotOpts::multi(title, id, unit), data_vec);
+            PlotConfig::Multi { title, id, unit, compute } => {
+                // Only add the multi plot if data exists
+                if let Some(data_vec) = compute(data) {
+                    group.multi(PlotOpts::multi(title, id, unit), Some(data_vec));
+                }
             }
             PlotConfig::Conditional { condition, plot } => {
                 if condition(data) {
@@ -299,7 +331,8 @@ pub struct ScatterBuilder<'a> {
     title: String,
     id: String,
     unit: Unit,
-    data_sources: Vec<DataSource<'a>>,
+    compute: Option<Box<dyn Fn(&Tsdb) -> Option<Vec<UntypedSeries>> + 'a>>,
+    log_scale: bool,
 }
 
 impl<'a> ScatterBuilder<'a> {
@@ -308,12 +341,21 @@ impl<'a> ScatterBuilder<'a> {
             title: title.into(),
             id: id.into(),
             unit,
-            data_sources: Vec::new(),
+            compute: None,
+            log_scale: false,
         }
     }
 
-    pub fn add_series(mut self, source: DataSource<'a>) -> Self {
-        self.data_sources.push(source);
+    pub fn compute<F>(mut self, f: F) -> Self
+    where
+        F: Fn(&Tsdb) -> Option<Vec<UntypedSeries>> + 'a,
+    {
+        self.compute = Some(Box::new(f));
+        self
+    }
+
+    pub fn log_scale(mut self, enabled: bool) -> Self {
+        self.log_scale = enabled;
         self
     }
 
@@ -322,7 +364,8 @@ impl<'a> ScatterBuilder<'a> {
             title: self.title,
             id: self.id,
             unit: self.unit,
-            data_sources: self.data_sources,
+            compute: self.compute.expect("Compute function required"),
+            log_scale: self.log_scale,
         }
     }
 }
@@ -332,7 +375,7 @@ pub struct MultiBuilder<'a> {
     title: String,
     id: String,
     unit: Unit,
-    data_sources: Vec<(String, DataSource<'a>)>,
+    compute: Option<Box<dyn Fn(&Tsdb) -> Option<Vec<(String, UntypedSeries)>> + 'a>>,
 }
 
 impl<'a> MultiBuilder<'a> {
@@ -341,12 +384,15 @@ impl<'a> MultiBuilder<'a> {
             title: title.into(),
             id: id.into(),
             unit,
-            data_sources: Vec::new(),
+            compute: None,
         }
     }
 
-    pub fn add_series<S: Into<String>>(mut self, label: S, source: DataSource<'a>) -> Self {
-        self.data_sources.push((label.into(), source));
+    pub fn compute<F>(mut self, f: F) -> Self
+    where
+        F: Fn(&Tsdb) -> Option<Vec<(String, UntypedSeries)>> + 'a,
+    {
+        self.compute = Some(Box::new(f));
         self
     }
 
@@ -355,10 +401,11 @@ impl<'a> MultiBuilder<'a> {
             title: self.title,
             id: self.id,
             unit: self.unit,
-            data_sources: self.data_sources,
+            compute: self.compute.expect("Compute function required"),
         }
     }
 }
+
 
 /// Data source abstraction
 pub enum DataSource<'a> {
@@ -387,6 +434,29 @@ pub enum DataSource<'a> {
 }
 
 impl<'a> DataSource<'a> {
+    /// Helper for creating a counter with nanoseconds to percentage transform
+    pub fn counter_as_percentage(metric: &'a str) -> Self {
+        Self::counter(metric).with_transform(|v| v / NANOSECONDS_PER_SECOND)
+    }
+    
+    /// Helper for creating a counter with labels and nanoseconds to percentage transform
+    pub fn counter_with_labels_as_percentage<L>(metric: &'a str, labels: L) -> Self
+    where
+        L: Into<Labels>,
+    {
+        Self::counter_with_labels(metric, labels)
+            .with_transform(|v| v / NANOSECONDS_PER_SECOND)
+    }
+    
+    /// Helper for creating a counter with bytes to bits transform
+    pub fn counter_as_bitrate<L>(metric: &'a str, labels: L) -> Self
+    where
+        L: Into<Labels>,
+    {
+        Self::counter_with_labels(metric, labels)
+            .with_transform(|v| v * BITS_PER_BYTE)
+    }
+    
     pub fn counter(metric: &'a str) -> Self {
         Self::Counter {
             metric,
@@ -406,15 +476,7 @@ impl<'a> DataSource<'a> {
         }
     }
 
-    pub fn cpu_avg(metric: &'a str) -> Self {
-        Self::CpuAvg {
-            metric,
-            labels: Labels::default(),
-            transform: None,
-        }
-    }
-
-    pub fn cpu_avg_with_labels<L>(metric: &'a str, labels: L) -> Self 
+    pub fn cpu_avg<L>(metric: &'a str, labels: L) -> Self 
     where
         L: Into<Labels>,
     {
@@ -462,27 +524,24 @@ impl<'a> DataSource<'a> {
             Self::Counter { metric, labels, transform } => {
                 let series = data.counters(metric, labels.clone())
                     .map(|v| v.rate().sum());
-                if let Some(t) = transform {
-                    series.map(t)
-                } else {
-                    series
+                match transform {
+                    Some(t) => series.map(t),
+                    None => series,
                 }
             }
             Self::CpuAvg { metric, labels, transform } => {
                 let series = data.cpu_avg(metric, labels.clone());
-                if let Some(t) = transform {
-                    series.map(t)
-                } else {
-                    series
+                match transform {
+                    Some(t) => series.map(t),
+                    None => series,
                 }
             }
             Self::Gauge { metric, labels, transform } => {
                 let series = data.gauges(metric, labels.clone())
                     .map(|v| v.sum());
-                if let Some(t) = transform {
-                    series.map(t)
-                } else {
-                    series
+                match transform {
+                    Some(t) => series.map(t),
+                    None => series,
                 }
             }
             Self::Computed { compute } => compute(data),
@@ -503,15 +562,8 @@ pub enum HeatmapSource<'a> {
 }
 
 impl<'a> HeatmapSource<'a> {
-    pub fn cpu_heatmap(metric: &'a str) -> Self {
-        Self::CpuHeatmap {
-            metric,
-            labels: Labels::default(),
-            transform: None,
-        }
-    }
-
-    pub fn cpu_heatmap_with_labels<L>(metric: &'a str, labels: L) -> Self 
+    /// Create a CPU heatmap with labels (use () for no labels)
+    pub fn cpu_heatmap<L>(metric: &'a str, labels: L) -> Self 
     where
         L: Into<Labels>,
     {
@@ -520,6 +572,15 @@ impl<'a> HeatmapSource<'a> {
             labels: labels.into(),
             transform: None,
         }
+    }
+    
+    /// Helper for creating a CPU heatmap with nanoseconds to percentage transform
+    pub fn cpu_heatmap_as_percentage<L>(metric: &'a str, labels: L) -> Self
+    where
+        L: Into<Labels>,
+    {
+        Self::cpu_heatmap(metric, labels)
+            .with_transform(|v| v / NANOSECONDS_PER_SECOND)
     }
 
     pub fn with_transform<F>(mut self, f: F) -> Self 
@@ -548,10 +609,9 @@ impl<'a> HeatmapSource<'a> {
         match self {
             Self::CpuHeatmap { metric, labels, transform } => {
                 let heatmap = data.cpu_heatmap(metric, labels.clone());
-                if let Some(t) = transform {
-                    heatmap.map(t)
-                } else {
-                    heatmap
+                match transform {
+                    Some(t) => heatmap.map(t),
+                    None => heatmap,
                 }
             }
             Self::Computed { compute } => compute(data),
