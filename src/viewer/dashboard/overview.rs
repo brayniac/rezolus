@@ -32,12 +32,18 @@ fn network_group<'a>() -> GroupConfig<'a> {
     GroupConfig::new("Network", "network")
         .plot(
             PlotConfig::line("Transmit Bandwidth", "network-transmit-bandwidth", Unit::Bitrate)
-                .data(DataSource::counter_as_bitrate("network_bytes", [("direction", "transmit")]))
+                .data(
+                    DataSource::counter_with_labels("network_bytes", [("direction", "transmit")])
+                        .with_transform(|v| v * BITS_PER_BYTE)
+                )
                 .build()
         )
         .plot(
             PlotConfig::line("Receive Bandwidth", "network-receive-bandwidth", Unit::Bitrate)
-                .data(DataSource::counter_as_bitrate("network_bytes", [("direction", "receive")]))
+                .data(
+                    DataSource::counter_with_labels("network_bytes", [("direction", "receive")])
+                        .with_transform(|v| v * BITS_PER_BYTE)
+                )
                 .build()
         )
         .plot(

@@ -44,7 +44,7 @@ fn rezolus_metrics_group<'a>() -> GroupConfig<'a> {
         .plot(bpf_execution_time_plot())
 }
 
-/// Computes instructions per cycle for the rezolus service cgroup when both metrics are available
+/// Computes IPC for rezolus service cgroup
 fn ipc_plot<'a>() -> PlotConfig<'a> {
     PlotConfig::conditional(
         |data| {

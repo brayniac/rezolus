@@ -11,12 +11,18 @@ fn traffic_group<'a>() -> GroupConfig<'a> {
     GroupConfig::new("Traffic", "traffic")
         .plot(
             PlotConfig::line("Bandwidth Transmit", "bandwidth-tx", Unit::Bitrate)
-                .data(DataSource::counter_as_bitrate("network_bytes", [("direction", "transmit")]))
+                .data(
+                    DataSource::counter_with_labels("network_bytes", [("direction", "transmit")])
+                        .with_transform(|v| v * BITS_PER_BYTE)
+                )
                 .build()
         )
         .plot(
             PlotConfig::line("Bandwidth Receive", "bandwidth-rx", Unit::Bitrate)
-                .data(DataSource::counter_as_bitrate("network_bytes", [("direction", "receive")]))
+                .data(
+                    DataSource::counter_with_labels("network_bytes", [("direction", "receive")])
+                        .with_transform(|v| v * BITS_PER_BYTE)
+                )
                 .build()
         )
         .plot(

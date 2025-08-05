@@ -77,15 +77,15 @@ mod tests {
 }
 
 
-/// Builder for constructing dashboard views from declarative group configurations
+/// Builder for dashboard views
 pub struct DashboardBuilder<'a> {
     data: &'a Tsdb,
     view: View,
 }
 
-/// Conversion factor from nanoseconds to seconds, commonly used for CPU percentage calculations
+/// Nanoseconds to seconds conversion for CPU percentages
 const NANOSECONDS_PER_SECOND: f64 = 1e9;
-/// Conversion factor from bytes to bits, used for network bandwidth calculations
+/// Bytes to bits conversion for network bandwidth
 const BITS_PER_BYTE: f64 = 8.0;
 
 impl<'a> DashboardBuilder<'a> {
@@ -96,20 +96,20 @@ impl<'a> DashboardBuilder<'a> {
         }
     }
 
-    /// Adds a metrics group to the dashboard
+    /// Adds a metrics group
     pub fn group(mut self, config: GroupConfig<'a>) -> Self {
         let group = config.build(self.data);
         self.view.group(group);
         self
     }
 
-    /// Consumes the builder and returns the constructed View
+    /// Builds the View
     pub fn build(self) -> View {
         self.view
     }
 }
 
-/// Configuration for a group of related metrics plots
+/// Configuration for a metrics group
 pub struct GroupConfig<'a> {
     name: String,
     id: String,
@@ -130,7 +130,7 @@ impl<'a> GroupConfig<'a> {
         self
     }
 
-    /// Converts configuration into a Group by applying all plot configurations
+    /// Converts to Group
     fn build(self, data: &Tsdb) -> Group {
         let mut group = Group::new(self.name, self.id);
         
@@ -142,7 +142,7 @@ impl<'a> GroupConfig<'a> {
     }
 }
 
-/// Configuration for individual plot types within a metrics group
+/// Plot configuration
 pub enum PlotConfig<'a> {
     Line {
         title: String,
@@ -192,7 +192,7 @@ impl<'a> PlotConfig<'a> {
         MultiBuilder::new(title, id, unit)
     }
     
-    /// Wraps a plot configuration with a conditional check that determines whether the plot should be rendered
+    /// Creates a conditional plot wrapper
     pub fn conditional<F>(condition: F, plot: PlotConfig<'a>) -> PlotConfig<'a>
     where
         F: Fn(&Tsdb) -> bool + 'a,
@@ -203,7 +203,7 @@ impl<'a> PlotConfig<'a> {
         }
     }
     
-    /// Creates a scatter plot displaying percentile distributions for the specified metric
+    /// Creates a percentile scatter plot
     pub fn percentile_scatter<S, L>(title: S, id: S, unit: Unit, metric: &'a str, labels: L, log_scale: bool) -> PlotConfig<'a>
     where
         S: Into<String>,
@@ -219,7 +219,7 @@ impl<'a> PlotConfig<'a> {
     }
 
 
-    /// Applies this plot configuration to the specified group, fetching data and adding the appropriate plot type
+    /// Applies configuration to group
     fn apply_to_group(self, group: &mut Group, data: &Tsdb) {
         match self {
             PlotConfig::Line { title, id, unit, data_source } => {
@@ -400,56 +400,33 @@ impl<'a> MultiBuilder<'a> {
 }
 
 
-/// Abstraction for fetching and transforming time series data from various metric types
+/// Time series data source
 pub enum DataSource<'a> {
-    /// Counter metric that converts cumulative values to rates
+    /// Counter converted to rate
     Counter {
         metric: &'a str,
         labels: Labels,
         transform: Option<Box<dyn Fn(UntypedSeries) -> UntypedSeries + 'a>>,
     },
-    /// CPU utilization metric averaged across cores
+    /// CPU average across cores
     CpuAvg {
         metric: &'a str,
         labels: Labels,
         transform: Option<Box<dyn Fn(UntypedSeries) -> UntypedSeries + 'a>>,
     },
-    /// Point-in-time value metric
+    /// Point-in-time value
     Gauge {
         metric: &'a str,
         labels: Labels,
         transform: Option<Box<dyn Fn(UntypedSeries) -> UntypedSeries + 'a>>,
     },
-    /// Derived metric computed from arbitrary data sources
+    /// Computed metric
     Computed {
         compute: Box<dyn Fn(&Tsdb) -> Option<UntypedSeries> + 'a>,
     },
 }
 
 impl<'a> DataSource<'a> {
-    /// Creates a counter that converts nanosecond CPU time to percentage utilization
-    pub fn counter_as_percentage(metric: &'a str) -> Self {
-        Self::counter(metric).with_transform(|v| v / NANOSECONDS_PER_SECOND)
-    }
-    
-    /// Creates a labeled counter that converts nanosecond CPU time to percentage utilization
-    pub fn counter_with_labels_as_percentage<L>(metric: &'a str, labels: L) -> Self
-    where
-        L: Into<Labels>,
-    {
-        Self::counter_with_labels(metric, labels)
-            .with_transform(|v| v / NANOSECONDS_PER_SECOND)
-    }
-    
-    /// Creates a counter that converts byte rates to bit rates for network bandwidth
-    pub fn counter_as_bitrate<L>(metric: &'a str, labels: L) -> Self
-    where
-        L: Into<Labels>,
-    {
-        Self::counter_with_labels(metric, labels)
-            .with_transform(|v| v * BITS_PER_BYTE)
-    }
-    
     pub fn counter(metric: &'a str) -> Self {
         Self::Counter {
             metric,
@@ -555,7 +532,7 @@ pub enum HeatmapSource<'a> {
 }
 
 impl<'a> HeatmapSource<'a> {
-    /// Create a CPU heatmap with labels (use () for no labels)
+    /// CPU heatmap with optional labels
     pub fn cpu_heatmap<L>(metric: &'a str, labels: L) -> Self 
     where
         L: Into<Labels>,
@@ -567,7 +544,7 @@ impl<'a> HeatmapSource<'a> {
         }
     }
     
-    /// Helper for creating a CPU heatmap with nanoseconds to percentage transform
+    /// CPU heatmap as percentage
     pub fn cpu_heatmap_as_percentage<L>(metric: &'a str, labels: L) -> Self
     where
         L: Into<Labels>,

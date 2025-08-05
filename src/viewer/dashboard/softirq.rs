@@ -52,7 +52,7 @@ fn softirq_total_group<'a>() -> GroupConfig<'a> {
         )
 }
 
-/// Creates a metrics group for a specific softirq type with rate and CPU percentage visualizations
+/// Creates a metrics group for a specific softirq type
 fn softirq_detail_group<'a>(label: &'a str, kind: &'a str) -> GroupConfig<'a> {
     GroupConfig::new(label.to_string(), format!("softirq-{kind}"))
         .plot(

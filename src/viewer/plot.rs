@@ -56,12 +56,6 @@ impl Group {
         }
     }
 
-    pub fn push(&mut self, plot: Option<Plot>) {
-        if let Some(plot) = plot {
-            self.plots.push(plot);
-        }
-    }
-
     pub fn plot(&mut self, opts: PlotOpts, series: Option<UntypedSeries>) {
         if let Some(data) = series.map(|v| v.as_data()) {
             self.plots.push(Plot {
@@ -174,49 +168,6 @@ pub struct Plot {
     series_names: Option<Vec<String>>,
 }
 
-impl Plot {
-    pub fn line<T: Into<String>, U: Into<String>>(
-        title: T,
-        id: U,
-        unit: Unit,
-        series: Option<UntypedSeries>,
-    ) -> Option<Self> {
-        series.map(|series| Self {
-            data: series.as_data(),
-            opts: PlotOpts::line(title, id, unit),
-            min_value: None,
-            max_value: None,
-            time_data: None,
-            formatted_time_data: None,
-            series_names: None,
-        })
-    }
-
-    pub fn heatmap<T: Into<String>, U: Into<String>>(
-        title: T,
-        id: U,
-        unit: Unit,
-        series: Option<Heatmap>,
-    ) -> Option<Self> {
-        if let Some(heatmap) = series {
-            let echarts_data = heatmap.as_data();
-            if !echarts_data.data.is_empty() {
-                return Some(Plot {
-                    opts: PlotOpts::heatmap(title, id, unit),
-                    data: echarts_data.data,
-                    min_value: Some(echarts_data.min_value),
-                    max_value: Some(echarts_data.max_value),
-                    time_data: Some(echarts_data.time),
-                    formatted_time_data: Some(echarts_data.formatted_time),
-                    series_names: None,
-                });
-            }
-        }
-
-        None
-    }
-}
-
 #[derive(Serialize, Clone)]
 pub struct PlotOpts {
     title: String,
@@ -281,23 +232,6 @@ impl PlotOpts {
             style: "heatmap".to_string(),
             format: Some(FormatConfig::new(unit)),
         }
-    }
-
-    // Convenience methods
-    pub fn with_unit_system<T: Into<String>>(mut self, unit_system: T) -> Self {
-        if let Some(ref mut format) = self.format {
-            format.unit_system = Some(unit_system.into());
-        }
-
-        self
-    }
-
-    pub fn with_axis_label<T: Into<String>>(mut self, y_label: T) -> Self {
-        if let Some(ref mut format) = self.format {
-            format.y_axis_label = Some(y_label.into());
-        }
-
-        self
     }
 
     pub fn with_log_scale(mut self, log_scale: bool) -> Self {
