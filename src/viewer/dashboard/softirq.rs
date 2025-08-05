@@ -1,11 +1,9 @@
 use super::*;
 
-/// Declarative Softirq dashboard using the Builder pattern
 pub fn generate(data: &Tsdb, sections: Vec<Section>) -> View {
     let mut builder = DashboardBuilder::new(data, sections)
         .group(softirq_total_group());
 
-    // Add detailed groups for each softirq type
     for (label, kind) in [
         ("Hardware Interrupts", "hi"),
         ("IRQ Poll", "irq_poll"),
@@ -24,7 +22,6 @@ pub fn generate(data: &Tsdb, sections: Vec<Section>) -> View {
     builder.build()
 }
 
-/// Total Softirq metrics group
 fn softirq_total_group<'a>() -> GroupConfig<'a> {
     GroupConfig::new("Softirq", "softirq")
         .plot(
@@ -55,7 +52,7 @@ fn softirq_total_group<'a>() -> GroupConfig<'a> {
         )
 }
 
-/// Detailed Softirq metrics group for a specific type
+/// Creates a metrics group for a specific softirq type with rate and CPU percentage visualizations
 fn softirq_detail_group<'a>(label: &'a str, kind: &'a str) -> GroupConfig<'a> {
     GroupConfig::new(label.to_string(), format!("softirq-{kind}"))
         .plot(

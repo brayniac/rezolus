@@ -1,13 +1,11 @@
 use super::*;
 
-/// Declarative Syscall dashboard using the Builder pattern
 pub fn generate(data: &Tsdb, sections: Vec<Section>) -> View {
     DashboardBuilder::new(data, sections)
         .group(syscall_group())
         .build()
 }
 
-/// Syscall metrics group
 fn syscall_group<'a>() -> GroupConfig<'a> {
     let mut group = GroupConfig::new("Syscall", "syscall")
         .plot(
@@ -26,7 +24,6 @@ fn syscall_group<'a>() -> GroupConfig<'a> {
             )
         );
 
-    // Add per-operation metrics
     for op in &[
         "Read",
         "Write",

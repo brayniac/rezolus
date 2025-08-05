@@ -1,6 +1,5 @@
 use super::*;
 
-/// Declarative cgroups dashboard using the Builder pattern
 pub fn generate(data: &Tsdb, sections: Vec<Section>) -> View {
     DashboardBuilder::new(data, sections)
         .group(cpu_cgroups_group())
@@ -10,7 +9,6 @@ pub fn generate(data: &Tsdb, sections: Vec<Section>) -> View {
         .build()
 }
 
-/// CPU cgroups metrics group
 fn cpu_cgroups_group<'a>() -> GroupConfig<'a> {
     GroupConfig::new("CPU", "cpu")
         .plot(
@@ -72,7 +70,6 @@ fn cpu_cgroups_group<'a>() -> GroupConfig<'a> {
         )
 }
 
-/// Performance cgroups metrics group
 fn performance_cgroups_group<'a>() -> GroupConfig<'a> {
     GroupConfig::new("Performance", "performance")
         .plot(
@@ -111,7 +108,6 @@ fn performance_cgroups_group<'a>() -> GroupConfig<'a> {
         )
 }
 
-/// TLB cgroups metrics group
 fn tlb_cgroups_group<'a>() -> GroupConfig<'a> {
     GroupConfig::new("TLB", "tlb")
         .plot(
@@ -124,7 +120,6 @@ fn tlb_cgroups_group<'a>() -> GroupConfig<'a> {
         )
 }
 
-/// Syscall cgroups metrics group
 fn syscall_cgroups_group<'a>() -> GroupConfig<'a> {
     let mut group = GroupConfig::new("Syscall", "syscall")
         .plot(
@@ -136,7 +131,6 @@ fn syscall_cgroups_group<'a>() -> GroupConfig<'a> {
                 .build()
         );
 
-    // Add per-operation syscall metrics
     for op in &[
         "Read",
         "Write",

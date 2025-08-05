@@ -1,6 +1,5 @@
 use super::*;
 
-/// Declarative Overview dashboard using the Builder pattern
 pub fn generate(data: &Tsdb, sections: Vec<Section>) -> View {
     DashboardBuilder::new(data, sections)
         .group(cpu_group())
@@ -12,7 +11,6 @@ pub fn generate(data: &Tsdb, sections: Vec<Section>) -> View {
         .build()
 }
 
-/// CPU metrics group
 fn cpu_group<'a>() -> GroupConfig<'a> {
     GroupConfig::new("CPU", "cpu")
         .plot(
@@ -30,7 +28,6 @@ fn cpu_group<'a>() -> GroupConfig<'a> {
         )
 }
 
-/// Network metrics group
 fn network_group<'a>() -> GroupConfig<'a> {
     GroupConfig::new("Network", "network")
         .plot(
@@ -65,7 +62,6 @@ fn network_group<'a>() -> GroupConfig<'a> {
         )
 }
 
-/// Scheduler metrics group
 fn scheduler_group<'a>() -> GroupConfig<'a> {
     GroupConfig::new("Scheduler", "scheduler")
         .plot(
@@ -80,7 +76,6 @@ fn scheduler_group<'a>() -> GroupConfig<'a> {
         )
 }
 
-/// Syscall metrics group
 fn syscall_group<'a>() -> GroupConfig<'a> {
     GroupConfig::new("Syscall", "syscall")
         .plot(
@@ -100,7 +95,6 @@ fn syscall_group<'a>() -> GroupConfig<'a> {
         )
 }
 
-/// Softirq metrics group
 fn softirq_group<'a>() -> GroupConfig<'a> {
     GroupConfig::new("Softirq", "softirq")
         .plot(
@@ -128,7 +122,6 @@ fn softirq_group<'a>() -> GroupConfig<'a> {
         )
 }
 
-/// BlockIO metrics group
 fn blockio_group<'a>() -> GroupConfig<'a> {
     GroupConfig::new("BlockIO", "blockio")
         .plot(

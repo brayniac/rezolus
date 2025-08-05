@@ -1,16 +1,13 @@
 use super::*;
 
-/// Declarative Rezolus dashboard using the Builder pattern
 pub fn generate(data: &Tsdb, sections: Vec<Section>) -> View {
     DashboardBuilder::new(data, sections)
         .group(rezolus_metrics_group())
         .build()
 }
 
-/// Rezolus self-monitoring metrics group
 fn rezolus_metrics_group<'a>() -> GroupConfig<'a> {
     GroupConfig::new("Rezolus", "rezolus")
-        // CPU Usage
         .plot(
             PlotConfig::line("CPU %", "cpu", Unit::Percentage)
                 .data(
@@ -19,15 +16,12 @@ fn rezolus_metrics_group<'a>() -> GroupConfig<'a> {
                 )
                 .build()
         )
-        // Memory (RSS)
         .plot(
             PlotConfig::line("Memory (RSS)", "memory", Unit::Bytes)
                 .data(DataSource::gauge("rezolus_memory_usage_resident_set_size"))
                 .build()
         )
-        // IPC (Instructions per Cycle)
         .plot(ipc_plot())
-        // Syscalls
         .plot(
             PlotConfig::line("Syscalls", "syscalls", Unit::Rate)
                 .data(
@@ -38,7 +32,6 @@ fn rezolus_metrics_group<'a>() -> GroupConfig<'a> {
                 )
                 .build()
         )
-        // Total BPF Overhead
         .plot(
             PlotConfig::line("Total BPF Overhead", "bpf-overhead", Unit::Count)
                 .data(
@@ -47,13 +40,11 @@ fn rezolus_metrics_group<'a>() -> GroupConfig<'a> {
                 )
                 .build()
         )
-        // BPF Per-Sampler Overhead
         .plot(bpf_sampler_overhead_plot())
-        // BPF Per-Sampler Execution Time
         .plot(bpf_execution_time_plot())
 }
 
-/// IPC plot for rezolus service
+/// Computes instructions per cycle for the rezolus service cgroup when both metrics are available
 fn ipc_plot<'a>() -> PlotConfig<'a> {
     PlotConfig::conditional(
         |data| {
@@ -88,7 +79,6 @@ fn ipc_plot<'a>() -> PlotConfig<'a> {
     )
 }
 
-/// BPF per-sampler overhead multi-series plot
 fn bpf_sampler_overhead_plot<'a>() -> PlotConfig<'a> {
     PlotConfig::multi("BPF Per-Sampler Overhead", "bpf-sampler-overhead", Unit::Count)
         .compute(|data| {
@@ -99,7 +89,6 @@ fn bpf_sampler_overhead_plot<'a>() -> PlotConfig<'a> {
         .build()
 }
 
-/// BPF per-sampler execution time multi-series plot
 fn bpf_execution_time_plot<'a>() -> PlotConfig<'a> {
     PlotConfig::multi("BPF Per-Sampler Execution Time", "bpf-execution-time", Unit::Time)
         .compute(|data| {

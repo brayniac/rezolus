@@ -76,16 +76,16 @@ mod tests {
     }
 }
 
-// Dashboard Builder Pattern Implementation
 
-/// Declarative dashboard builder following the Builder pattern
+/// Builder for constructing dashboard views from declarative group configurations
 pub struct DashboardBuilder<'a> {
     data: &'a Tsdb,
     view: View,
 }
 
-// Common transformation constants
+/// Conversion factor from nanoseconds to seconds, commonly used for CPU percentage calculations
 const NANOSECONDS_PER_SECOND: f64 = 1e9;
+/// Conversion factor from bytes to bits, used for network bandwidth calculations
 const BITS_PER_BYTE: f64 = 8.0;
 
 impl<'a> DashboardBuilder<'a> {
@@ -96,20 +96,20 @@ impl<'a> DashboardBuilder<'a> {
         }
     }
 
-    /// Add a group with declarative configuration
+    /// Adds a metrics group to the dashboard
     pub fn group(mut self, config: GroupConfig<'a>) -> Self {
         let group = config.build(self.data);
         self.view.group(group);
         self
     }
 
-    /// Build the final View
+    /// Consumes the builder and returns the constructed View
     pub fn build(self) -> View {
         self.view
     }
 }
 
-/// Declarative group configuration
+/// Configuration for a group of related metrics plots
 pub struct GroupConfig<'a> {
     name: String,
     id: String,
@@ -125,13 +125,12 @@ impl<'a> GroupConfig<'a> {
         }
     }
 
-    /// Add a plot configuration
     pub fn plot(mut self, plot: PlotConfig<'a>) -> Self {
         self.plots.push(plot);
         self
     }
 
-    /// Build the group from configuration
+    /// Converts configuration into a Group by applying all plot configurations
     fn build(self, data: &Tsdb) -> Group {
         let mut group = Group::new(self.name, self.id);
         
@@ -143,7 +142,7 @@ impl<'a> GroupConfig<'a> {
     }
 }
 
-/// Declarative plot configuration
+/// Configuration for individual plot types within a metrics group
 pub enum PlotConfig<'a> {
     Line {
         title: String,
@@ -177,27 +176,23 @@ pub enum PlotConfig<'a> {
 }
 
 impl<'a> PlotConfig<'a> {
-    /// Create a line plot builder
     pub fn line<S: Into<String>>(title: S, id: S, unit: Unit) -> PlotBuilder<'a> {
         PlotBuilder::line(title, id, unit)
     }
 
-    /// Create a heatmap plot builder
     pub fn heatmap<S: Into<String>>(title: S, id: S, unit: Unit) -> HeatmapBuilder<'a> {
         HeatmapBuilder::new(title, id, unit)
     }
     
-    /// Create a scatter plot builder
     pub fn scatter<S: Into<String>>(title: S, id: S, unit: Unit) -> ScatterBuilder<'a> {
         ScatterBuilder::new(title, id, unit)
     }
     
-    /// Create a multi-series plot builder
     pub fn multi<S: Into<String>>(title: S, id: S, unit: Unit) -> MultiBuilder<'a> {
         MultiBuilder::new(title, id, unit)
     }
     
-    /// Create a conditional plot wrapper
+    /// Wraps a plot configuration with a conditional check that determines whether the plot should be rendered
     pub fn conditional<F>(condition: F, plot: PlotConfig<'a>) -> PlotConfig<'a>
     where
         F: Fn(&Tsdb) -> bool + 'a,
@@ -208,7 +203,7 @@ impl<'a> PlotConfig<'a> {
         }
     }
     
-    /// Helper to create a scatter plot with percentiles
+    /// Creates a scatter plot displaying percentile distributions for the specified metric
     pub fn percentile_scatter<S, L>(title: S, id: S, unit: Unit, metric: &'a str, labels: L, log_scale: bool) -> PlotConfig<'a>
     where
         S: Into<String>,
@@ -224,7 +219,7 @@ impl<'a> PlotConfig<'a> {
     }
 
 
-    /// Apply this configuration to a group
+    /// Applies this plot configuration to the specified group, fetching data and adding the appropriate plot type
     fn apply_to_group(self, group: &mut Group, data: &Tsdb) {
         match self {
             PlotConfig::Line { title, id, unit, data_source } => {
@@ -236,7 +231,6 @@ impl<'a> PlotConfig<'a> {
                 group.heatmap(PlotOpts::heatmap(title, id, unit), heatmap);
             }
             PlotConfig::Scatter { title, id, unit, compute, log_scale } => {
-                // Only add the scatter plot if data exists
                 if let Some(data_vec) = compute(data) {
                     let mut opts = PlotOpts::scatter(title, id, unit);
                     if log_scale {
@@ -246,7 +240,6 @@ impl<'a> PlotConfig<'a> {
                 }
             }
             PlotConfig::Multi { title, id, unit, compute } => {
-                // Only add the multi plot if data exists
                 if let Some(data_vec) = compute(data) {
                     group.multi(PlotOpts::multi(title, id, unit), Some(data_vec));
                 }
@@ -407,39 +400,39 @@ impl<'a> MultiBuilder<'a> {
 }
 
 
-/// Data source abstraction
+/// Abstraction for fetching and transforming time series data from various metric types
 pub enum DataSource<'a> {
-    /// Simple counter with optional labels
+    /// Counter metric that converts cumulative values to rates
     Counter {
         metric: &'a str,
         labels: Labels,
         transform: Option<Box<dyn Fn(UntypedSeries) -> UntypedSeries + 'a>>,
     },
-    /// CPU average metric
+    /// CPU utilization metric averaged across cores
     CpuAvg {
         metric: &'a str,
         labels: Labels,
         transform: Option<Box<dyn Fn(UntypedSeries) -> UntypedSeries + 'a>>,
     },
-    /// Gauge metric
+    /// Point-in-time value metric
     Gauge {
         metric: &'a str,
         labels: Labels,
         transform: Option<Box<dyn Fn(UntypedSeries) -> UntypedSeries + 'a>>,
     },
-    /// Computed metric from multiple sources
+    /// Derived metric computed from arbitrary data sources
     Computed {
         compute: Box<dyn Fn(&Tsdb) -> Option<UntypedSeries> + 'a>,
     },
 }
 
 impl<'a> DataSource<'a> {
-    /// Helper for creating a counter with nanoseconds to percentage transform
+    /// Creates a counter that converts nanosecond CPU time to percentage utilization
     pub fn counter_as_percentage(metric: &'a str) -> Self {
         Self::counter(metric).with_transform(|v| v / NANOSECONDS_PER_SECOND)
     }
     
-    /// Helper for creating a counter with labels and nanoseconds to percentage transform
+    /// Creates a labeled counter that converts nanosecond CPU time to percentage utilization
     pub fn counter_with_labels_as_percentage<L>(metric: &'a str, labels: L) -> Self
     where
         L: Into<Labels>,
@@ -448,7 +441,7 @@ impl<'a> DataSource<'a> {
             .with_transform(|v| v / NANOSECONDS_PER_SECOND)
     }
     
-    /// Helper for creating a counter with bytes to bits transform
+    /// Creates a counter that converts byte rates to bit rates for network bandwidth
     pub fn counter_as_bitrate<L>(metric: &'a str, labels: L) -> Self
     where
         L: Into<Labels>,
