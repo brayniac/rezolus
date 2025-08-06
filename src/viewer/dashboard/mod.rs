@@ -10,6 +10,7 @@ mod rezolus;
 mod scheduler;
 mod softirq;
 mod syscall;
+pub mod promql_dashboards;
 
 type Generator = fn(&Tsdb, Vec<Section>) -> View;
 
@@ -83,7 +84,7 @@ pub struct DashboardBuilder<'a> {
     view: View,
 }
 
-/// Nanoseconds to seconds conversion for CPU percentages
+/// Nanoseconds to seconds conversion
 const NANOSECONDS_PER_SECOND: f64 = 1e9;
 /// Bytes to bits conversion for network bandwidth
 const BITS_PER_BYTE: f64 = 8.0;

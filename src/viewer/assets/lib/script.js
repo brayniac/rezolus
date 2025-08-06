@@ -11,7 +11,12 @@ const Sidebar = {
             attrs.sections.map((section) => m(m.route.Link, {
                 class: attrs.activeSection === section ? 'selected' : '',
                 href: section.route,
-            }, section.name))
+            }, section.name)),
+            m("hr", { style: "margin: 1rem 0; border: none; border-top: 1px solid #333;" }),
+            m("a", {
+                href: "/query",
+                style: "display: block; padding: 0.5rem 1rem; color: #4a9eff; text-decoration: none; font-weight: 500;"
+            }, "→ Query Explorer")
         ]);
     }
 };

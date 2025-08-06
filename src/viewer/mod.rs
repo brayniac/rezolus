@@ -7,7 +7,6 @@ use axum::Router;
 use clap::ArgMatches;
 use http::{header, StatusCode, Uri};
 use include_dir::{include_dir, Dir};
-use serde::Serialize;
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::compression::CompressionLayer;
@@ -33,9 +32,11 @@ const PERCENTILES: &[f64] = &[50.0, 90.0, 99.0, 99.9, 99.99];
 mod dashboard;
 mod plot;
 mod tsdb;
+mod query_api;
 
 use plot::*;
 use tsdb::*;
+use query_api::*;
 
 pub fn command() -> Command {
     Command::new("view")
@@ -167,12 +168,12 @@ pub fn run(config: Config) {
     });
 
     // launch the HTTP listener
-    rt.block_on(async move { serve(listener, state).await });
+    rt.block_on(async move { serve(listener, state, data).await });
 
     std::thread::sleep(Duration::from_millis(200));
 }
 
-async fn serve(listener: std::net::TcpListener, state: AppState) {
+async fn serve(listener: std::net::TcpListener, state: AppState, tsdb: Tsdb) {
     let livereload = LiveReloadLayer::new();
 
     #[cfg(feature = "developer-mode")]
@@ -197,7 +198,7 @@ async fn serve(listener: std::net::TcpListener, state: AppState) {
             .expect("failed to watch assets folder");
     }
 
-    let app = app(livereload, state);
+    let app = app(livereload, state, tsdb);
 
     listener.set_nonblocking(true).unwrap();
     let listener = TcpListener::from_std(listener).unwrap();
@@ -221,19 +222,22 @@ impl AppState {
 
 // NOTE: we're going to want to include the assets in the binary for release
 // builds. For now, we just serve from the assets folder
-fn app(livereload: LiveReloadLayer, state: AppState) -> Router {
+fn app(livereload: LiveReloadLayer, state: AppState, tsdb: Tsdb) -> Router {
     let state = Arc::new(state);
+    let query_state = Arc::new(QueryState { tsdb });
 
     let router = Router::new()
         .route("/about", get(about))
         .with_state(state.clone())
-        .nest_service("/data", data.with_state(state));
+        .nest_service("/data", data.with_state(state.clone()))
+        .nest("/api", query_router().with_state(query_state));
 
     #[cfg(feature = "developer-mode")]
     let router = {
         warn!("running in developer mode. Rezolus Viewer must be run from within project folder");
         router
             .route_service("/", ServeFile::new("src/viewer/assets/index.html"))
+            .route_service("/query", ServeFile::new("src/viewer/assets/query.html"))
             .nest_service("/lib", ServeDir::new(Path::new("src/viewer/assets/lib")))
             .fallback_service(ServeFile::new("src/viewer/assets/index.html"))
     };
@@ -242,6 +246,7 @@ fn app(livereload: LiveReloadLayer, state: AppState) -> Router {
     let router = {
         router
             .route_service("/", get(index))
+            .route_service("/query", get(query_page))
             .nest_service("/lib", get(lib))
             .fallback_service(get(index))
     };
@@ -289,6 +294,26 @@ async fn index() -> impl IntoResponse {
         )
     } else {
         error!("index.html missing from build");
+        (
+            StatusCode::from_u16(404).unwrap(),
+            [(header::CONTENT_TYPE, "text/plain")],
+            "404 Not Found".to_string(),
+        )
+    }
+}
+
+async fn query_page() -> impl IntoResponse {
+    if let Some(asset) = ASSETS.get_file("query.html") {
+        let body = asset.contents_utf8().unwrap();
+        let content_type = "text/html";
+
+        (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, content_type)],
+            body.to_string(),
+        )
+    } else {
+        error!("query.html missing from build");
         (
             StatusCode::from_u16(404).unwrap(),
             [(header::CONTENT_TYPE, "text/plain")],

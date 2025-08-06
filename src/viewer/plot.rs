@@ -1,4 +1,5 @@
 use super::*;
+use serde::{Serialize, Deserialize};
 
 #[derive(Default, Serialize)]
 pub struct View {
@@ -258,6 +259,7 @@ impl FormatConfig {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum Unit {
     Count,
     Rate,

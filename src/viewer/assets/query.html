@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rezolus Query Explorer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        
+        .header {
+            background: #2a2a2a;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid #3a3a3a;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+        }
+        
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 500;
+        }
+        
+        .nav-link {
+            color: #8a8a8a;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+        
+        .nav-link:hover {
+            color: #e0e0e0;
+            background: #3a3a3a;
+        }
+        
+        .query-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 2rem;
+            gap: 1rem;
+            max-width: 1400px;
+            width: 100%;
+            margin: 0 auto;
+        }
+        
+        .query-input-group {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 1.5rem;
+            border: 1px solid #3a3a3a;
+        }
+        
+        .query-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-size: 0.875rem;
+            color: #a0a0a0;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .query-input {
+            width: 100%;
+            background: #1a1a1a;
+            border: 1px solid #3a3a3a;
+            color: #e0e0e0;
+            padding: 0.75rem;
+            border-radius: 4px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 14px;
+            min-height: 100px;
+            resize: vertical;
+        }
+        
+        .query-input:focus {
+            outline: none;
+            border-color: #4a9eff;
+            box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.1);
+        }
+        
+        .query-toolbar {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+            align-items: center;
+        }
+        
+        .btn {
+            padding: 0.5rem 1.5rem;
+            border-radius: 4px;
+            border: none;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+        
+        .btn-primary {
+            background: #4a9eff;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #3a8eef;
+        }
+        
+        .btn-secondary {
+            background: #3a3a3a;
+            color: #e0e0e0;
+        }
+        
+        .btn-secondary:hover {
+            background: #4a4a4a;
+        }
+        
+        .examples-dropdown {
+            background: #1a1a1a;
+            border: 1px solid #3a3a3a;
+            color: #e0e0e0;
+            padding: 0.5rem;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .results-container {
+            flex: 1;
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 1.5rem;
+            border: 1px solid #3a3a3a;
+            overflow: auto;
+        }
+        
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #3a3a3a;
+        }
+        
+        .result-title {
+            font-size: 0.875rem;
+            color: #a0a0a0;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .result-type {
+            background: #3a3a3a;
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #4a9eff;
+        }
+        
+        .result-content {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 13px;
+        }
+        
+        .result-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .result-table th {
+            text-align: left;
+            padding: 0.5rem;
+            border-bottom: 1px solid #3a3a3a;
+            color: #a0a0a0;
+            font-weight: 500;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+        
+        .result-table td {
+            padding: 0.5rem;
+            border-bottom: 1px solid #1a1a1a;
+        }
+        
+        .metric-labels {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+        
+        .label-tag {
+            background: #3a3a3a;
+            padding: 0.2rem 0.5rem;
+            border-radius: 3px;
+            font-size: 11px;
+        }
+        
+        .error-message {
+            background: rgba(255, 82, 82, 0.1);
+            border: 1px solid rgba(255, 82, 82, 0.3);
+            color: #ff5252;
+            padding: 1rem;
+            border-radius: 4px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #8a8a8a;
+        }
+        
+        .chart-container {
+            height: 400px;
+            margin-top: 1rem;
+        }
+        
+        .history-panel {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 1rem;
+            border: 1px solid #3a3a3a;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .history-item {
+            padding: 0.5rem;
+            border-radius: 4px;
+            margin-bottom: 0.5rem;
+            background: #1a1a1a;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 12px;
+        }
+        
+        .history-item:hover {
+            background: #3a3a3a;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+</head>
+<body>
+    <div class="header">
+        <h1>Rezolus Query Explorer</h1>
+        <nav>
+            <a href="/" class="nav-link">← Back to Dashboard</a>
+        </nav>
+    </div>
+    
+    <div class="query-container">
+        <div class="query-input-group">
+            <label class="query-label">PromQL Query</label>
+            <textarea 
+                id="queryInput" 
+                class="query-input" 
+                placeholder="Enter a PromQL query, e.g., irate(cpu_usage[1m]) / 1e9"
+                spellcheck="false"
+            ></textarea>
+            
+            <div class="query-toolbar">
+                <button id="executeBtn" class="btn btn-primary">Execute Query</button>
+                <button id="clearBtn" class="btn btn-secondary">Clear</button>
+                
+                <select id="examplesDropdown" class="examples-dropdown">
+                    <option value="">Select Example Query...</option>
+                    <option value="irate(cpu_usage[1m]) / 1e9">CPU Usage (0-1)</option>
+                    <option value="irate(network_bytes{direction=&quot;transmit&quot;}[1m]) * 8">Network TX Bandwidth</option>
+                    <option value="irate(blockio_operations[1m])">Disk IOPS</option>
+                    <option value="irate(cpu_instructions[1m]) / irate(cpu_cycles[1m])">Instructions Per Cycle</option>
+                    <option value="irate(syscall[1m])">Syscall Rate</option>
+                    <option value="histogram_quantile(0.99, tcp_packet_latency)">TCP p99 Latency</option>
+                </select>
+            </div>
+        </div>
+        
+        <div id="historyPanel" class="history-panel" style="display: none;">
+            <div class="query-label">Query History</div>
+            <div id="historyList"></div>
+        </div>
+        
+        <div class="results-container">
+            <div class="result-header">
+                <div class="result-title">Results</div>
+                <div id="resultType" class="result-type" style="display: none;"></div>
+            </div>
+            
+            <div id="resultContent" class="result-content">
+                <div style="text-align: center; padding: 2rem; color: #8a8a8a;">
+                    Enter a query and click Execute to see results
+                </div>
+            </div>
+            
+            <div id="chartContainer" class="chart-container" style="display: none;"></div>
+        </div>
+    </div>
+    
+    <script>
+        let queryHistory = JSON.parse(localStorage.getItem('queryHistory') || '[]');
+        let chart = null;
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            updateHistoryPanel();
+            
+            // Setup event listeners
+            document.getElementById('executeBtn').addEventListener('click', executeQuery);
+            document.getElementById('clearBtn').addEventListener('click', clearQuery);
+            document.getElementById('examplesDropdown').addEventListener('change', loadExample);
+            
+            // Execute on Ctrl+Enter
+            document.getElementById('queryInput').addEventListener('keydown', (e) => {
+                if (e.ctrlKey && e.key === 'Enter') {
+                    executeQuery();
+                }
+            });
+        });
+        
+        async function executeQuery() {
+            const query = document.getElementById('queryInput').value.trim();
+            if (!query) return;
+            
+            // Add to history
+            addToHistory(query);
+            
+            // Show loading
+            const resultContent = document.getElementById('resultContent');
+            resultContent.innerHTML = '<div class="loading">Executing query...</div>';
+            
+            try {
+                const response = await fetch(`/api/query?query=${encodeURIComponent(query)}`);
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    displayResults(result.data);
+                } else {
+                    displayError(result.error || 'Query failed');
+                }
+            } catch (error) {
+                displayError(`Failed to execute query: ${error.message}`);
+            }
+        }
+        
+        function displayResults(data) {
+            const resultContent = document.getElementById('resultContent');
+            const resultType = document.getElementById('resultType');
+            const chartContainer = document.getElementById('chartContainer');
+            
+            // Show result type
+            resultType.textContent = data.resultType;
+            resultType.style.display = 'block';
+            
+            if (data.resultType === 'vector') {
+                displayVectorResults(data.result);
+            } else if (data.resultType === 'matrix') {
+                displayMatrixResults(data.result);
+            } else if (data.resultType === 'scalar') {
+                displayScalarResult(data.result);
+            }
+        }
+        
+        function displayVectorResults(results) {
+            const resultContent = document.getElementById('resultContent');
+            
+            if (results.length === 0) {
+                resultContent.innerHTML = '<div style="color: #8a8a8a;">No data</div>';
+                return;
+            }
+            
+            let html = '<table class="result-table">';
+            html += '<thead><tr><th>Metric</th><th>Labels</th><th>Value</th><th>Time</th></tr></thead>';
+            html += '<tbody>';
+            
+            for (const result of results) {
+                const metricName = result.metric['__name__'] || '-';
+                const labels = Object.entries(result.metric)
+                    .filter(([k]) => k !== '__name__')
+                    .map(([k, v]) => `<span class="label-tag">${k}="${v}"</span>`)
+                    .join('');
+                
+                const timestamp = new Date(result.value[0] * 1000).toLocaleString();
+                const value = parseFloat(result.value[1]).toFixed(2);
+                
+                html += `<tr>
+                    <td>${metricName}</td>
+                    <td><div class="metric-labels">${labels || '-'}</div></td>
+                    <td>${value}</td>
+                    <td>${timestamp}</td>
+                </tr>`;
+            }
+            
+            html += '</tbody></table>';
+            resultContent.innerHTML = html;
+            
+            // Try to visualize as chart if numeric
+            if (results.length > 0 && !isNaN(parseFloat(results[0].value[1]))) {
+                visualizeVectorData(results);
+            }
+        }
+        
+        function displayMatrixResults(results) {
+            const resultContent = document.getElementById('resultContent');
+            
+            if (results.length === 0) {
+                resultContent.innerHTML = '<div style="color: #8a8a8a;">No data</div>';
+                return;
+            }
+            
+            let html = '<div style="margin-bottom: 1rem;"><strong>Time Series Data</strong> (' + 
+                       results.reduce((sum, r) => sum + r.values.length, 0) + ' data points total)</div>';
+            
+            for (const result of results) {
+                const metricName = result.metric['__name__'] || 'unknown';
+                const labels = Object.entries(result.metric)
+                    .filter(([k]) => k !== '__name__')
+                    .map(([k, v]) => `${k}="${v}"`)
+                    .join(', ');
+                
+                html += `<div style="margin-bottom: 1rem;">`;
+                html += `<div style="font-weight: bold; margin-bottom: 0.5rem;">${metricName}`;
+                if (labels) html += ` {${labels}}`;
+                html += `</div>`;
+                
+                html += `<div style="color: #8a8a8a; font-size: 0.875rem;">${result.values.length} data points</div>`;
+                html += `</div>`;
+            }
+            
+            resultContent.innerHTML = html;
+            
+            // Visualize time series data
+            visualizeMatrixData(results);
+        }
+        
+        function displayScalarResult(result) {
+            const resultContent = document.getElementById('resultContent');
+            const value = result[1];
+            const timestamp = new Date(result[0] * 1000).toLocaleString();
+            
+            resultContent.innerHTML = `
+                <div style="font-size: 2rem; font-weight: bold; margin-bottom: 0.5rem;">
+                    ${value}
+                </div>
+                <div style="color: #8a8a8a; font-size: 0.875rem;">
+                    at ${timestamp}
+                </div>
+            `;
+        }
+        
+        function visualizeVectorData(results) {
+            const chartContainer = document.getElementById('chartContainer');
+            chartContainer.style.display = 'block';
+            
+            if (!chart) {
+                chart = echarts.init(chartContainer);
+            }
+            
+            const option = {
+                backgroundColor: 'transparent',
+                grid: {
+                    top: 20,
+                    right: 20,
+                    bottom: 40,
+                    left: 60
+                },
+                xAxis: {
+                    type: 'category',
+                    data: results.map(r => new Date(r.value[0] * 1000).toLocaleTimeString()),
+                    axisLine: { lineStyle: { color: '#3a3a3a' } },
+                    axisLabel: { color: '#8a8a8a' }
+                },
+                yAxis: {
+                    type: 'value',
+                    axisLine: { lineStyle: { color: '#3a3a3a' } },
+                    axisLabel: { color: '#8a8a8a' },
+                    splitLine: { lineStyle: { color: '#2a2a2a' } }
+                },
+                series: [{
+                    data: results.map(r => parseFloat(r.value[1])),
+                    type: 'line',
+                    smooth: true,
+                    lineStyle: { color: '#4a9eff' },
+                    itemStyle: { color: '#4a9eff' }
+                }],
+                tooltip: {
+                    trigger: 'axis',
+                    backgroundColor: '#2a2a2a',
+                    borderColor: '#3a3a3a',
+                    textStyle: { color: '#e0e0e0' }
+                }
+            };
+            
+            chart.setOption(option);
+        }
+        
+        function visualizeMatrixData(results) {
+            const chartContainer = document.getElementById('chartContainer');
+            chartContainer.style.display = 'block';
+            
+            if (!chart) {
+                chart = echarts.init(chartContainer);
+            }
+            
+            const series = results.map((result, index) => {
+                const metricName = result.metric['__name__'] || 'unknown';
+                const labels = Object.entries(result.metric)
+                    .filter(([k]) => k !== '__name__')
+                    .map(([k, v]) => `${k}="${v}"`)
+                    .join(', ');
+                
+                const seriesName = labels ? `${metricName} {${labels}}` : metricName;
+                
+                return {
+                    name: seriesName,
+                    data: result.values.map(([timestamp, value]) => [
+                        new Date(timestamp * 1000),
+                        parseFloat(value)
+                    ]),
+                    type: 'line',
+                    smooth: true,
+                    lineStyle: { 
+                        color: `hsl(${(index * 137.508) % 360}, 70%, 50%)` // Generate colors
+                    },
+                    itemStyle: { 
+                        color: `hsl(${(index * 137.508) % 360}, 70%, 50%)`
+                    }
+                };
+            });
+            
+            const option = {
+                backgroundColor: 'transparent',
+                grid: {
+                    top: 40,
+                    right: 20,
+                    bottom: 40,
+                    left: 80
+                },
+                xAxis: {
+                    type: 'time',
+                    axisLine: { lineStyle: { color: '#3a3a3a' } },
+                    axisLabel: { color: '#8a8a8a' }
+                },
+                yAxis: {
+                    type: 'value',
+                    axisLine: { lineStyle: { color: '#3a3a3a' } },
+                    axisLabel: { color: '#8a8a8a' },
+                    splitLine: { lineStyle: { color: '#2a2a2a' } }
+                },
+                series: series,
+                tooltip: {
+                    trigger: 'axis',
+                    backgroundColor: '#2a2a2a',
+                    borderColor: '#3a3a3a',
+                    textStyle: { color: '#e0e0e0' }
+                },
+                legend: {
+                    type: 'scroll',
+                    textStyle: { color: '#8a8a8a' },
+                    pageTextStyle: { color: '#8a8a8a' }
+                }
+            };
+            
+            chart.setOption(option);
+        }
+        
+        function displayError(error) {
+            const resultContent = document.getElementById('resultContent');
+            resultContent.innerHTML = `<div class="error-message">${error}</div>`;
+            
+            // Hide chart
+            document.getElementById('chartContainer').style.display = 'none';
+        }
+        
+        function clearQuery() {
+            document.getElementById('queryInput').value = '';
+            document.getElementById('resultContent').innerHTML = 
+                '<div style="text-align: center; padding: 2rem; color: #8a8a8a;">Enter a query and click Execute to see results</div>';
+            document.getElementById('resultType').style.display = 'none';
+            document.getElementById('chartContainer').style.display = 'none';
+        }
+        
+        function loadExample() {
+            const dropdown = document.getElementById('examplesDropdown');
+            const query = dropdown.value;
+            if (query) {
+                document.getElementById('queryInput').value = query;
+                dropdown.value = '';
+            }
+        }
+        
+        function addToHistory(query) {
+            // Remove if already exists
+            queryHistory = queryHistory.filter(q => q !== query);
+            // Add to beginning
+            queryHistory.unshift(query);
+            // Keep only last 20
+            queryHistory = queryHistory.slice(0, 20);
+            // Save
+            localStorage.setItem('queryHistory', JSON.stringify(queryHistory));
+            // Update display
+            updateHistoryPanel();
+        }
+        
+        function updateHistoryPanel() {
+            if (queryHistory.length === 0) {
+                document.getElementById('historyPanel').style.display = 'none';
+                return;
+            }
+            
+            document.getElementById('historyPanel').style.display = 'block';
+            const historyList = document.getElementById('historyList');
+            
+            historyList.innerHTML = queryHistory
+                .map(q => `<div class="history-item" onclick="loadHistoryQuery('${q.replace(/'/g, "\\'")}')">${q}</div>`)
+                .join('');
+        }
+        
+        function loadHistoryQuery(query) {
+            document.getElementById('queryInput').value = query;
+            executeQuery();
+        }
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            if (chart) {
+                chart.resize();
+            }
+        });
+    </script>
+</body>
+</html>
