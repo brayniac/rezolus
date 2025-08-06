@@ -1,289 +1,149 @@
-use super::*;
+use super::common::*;
 
-pub fn generate(data: &Tsdb, sections: Vec<Section>) -> View {
-    DashboardBuilder::new(data, sections)
-        .group(utilization_group())
-        .group(performance_group())
-        .group(migrations_group())
-        .group(tlb_flush_group())
-        .build()
-}
-
-fn utilization_group<'a>() -> GroupConfig<'a> {
-    GroupConfig::new("Utilization", "utilization")
-        .plot(
-            PlotConfig::line("Busy %", "busy-pct", Unit::Percentage)
-                .data(
-                    DataSource::cpu_avg("cpu_usage", ())
-                        .with_transform(|v| v / NANOSECONDS_PER_SECOND)
-                )
-                .build()
-        )
-        .plot(
-            PlotConfig::heatmap("Busy %", "busy-pct-heatmap", Unit::Percentage)
-                .data(
-                    HeatmapSource::cpu_heatmap("cpu_usage", ())
-                        .with_transform(|v| v / NANOSECONDS_PER_SECOND)
-                )
-                .build()
-        )
-        .plot(
-            PlotConfig::line("User %", "user-pct", Unit::Percentage)
-                .data(
-                    DataSource::cpu_avg("cpu_usage", [("state", "user")])
-                        .with_transform(|v| v / NANOSECONDS_PER_SECOND)
-                )
-                .build()
-        )
-        .plot(
-            PlotConfig::heatmap("User %", "user-pct-heatmap", Unit::Percentage)
-                .data(
-                    HeatmapSource::cpu_heatmap_as_percentage("cpu_usage", [("state", "user")])
-                )
-                .build()
-        )
-        .plot(
-            PlotConfig::line("System %", "system-pct", Unit::Percentage)
-                .data(
-                    DataSource::cpu_avg("cpu_usage", [("state", "system")])
-                        .with_transform(|v| v / NANOSECONDS_PER_SECOND)
-                )
-                .build()
-        )
-        .plot(
-            PlotConfig::heatmap("System %", "system-pct-heatmap", Unit::Percentage)
-                .data(
-                    HeatmapSource::cpu_heatmap_as_percentage("cpu_usage", [("state", "system")])
-                )
-                .build()
-        )
-}
-
-fn performance_group<'a>() -> GroupConfig<'a> {
-    GroupConfig::new("Performance", "performance")
-        .plot(ipc_plot())
-        .plot(ipc_heatmap())
-        .plot(ipns_plot())
-        .plot(ipns_heatmap())
-        .plot(l3_hit_plot())
-        .plot(l3_hit_heatmap())
-        .plot(frequency_plot())
-        .plot(frequency_heatmap())
-}
-
-fn ipc_plot<'a>() -> PlotConfig<'a> {
-    PlotConfig::line("Instructions per Cycle (IPC)", "ipc", Unit::Count)
-        .data(
-            DataSource::computed(|data| {
-                match (
-                    data.counters("cpu_cycles", ()).map(|v| v.rate().sum()),
-                    data.counters("cpu_instructions", ()).map(|v| v.rate().sum()),
-                ) {
-                    (Some(cycles), Some(instructions)) => Some(instructions / cycles),
-                    _ => None,
-                }
-            })
-        )
-        .build()
-}
-
-fn ipc_heatmap<'a>() -> PlotConfig<'a> {
-    PlotConfig::heatmap("Instructions per Cycle (IPC)", "ipc-heatmap", Unit::Count)
-        .data(
-            HeatmapSource::computed(|data| {
-                match (
-                    data.cpu_heatmap("cpu_cycles", ()),
-                    data.cpu_heatmap("cpu_instructions", ()),
-                ) {
-                    (Some(cycles), Some(instructions)) => Some(instructions / cycles),
-                    _ => None,
-                }
-            })
-        )
-        .build()
-}
-
-fn ipns_plot<'a>() -> PlotConfig<'a> {
-    PlotConfig::line("Instructions per Nanosecond (IPNS)", "ipns", Unit::Count)
-        .data(
-            DataSource::computed(|data| {
-                match (
-                    data.counters("cpu_cycles", ()).map(|v| v.rate().sum()),
-                    data.counters("cpu_instructions", ()).map(|v| v.rate().sum()),
-                    data.counters("cpu_aperf", ()).map(|v| v.rate().sum()),
-                    data.counters("cpu_mperf", ()).map(|v| v.rate().sum()),
-                    data.counters("cpu_tsc", ()).map(|v| v.rate().sum()),
-                    data.gauges("cpu_cores", ()).map(|v| v.sum()),
-                ) {
-                    (Some(cycles), Some(instructions), Some(aperf), Some(mperf), Some(tsc), Some(cores)) => {
-                        Some(instructions / cycles * tsc * aperf / mperf / NANOSECONDS_PER_SECOND / cores)
-                    }
-                    _ => None,
-                }
-            })
-        )
-        .build()
-}
-
-fn ipns_heatmap<'a>() -> PlotConfig<'a> {
-    PlotConfig::heatmap("Instructions per Nanosecond (IPNS)", "ipns-heatmap", Unit::Count)
-        .data(
-            HeatmapSource::computed(|data| {
-                match (
-                    data.cpu_heatmap("cpu_cycles", ()),
-                    data.cpu_heatmap("cpu_instructions", ()),
-                    data.cpu_heatmap("cpu_aperf", ()),
-                    data.cpu_heatmap("cpu_mperf", ()),
-                    data.cpu_heatmap("cpu_tsc", ()),
-                ) {
-                    (Some(cycles), Some(instructions), Some(aperf), Some(mperf), Some(tsc)) => {
-                        Some(instructions / cycles * tsc * aperf / mperf / NANOSECONDS_PER_SECOND)
-                    }
-                    _ => None,
-                }
-            })
-        )
-        .build()
-}
-
-fn l3_hit_plot<'a>() -> PlotConfig<'a> {
-    PlotConfig::line("L3 Hit %", "l3-hit", Unit::Percentage)
-        .data(
-            DataSource::computed(|data| {
-                match (
-                    data.counters("cpu_l3_access", ()).map(|v| v.rate().sum()),
-                    data.counters("cpu_l3_miss", ()).map(|v| v.rate().sum()),
-                ) {
-                    (Some(access), Some(miss)) => Some(miss / access),
-                    _ => None,
-                }
-            })
-        )
-        .build()
-}
-
-fn l3_hit_heatmap<'a>() -> PlotConfig<'a> {
-    PlotConfig::heatmap("L3 Hit %", "l3-hit-heatmap", Unit::Percentage)
-        .data(
-            HeatmapSource::computed(|data| {
-                match (
-                    data.cpu_heatmap("cpu_l3_access", ()),
-                    data.cpu_heatmap("cpu_l3_miss", ()),
-                ) {
-                    (Some(access), Some(miss)) => Some(miss / access),
-                    _ => None,
-                }
-            })
-        )
-        .build()
-}
-
-fn frequency_plot<'a>() -> PlotConfig<'a> {
-    PlotConfig::line("Frequency", "frequency", Unit::Frequency)
-        .data(
-            DataSource::computed(|data| {
-                match (
-                    data.counters("cpu_aperf", ()).map(|v| v.rate().sum()),
-                    data.counters("cpu_mperf", ()).map(|v| v.rate().sum()),
-                    data.counters("cpu_tsc", ()).map(|v| v.rate().sum()),
-                    data.gauges("cpu_cores", ()).map(|v| v.sum()),
-                ) {
-                    (Some(aperf), Some(mperf), Some(tsc), Some(cores)) => {
-                        Some(tsc * aperf / mperf / cores)
-                    }
-                    _ => None,
-                }
-            })
-        )
-        .build()
-}
-
-fn frequency_heatmap<'a>() -> PlotConfig<'a> {
-    PlotConfig::heatmap("Frequency", "frequency-heatmap", Unit::Frequency)
-        .data(
-            HeatmapSource::computed(|data| {
-                match (
-                    data.cpu_heatmap("cpu_aperf", ()),
-                    data.cpu_heatmap("cpu_mperf", ()),
-                    data.cpu_heatmap("cpu_tsc", ()),
-                ) {
-                    (Some(aperf), Some(mperf), Some(tsc)) => Some(tsc * aperf / mperf),
-                    _ => None,
-                }
-            })
-        )
-        .build()
-}
-
-fn migrations_group<'a>() -> GroupConfig<'a> {
-    GroupConfig::new("Migrations", "migrations")
-        .plot(
-            PlotConfig::line("To", "cpu-migrations-to", Unit::Rate)
-                .data(
-                    DataSource::counter_with_labels("cpu_migrations", [("direction", "to")])
-                )
-                .build()
-        )
-        .plot(
-            PlotConfig::heatmap("To", "cpu-migrations-to-heatmap", Unit::Rate)
-                .data(
-                    HeatmapSource::cpu_heatmap("cpu_migrations", [("direction", "to")])
-                )
-                .build()
-        )
-        .plot(
-            PlotConfig::line("From", "cpu-migrations-from", Unit::Rate)
-                .data(
-                    DataSource::counter_with_labels("cpu_migrations", [("direction", "from")])
-                )
-                .build()
-        )
-        .plot(
-            PlotConfig::heatmap("From", "cpu-migrations-from-heatmap", Unit::Rate)
-                .data(
-                    HeatmapSource::cpu_heatmap("cpu_migrations", [("direction", "from")])
-                )
-                .build()
-        )
-}
-
-fn tlb_flush_group<'a>() -> GroupConfig<'a> {
-    let mut group = GroupConfig::new("TLB Flush", "tlb-flush")
-        .plot(
-            PlotConfig::line("Total", "tlb-total", Unit::Rate)
-                .data(DataSource::counter("cpu_tlb_flush"))
-                .build()
-        )
-        .plot(
-            PlotConfig::heatmap("Total", "tlb-total-heatmap", Unit::Rate)
-                .data(HeatmapSource::cpu_heatmap("cpu_tlb_flush", ()))
-                .build()
-        );
-
-    for (label, metric_suffix) in [
-        ("Local MM Shootdown", "local_mm_shootdown"),
-        ("Remote Send IPI", "remote_send_ipi"),
-        ("Remote Shootdown", "remote_shootdown"),
-        ("Task Switch", "task_switch"),
-    ] {
-        let id = format!("tlb-{}", metric_suffix.replace('_', "-"));
-        
-        group = group
-            .plot(
-                PlotConfig::line(label, &id, Unit::Rate)
-                    .data(
-                        DataSource::counter_with_labels("cpu_tlb_flush", [("reason", metric_suffix)])
-                    )
-                    .build()
-            )
-            .plot(
-                PlotConfig::heatmap(label, &format!("{}-heatmap", id), Unit::Rate)
-                    .data(
-                        HeatmapSource::cpu_heatmap("cpu_tlb_flush", [("reason", metric_suffix)])
-                    )
-                    .build()
-            );
+/// CPU dashboard using PromQL
+pub fn dashboard() -> PromQLDashboard {
+    PromQLDashboard {
+        name: "CPU".to_string(),
+        sections: default_sections(),
+        groups: vec![
+            PromQLGroup {
+                name: "Utilization".to_string(),
+                id: "utilization".to_string(),
+                panels: vec![
+                    PromQLPanel {
+                        title: "CPU Busy %".to_string(),
+                        id: "cpu-busy".to_string(),
+                        panel_type: PanelType::Line,
+                        queries: vec![
+                            PromQLQueryDef {
+                                expr: "avg(sum by (id) (irate(cpu_usage[1m]))) / 1e9".to_string(),
+                                legend: Some("Total".to_string()),
+                                interval: None,
+                            },
+                        ],
+                        unit: Unit::Percentage,
+                        options: None,
+                    },
+                    PromQLPanel {
+                        title: "CPU Busy % by Core".to_string(),
+                        id: "cpu-busy-heatmap".to_string(),
+                        panel_type: PanelType::Heatmap,
+                        queries: vec![
+                            PromQLQueryDef {
+                                expr: "sum by (id) (irate(cpu_usage[1m])) / 1e9".to_string(),
+                                legend: None,
+                                interval: None,
+                            },
+                        ],
+                        unit: Unit::Percentage,
+                        options: None,
+                    },
+                    PromQLPanel {
+                        title: "CPU User %".to_string(),
+                        id: "cpu-user".to_string(),
+                        panel_type: PanelType::Line,
+                        queries: vec![
+                            PromQLQueryDef {
+                                expr: "avg(irate(cpu_usage{state=\"user\"}[1m])) / 1e9".to_string(),
+                                legend: Some("User".to_string()),
+                                interval: None,
+                            },
+                        ],
+                        unit: Unit::Percentage,
+                        options: None,
+                    },
+                    PromQLPanel {
+                        title: "CPU User % by Core".to_string(),
+                        id: "cpu-user-heatmap".to_string(),
+                        panel_type: PanelType::Heatmap,
+                        queries: vec![
+                            PromQLQueryDef {
+                                expr: "sum by (id) (irate(cpu_usage{state=\"user\"}[1m])) / 1e9".to_string(),
+                                legend: None,
+                                interval: None,
+                            },
+                        ],
+                        unit: Unit::Percentage,
+                        options: None,
+                    },
+                    PromQLPanel {
+                        title: "CPU System %".to_string(),
+                        id: "cpu-system".to_string(),
+                        panel_type: PanelType::Line,
+                        queries: vec![
+                            PromQLQueryDef {
+                                expr: "avg(irate(cpu_usage{state=\"system\"}[1m])) / 1e9".to_string(),
+                                legend: Some("System".to_string()),
+                                interval: None,
+                            },
+                        ],
+                        unit: Unit::Percentage,
+                        options: None,
+                    },
+                    PromQLPanel {
+                        title: "CPU System % by Core".to_string(),
+                        id: "cpu-system-heatmap".to_string(),
+                        panel_type: PanelType::Heatmap,
+                        queries: vec![
+                            PromQLQueryDef {
+                                expr: "sum by (id) (irate(cpu_usage{state=\"system\"}[1m])) / 1e9".to_string(),
+                                legend: None,
+                                interval: None,
+                            },
+                        ],
+                        unit: Unit::Percentage,
+                        options: None,
+                    },
+                ],
+            },
+            PromQLGroup {
+                name: "Performance".to_string(),
+                id: "performance".to_string(),
+                panels: vec![
+                    PromQLPanel {
+                        title: "Instructions Per Cycle".to_string(),
+                        id: "ipc".to_string(),
+                        panel_type: PanelType::Line,
+                        queries: vec![
+                            PromQLQueryDef {
+                                expr: "irate(cpu_instructions[1m]) / irate(cpu_cycles[1m])".to_string(),
+                                legend: Some("IPC".to_string()),
+                                interval: None,
+                            },
+                        ],
+                        unit: Unit::Count,
+                        options: None,
+                    },
+                    PromQLPanel {
+                        title: "Cache Misses".to_string(),
+                        id: "cache-misses".to_string(),
+                        panel_type: PanelType::Line,
+                        queries: vec![
+                            PromQLQueryDef {
+                                expr: "irate(cpu_cache_misses[1m])".to_string(),
+                                legend: Some("Misses/sec".to_string()),
+                                interval: None,
+                            },
+                        ],
+                        unit: Unit::Rate,
+                        options: None,
+                    },
+                    PromQLPanel {
+                        title: "Branch Mispredictions".to_string(),
+                        id: "branch-misses".to_string(),
+                        panel_type: PanelType::Line,
+                        queries: vec![
+                            PromQLQueryDef {
+                                expr: "irate(cpu_branch_misses[1m])".to_string(),
+                                legend: Some("Mispredictions/sec".to_string()),
+                                interval: None,
+                            },
+                        ],
+                        unit: Unit::Rate,
+                        options: None,
+                    },
+                ],
+            },
+        ],
     }
-
-    group
 }

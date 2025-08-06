@@ -1,83 +1,99 @@
-use super::*;
+use super::common::*;
 
-pub fn generate(data: &Tsdb, sections: Vec<Section>) -> View {
-    let mut builder = DashboardBuilder::new(data, sections)
-        .group(softirq_total_group());
-
-    for (label, kind) in [
-        ("Hardware Interrupts", "hi"),
-        ("IRQ Poll", "irq_poll"),
-        ("Network Transmit", "net_tx"),
-        ("Network Receive", "net_rx"),
-        ("RCU", "rcu"),
-        ("Sched", "sched"),
-        ("Tasklet", "tasklet"),
-        ("Timer", "timer"),
-        ("HR Timer", "hrtimer"),
-        ("Block", "block"),
-    ] {
-        builder = builder.group(softirq_detail_group(label, kind));
+/// SoftIRQ dashboard using PromQL
+pub fn dashboard() -> PromQLDashboard {
+    PromQLDashboard {
+        name: "SoftIRQ".to_string(),
+        sections: default_sections(),
+        groups: vec![
+            PromQLGroup {
+                name: "Softirq".to_string(),
+                id: "softirq".to_string(),
+                panels: vec![
+                    PromQLPanel {
+                        title: "Rate".to_string(),
+                        id: "softirq-total-rate".to_string(),
+                        panel_type: PanelType::Line,
+                        queries: vec![
+                            PromQLQueryDef {
+                                expr: "irate(softirq[1m])".to_string(),
+                                legend: Some("Total".to_string()),
+                                interval: None,
+                            },
+                        ],
+                        unit: Unit::Rate,
+                        options: None,
+                    },
+                    PromQLPanel {
+                        title: "CPU %".to_string(),
+                        id: "softirq-total-time".to_string(),
+                        panel_type: PanelType::Line,
+                        queries: vec![
+                            PromQLQueryDef {
+                                expr: "avg(irate(softirq_time[1m])) / 1e9".to_string(),
+                                legend: Some("Average".to_string()),
+                                interval: None,
+                            },
+                        ],
+                        unit: Unit::Percentage,
+                        options: None,
+                    },
+                    PromQLPanel {
+                        title: "By Type".to_string(),
+                        id: "softirq-by-type".to_string(),
+                        panel_type: PanelType::Line,
+                        queries: vec![
+                            PromQLQueryDef {
+                                expr: "irate(softirq{kind=\"hi\"}[1m])".to_string(),
+                                legend: Some("Hardware Interrupts".to_string()),
+                                interval: None,
+                            },
+                            PromQLQueryDef {
+                                expr: "irate(softirq{kind=\"timer\"}[1m])".to_string(),
+                                legend: Some("Timer".to_string()),
+                                interval: None,
+                            },
+                            PromQLQueryDef {
+                                expr: "irate(softirq{kind=\"net_tx\"}[1m])".to_string(),
+                                legend: Some("Network TX".to_string()),
+                                interval: None,
+                            },
+                            PromQLQueryDef {
+                                expr: "irate(softirq{kind=\"net_rx\"}[1m])".to_string(),
+                                legend: Some("Network RX".to_string()),
+                                interval: None,
+                            },
+                            PromQLQueryDef {
+                                expr: "irate(softirq{kind=\"block\"}[1m])".to_string(),
+                                legend: Some("Block".to_string()),
+                                interval: None,
+                            },
+                            PromQLQueryDef {
+                                expr: "irate(softirq{kind=\"tasklet\"}[1m])".to_string(),
+                                legend: Some("Tasklet".to_string()),
+                                interval: None,
+                            },
+                            PromQLQueryDef {
+                                expr: "irate(softirq{kind=\"sched\"}[1m])".to_string(),
+                                legend: Some("Scheduler".to_string()),
+                                interval: None,
+                            },
+                            PromQLQueryDef {
+                                expr: "irate(softirq{kind=\"hrtimer\"}[1m])".to_string(),
+                                legend: Some("HR Timer".to_string()),
+                                interval: None,
+                            },
+                            PromQLQueryDef {
+                                expr: "irate(softirq{kind=\"rcu\"}[1m])".to_string(),
+                                legend: Some("RCU".to_string()),
+                                interval: None,
+                            },
+                        ],
+                        unit: Unit::Rate,
+                        options: None,
+                    },
+                ],
+            },
+        ],
     }
-
-    builder.build()
-}
-
-fn softirq_total_group<'a>() -> GroupConfig<'a> {
-    GroupConfig::new("Softirq", "softirq")
-        .plot(
-            PlotConfig::line("Rate", "softirq-total-rate", Unit::Rate)
-                .data(DataSource::counter("softirq"))
-                .build()
-        )
-        .plot(
-            PlotConfig::heatmap("Rate", "softirq-total-rate-heatmap", Unit::Rate)
-                .data(HeatmapSource::cpu_heatmap("softirq", ()))
-                .build()
-        )
-        .plot(
-            PlotConfig::line("CPU %", "softirq-total-time", Unit::Percentage)
-                .data(
-                    DataSource::cpu_avg("softirq_time", ())
-                        .with_transform(|v| v / NANOSECONDS_PER_SECOND)
-                )
-                .build()
-        )
-        .plot(
-            PlotConfig::heatmap("CPU %", "softirq-total-time-heatmap", Unit::Percentage)
-                .data(
-                    HeatmapSource::cpu_heatmap("softirq_time", ())
-                        .with_transform(|v| v / NANOSECONDS_PER_SECOND)
-                )
-                .build()
-        )
-}
-
-/// Creates a metrics group for a specific softirq type
-fn softirq_detail_group<'a>(label: &'a str, kind: &'a str) -> GroupConfig<'a> {
-    GroupConfig::new(label.to_string(), format!("softirq-{kind}"))
-        .plot(
-            PlotConfig::line("Rate".to_string(), format!("softirq-{kind}-rate"), Unit::Rate)
-                .data(DataSource::counter_with_labels("softirq", [("kind", kind)]))
-                .build()
-        )
-        .plot(
-            PlotConfig::heatmap("Rate".to_string(), format!("softirq-{kind}-rate-heatmap"), Unit::Rate)
-                .data(HeatmapSource::cpu_heatmap("softirq", [("kind", kind)]))
-                .build()
-        )
-        .plot(
-            PlotConfig::line("CPU %".to_string(), format!("softirq-{kind}-time"), Unit::Percentage)
-                .data(
-                    DataSource::cpu_avg("softirq_time", [("kind", kind)])
-                        .with_transform(|v| v / NANOSECONDS_PER_SECOND)
-                )
-                .build()
-        )
-        .plot(
-            PlotConfig::heatmap("CPU %".to_string(), format!("softirq-{kind}-time-heatmap"), Unit::Percentage)
-                .data(
-                    HeatmapSource::cpu_heatmap_as_percentage("softirq_time", [("kind", kind)])
-                )
-                .build()
-        )
 }

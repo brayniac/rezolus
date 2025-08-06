@@ -37,6 +37,11 @@ impl UntypedCollection {
 
         result
     }
+    
+    /// Returns an iterator over the individual series with their labels
+    pub fn iter(&self) -> impl Iterator<Item = (&Labels, &UntypedSeries)> {
+        self.inner.iter()
+    }
 
     pub fn by_id(&self) -> IndexedSeries {
         let mut result = BTreeMap::new();

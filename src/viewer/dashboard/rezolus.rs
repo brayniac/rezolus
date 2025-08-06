@@ -1,108 +1,87 @@
-use super::*;
+use super::common::*;
 
-pub fn generate(data: &Tsdb, sections: Vec<Section>) -> View {
-    DashboardBuilder::new(data, sections)
-        .group(rezolus_metrics_group())
-        .build()
-}
-
-fn rezolus_metrics_group<'a>() -> GroupConfig<'a> {
-    GroupConfig::new("Rezolus", "rezolus")
-        .plot(
-            PlotConfig::line("CPU %", "cpu", Unit::Percentage)
-                .data(
-                    DataSource::counter("rezolus_cpu_usage")
-                        .with_transform(|v| v / NANOSECONDS_PER_SECOND)
-                )
-                .build()
-        )
-        .plot(
-            PlotConfig::line("Memory (RSS)", "memory", Unit::Bytes)
-                .data(DataSource::gauge("rezolus_memory_usage_resident_set_size"))
-                .build()
-        )
-        .plot(ipc_plot())
-        .plot(
-            PlotConfig::line("Syscalls", "syscalls", Unit::Rate)
-                .data(
-                    DataSource::counter_with_labels(
-                        "cgroup_syscall",
-                        [("name", "/system.slice/rezolus.service")]
-                    )
-                )
-                .build()
-        )
-        .plot(
-            PlotConfig::line("Total BPF Overhead", "bpf-overhead", Unit::Count)
-                .data(
-                    DataSource::counter("rezolus_bpf_run_time")
-                        .with_transform(|v| v / NANOSECONDS_PER_SECOND)
-                )
-                .build()
-        )
-        .plot(bpf_sampler_overhead_plot())
-        .plot(bpf_execution_time_plot())
-}
-
-/// Computes IPC for rezolus service cgroup
-fn ipc_plot<'a>() -> PlotConfig<'a> {
-    PlotConfig::conditional(
-        |data| {
-            data.counters(
-                "cgroup_cpu_instructions",
-                [("name", "/system.slice/rezolus.service")]
-            ).is_some() &&
-            data.counters(
-                "cgroup_cpu_cycles",
-                [("name", "/system.slice/rezolus.service")]
-            ).is_some()
-        },
-        PlotConfig::line("IPC", "ipc", Unit::Count)
-            .data(
-                DataSource::computed(|data| {
-                    match (
-                        data.counters(
-                            "cgroup_cpu_instructions",
-                            [("name", "/system.slice/rezolus.service")]
-                        ).map(|v| v.rate().sum()),
-                        data.counters(
-                            "cgroup_cpu_cycles",
-                            [("name", "/system.slice/rezolus.service")]
-                        ).map(|v| v.rate().sum()),
-                    ) {
-                        (Some(instructions), Some(cycles)) => Some(instructions / cycles),
-                        _ => None,
-                    }
-                })
-            )
-            .build()
-    )
-}
-
-fn bpf_sampler_overhead_plot<'a>() -> PlotConfig<'a> {
-    PlotConfig::multi("BPF Per-Sampler Overhead", "bpf-sampler-overhead", Unit::Count)
-        .compute(|data| {
-            data.counters("rezolus_bpf_run_time", ())
-                .map(|v| v.rate().by_sampler() / NANOSECONDS_PER_SECOND)
-                .map(|v| v.top_n(20, average))
-        })
-        .build()
-}
-
-fn bpf_execution_time_plot<'a>() -> PlotConfig<'a> {
-    PlotConfig::multi("BPF Per-Sampler Execution Time", "bpf-execution-time", Unit::Time)
-        .compute(|data| {
-            match (
-                data.counters("rezolus_bpf_run_time", ())
-                    .map(|v| v.rate().by_sampler() / NANOSECONDS_PER_SECOND),
-                data.counters("rezolus_bpf_run_count", ())
-                    .map(|v| v.rate().by_sampler() / NANOSECONDS_PER_SECOND),
-            ) {
-                (Some(run_time), Some(run_count)) => {
-                    Some((run_time / run_count).top_n(20, average))
-                }
-                _ => None,
-            }
-        })
-        .build()
+/// Rezolus dashboard using PromQL
+pub fn dashboard() -> PromQLDashboard {
+    PromQLDashboard {
+        name: "Rezolus".to_string(),
+        sections: default_sections(),
+        groups: vec![
+            PromQLGroup {
+                name: "Rezolus".to_string(),
+                id: "rezolus".to_string(),
+                panels: vec![
+                    PromQLPanel {
+                        title: "CPU %".to_string(),
+                        id: "cpu".to_string(),
+                        panel_type: PanelType::Line,
+                        queries: vec![
+                            PromQLQueryDef {
+                                expr: "irate(rezolus_cpu_usage[1m]) / 1e9".to_string(),
+                                legend: Some("CPU Usage".to_string()),
+                                interval: None,
+                            },
+                        ],
+                        unit: Unit::Percentage,
+                        options: None,
+                    },
+                    PromQLPanel {
+                        title: "Memory (RSS)".to_string(),
+                        id: "memory".to_string(),
+                        panel_type: PanelType::Line,
+                        queries: vec![
+                            PromQLQueryDef {
+                                expr: "rezolus_memory_usage_resident_set_size".to_string(),
+                                legend: Some("RSS".to_string()),
+                                interval: None,
+                            },
+                        ],
+                        unit: Unit::Bytes,
+                        options: None,
+                    },
+                    PromQLPanel {
+                        title: "IPC".to_string(),
+                        id: "ipc".to_string(),
+                        panel_type: PanelType::Line,
+                        queries: vec![
+                            PromQLQueryDef {
+                                expr: "irate(cgroup_cpu_instructions{name=\"/system.slice/rezolus.service\"}[1m]) / irate(cgroup_cpu_cycles{name=\"/system.slice/rezolus.service\"}[1m])".to_string(),
+                                legend: Some("IPC".to_string()),
+                                interval: None,
+                            },
+                        ],
+                        unit: Unit::Count,
+                        options: None,
+                    },
+                    PromQLPanel {
+                        title: "Syscalls".to_string(),
+                        id: "syscalls".to_string(),
+                        panel_type: PanelType::Line,
+                        queries: vec![
+                            PromQLQueryDef {
+                                expr: "irate(cgroup_syscall{name=\"/system.slice/rezolus.service\"}[1m])".to_string(),
+                                legend: Some("Rate".to_string()),
+                                interval: None,
+                            },
+                        ],
+                        unit: Unit::Rate,
+                        options: None,
+                    },
+                    PromQLPanel {
+                        title: "Total BPF Overhead".to_string(),
+                        id: "bpf-overhead".to_string(),
+                        panel_type: PanelType::Line,
+                        queries: vec![
+                            PromQLQueryDef {
+                                expr: "irate(rezolus_bpf_run_time[1m]) / 1e9".to_string(),
+                                legend: Some("Overhead".to_string()),
+                                interval: None,
+                            },
+                        ],
+                        unit: Unit::Count,
+                        options: None,
+                    },
+                ],
+            },
+        ],
+    }
 }

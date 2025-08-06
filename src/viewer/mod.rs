@@ -13,7 +13,6 @@ use tower_http::compression::CompressionLayer;
 use tower_http::decompression::RequestDecompressionLayer;
 use tower_livereload::LiveReloadLayer;
 
-use std::collections::HashMap;
 use std::net::{SocketAddr, ToSocketAddrs};
 
 #[cfg(feature = "developer-mode")]
@@ -34,7 +33,6 @@ mod plot;
 mod tsdb;
 mod query_api;
 
-use plot::*;
 use tsdb::*;
 use query_api::*;
 
@@ -63,12 +61,19 @@ pub fn command() -> Command {
                 .value_parser(value_parser!(SocketAddr))
                 .index(2),
         )
+        .arg(
+            clap::Arg::new("NO_OPEN")
+                .long("no-open")
+                .help("Don't automatically open the viewer in a browser")
+                .action(clap::ArgAction::SetTrue),
+        )
 }
 
 pub struct Config {
     input: PathBuf,
     verbose: u8,
     listen: SocketAddr,
+    no_open: bool,
 }
 
 impl TryFrom<ArgMatches> for Config {
@@ -83,6 +88,7 @@ impl TryFrom<ArgMatches> for Config {
             listen: *args
                 .get_one::<SocketAddr>("LISTEN")
                 .unwrap_or(&"127.0.0.1:0".to_socket_addrs().unwrap().next().unwrap()),
+            no_open: args.get_flag("NO_OPEN"),
         })
     }
 }
@@ -149,31 +155,33 @@ pub fn run(config: Config) {
         })
         .unwrap();
 
-    info!("Generating dashboards...");
-    let state = dashboard::generate(&data);
 
     // open the tcp listener
     let listener = std::net::TcpListener::bind(config.listen).expect("failed to listen");
     let addr = listener.local_addr().expect("socket missing local addr");
 
-    // open in browser
-    rt.spawn(async move {
-        tokio::time::sleep(Duration::from_secs(1)).await;
+    // open in browser unless --no-open was specified
+    if !config.no_open {
+        rt.spawn(async move {
+            tokio::time::sleep(Duration::from_secs(1)).await;
 
-        if open::that(format!("http://{addr}")).is_err() {
-            info!("Use your browser to view: http://{addr}");
-        } else {
-            info!("Launched browser to view: http://{addr}");
-        }
-    });
+            if open::that(format!("http://{addr}")).is_err() {
+                info!("Use your browser to view: http://{addr}");
+            } else {
+                info!("Launched browser to view: http://{addr}");
+            }
+        });
+    } else {
+        info!("Viewer ready at: http://{addr}");
+    }
 
     // launch the HTTP listener
-    rt.block_on(async move { serve(listener, state, data).await });
+    rt.block_on(async move { serve(listener, data).await });
 
     std::thread::sleep(Duration::from_millis(200));
 }
 
-async fn serve(listener: std::net::TcpListener, state: AppState, tsdb: Tsdb) {
+async fn serve(listener: std::net::TcpListener, tsdb: Tsdb) {
     let livereload = LiveReloadLayer::new();
 
     #[cfg(feature = "developer-mode")]
@@ -198,7 +206,7 @@ async fn serve(listener: std::net::TcpListener, state: AppState, tsdb: Tsdb) {
             .expect("failed to watch assets folder");
     }
 
-    let app = app(livereload, state, tsdb);
+    let app = app(livereload, tsdb);
 
     listener.set_nonblocking(true).unwrap();
     let listener = TcpListener::from_std(listener).unwrap();
@@ -208,28 +216,14 @@ async fn serve(listener: std::net::TcpListener, state: AppState, tsdb: Tsdb) {
         .expect("failed to run http server");
 }
 
-struct AppState {
-    sections: HashMap<String, String>,
-}
-
-impl AppState {
-    pub fn new() -> Self {
-        Self {
-            sections: Default::default(),
-        }
-    }
-}
 
 // NOTE: we're going to want to include the assets in the binary for release
 // builds. For now, we just serve from the assets folder
-fn app(livereload: LiveReloadLayer, state: AppState, tsdb: Tsdb) -> Router {
-    let state = Arc::new(state);
+fn app(livereload: LiveReloadLayer, tsdb: Tsdb) -> Router {
     let query_state = Arc::new(QueryState { tsdb });
 
     let router = Router::new()
         .route("/about", get(about))
-        .with_state(state.clone())
-        .nest_service("/data", data.with_state(state.clone()))
         .nest("/api", query_router().with_state(query_state));
 
     #[cfg(feature = "developer-mode")]
@@ -265,22 +259,6 @@ async fn about() -> String {
     format!("Rezolus {version} Viewer\nFor information, see: https://rezolus.com\n")
 }
 
-async fn data(
-    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
-    uri: Uri,
-) -> (StatusCode, String) {
-    let path = uri.path();
-    let parts: Vec<&str> = path.split('/').collect();
-
-    (
-        StatusCode::OK,
-        state
-            .sections
-            .get(parts[1])
-            .map(|v| v.to_string())
-            .unwrap_or("{ }".to_string()),
-    )
-}
 
 async fn index() -> impl IntoResponse {
     if let Some(asset) = ASSETS.get_file("index.html") {

@@ -100,6 +100,11 @@ async fn list_dashboards() -> Json<ApiResponse<Vec<DashboardInfo>>> {
         DashboardInfo { name: "cpu".to_string(), title: "CPU".to_string() },
         DashboardInfo { name: "network".to_string(), title: "Network".to_string() },
         DashboardInfo { name: "blockio".to_string(), title: "BlockIO".to_string() },
+        DashboardInfo { name: "scheduler".to_string(), title: "Scheduler".to_string() },
+        DashboardInfo { name: "syscall".to_string(), title: "Syscall".to_string() },
+        DashboardInfo { name: "softirq".to_string(), title: "SoftIRQ".to_string() },
+        DashboardInfo { name: "rezolus".to_string(), title: "Rezolus".to_string() },
+        DashboardInfo { name: "cgroups".to_string(), title: "Cgroups".to_string() },
     ];
     
     Json(ApiResponse::success(dashboards))
@@ -108,7 +113,7 @@ async fn list_dashboards() -> Json<ApiResponse<Vec<DashboardInfo>>> {
 /// Get a specific dashboard definition
 async fn get_dashboard(
     axum::extract::Path(name): axum::extract::Path<String>,
-) -> Json<ApiResponse<super::dashboard::promql_dashboards::PromQLDashboard>> {
+) -> Json<ApiResponse<super::dashboard::common::PromQLDashboard>> {
     match super::dashboard::promql_dashboards::get_dashboard(&name) {
         Some(dashboard) => Json(ApiResponse::success(dashboard)),
         None => Json(ApiResponse::error(format!("Dashboard '{}' not found", name))),
@@ -173,36 +178,97 @@ fn execute_simple_query(
     let time = time.unwrap_or_else(|| chrono::Utc::now().timestamp());
     
     // Check for arithmetic operations FIRST
+    if query.contains(" * ") {
+        let parts: Vec<&str> = query.split(" * ").collect();
+        if parts.len() == 2 {
+            let left_str = parts[0].trim();
+            let right_str = parts[1].trim();
+            
+            // Try to parse right side as a number first (common case for unit conversions)
+            if let Some(multiplier) = parse_number(right_str) {
+                // Execute left side and multiply by scalar
+                if let Ok(left_result) = execute_simple_query(tsdb, left_str, Some(time)) {
+                    // Handle scalar multiplication
+                    match left_result {
+                        QueryResult::Matrix { result } => {
+                            // Transform all series in the result
+                            let transformed_results: Vec<MatrixResult> = result.into_iter()
+                                .map(|matrix_result| {
+                                    let transformed_values: Vec<(i64, String)> = matrix_result.values.iter()
+                                        .map(|(timestamp, value_str)| {
+                                            let value: f64 = value_str.parse().unwrap_or(0.0);
+                                            let new_value = value * multiplier;
+                                            (*timestamp, new_value.to_string())
+                                        })
+                                        .collect();
+                                    
+                                    MatrixResult {
+                                        metric: matrix_result.metric.clone(),
+                                        values: transformed_values,
+                                    }
+                                })
+                                .collect();
+                            
+                            return Ok(QueryResult::Matrix {
+                                result: transformed_results,
+                            });
+                        }
+                        QueryResult::Vector { result } => {
+                            if !result.is_empty() {
+                                let left_value: f64 = result[0].value.1.parse().unwrap_or(0.0);
+                                let final_value = left_value * multiplier;
+                                
+                                return Ok(QueryResult::Vector {
+                                    result: vec![VectorResult {
+                                        metric: result[0].metric.clone(),
+                                        value: (time, final_value.to_string()),
+                                    }],
+                                });
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        
+        return Err(format!("Failed to execute multiplication query: {}", query).into());
+    }
+    
     if query.contains(" / ") {
         let parts: Vec<&str> = query.split(" / ").collect();
         if parts.len() == 2 {
             let left_str = parts[0].trim();
             let right_str = parts[1].trim();
             
-            // Execute left side
-            if let Ok(left_result) = execute_simple_query(tsdb, left_str, Some(time)) {
-                // Try to parse right side as a number first
-                if let Some(divisor) = parse_number(right_str) {
+            // Try to parse right side as a number first (common case for unit conversions)
+            if let Some(divisor) = parse_number(right_str) {
+                // Execute left side and divide by scalar
+                if let Ok(left_result) = execute_simple_query(tsdb, left_str, Some(time)) {
                     // Handle scalar division
                     match left_result {
                         QueryResult::Matrix { result } => {
-                            if !result.is_empty() {
-                                let matrix_result = &result[0];
-                                let transformed_values: Vec<(i64, String)> = matrix_result.values.iter()
-                                    .map(|(timestamp, value_str)| {
-                                        let value: f64 = value_str.parse().unwrap_or(0.0);
-                                        let new_value = value / divisor;
-                                        (*timestamp, new_value.to_string())
-                                    })
-                                    .collect();
-                                
-                                return Ok(QueryResult::Matrix {
-                                    result: vec![MatrixResult {
+                            // Transform all series in the result
+                            let transformed_results: Vec<MatrixResult> = result.into_iter()
+                                .map(|matrix_result| {
+                                    let transformed_values: Vec<(i64, String)> = matrix_result.values.iter()
+                                        .map(|(timestamp, value_str)| {
+                                            let value: f64 = value_str.parse().unwrap_or(0.0);
+                                            let new_value = value / divisor;
+                                            (*timestamp, new_value.to_string())
+                                        })
+                                        .collect();
+                                    
+                                    MatrixResult {
                                         metric: matrix_result.metric.clone(),
                                         values: transformed_values,
-                                    }],
-                                });
-                            }
+                                    }
+                                })
+                                .collect();
+                            
+                            return Ok(QueryResult::Matrix {
+                                result: transformed_results,
+                            });
                         }
                         QueryResult::Vector { result } => {
                             if !result.is_empty() {
@@ -219,8 +285,10 @@ fn execute_simple_query(
                         }
                         _ => {}
                     }
-                } else {
-                    // Right side is another query - time series division
+                }
+            } else {
+                // Right side is another query - time series division
+                if let Ok(left_result) = execute_simple_query(tsdb, left_str, Some(time)) {
                     if let Ok(right_result) = execute_simple_query(tsdb, right_str, Some(time)) {
                         match (left_result, right_result) {
                             (QueryResult::Matrix { result: left_matrix }, QueryResult::Matrix { result: right_matrix }) => {
@@ -323,6 +391,203 @@ fn execute_simple_query(
         return Err(format!("Failed to execute histogram_quantile query: {}", query).into());
     }
 
+    // Check for avg() function
+    if query.starts_with("avg(") && query.ends_with(")") {
+        let inner_query = &query[4..query.len()-1];
+        if let Ok(result) = execute_simple_query(tsdb, inner_query, Some(time)) {
+            match result {
+                QueryResult::Matrix { result: matrix } => {
+                    if !matrix.is_empty() {
+                        // Average the values across all series
+                        let mut avg_values: std::collections::HashMap<i64, (f64, usize)> = std::collections::HashMap::new();
+                        
+                        for series in &matrix {
+                            for (timestamp, value_str) in &series.values {
+                                let value: f64 = value_str.parse().unwrap_or(0.0);
+                                let entry = avg_values.entry(*timestamp).or_insert((0.0, 0));
+                                entry.0 += value;
+                                entry.1 += 1;
+                            }
+                        }
+                        
+                        let mut values: Vec<(i64, String)> = avg_values.into_iter()
+                            .map(|(timestamp, (sum, count))| {
+                                let avg = sum / count as f64;
+                                (timestamp, avg.to_string())
+                            })
+                            .collect();
+                        values.sort_by_key(|&(ts, _)| ts);
+                        
+                        let mut metric_labels = std::collections::HashMap::new();
+                        if let Some(name) = matrix[0].metric.get("__name__") {
+                            metric_labels.insert("__name__".to_string(), name.clone());
+                        }
+                        
+                        return Ok(QueryResult::Matrix {
+                            result: vec![MatrixResult {
+                                metric: metric_labels,
+                                values,
+                            }],
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+        return Err(format!("Failed to execute avg query: {}", query).into());
+    }
+    
+    // Check for sum() function with optional by clause
+    if query.starts_with("sum") {
+        // Parse sum by (label) or just sum()
+        let (inner_query, group_by_labels) = if query.starts_with("sum by (") {
+            // Extract the grouping labels
+            if let Some(close_paren) = query[8..].find(')') {
+                let labels_str = &query[8..8+close_paren];
+                let labels: Vec<String> = labels_str.split(',')
+                    .map(|s| s.trim().to_string())
+                    .collect();
+                
+                // Find the inner query after the closing paren and opening paren
+                let rest = &query[8+close_paren+1..];
+                if rest.starts_with(" (") && rest.ends_with(")") {
+                    let inner = &rest[2..rest.len()-1];
+                    (inner, Some(labels))
+                } else {
+                    return Err(format!("Invalid sum by syntax: {}", query).into());
+                }
+            } else {
+                return Err(format!("Invalid sum by syntax: {}", query).into());
+            }
+        } else if query.starts_with("sum(") && query.ends_with(")") {
+            (&query[4..query.len()-1], None)
+        } else {
+            return Err(format!("Invalid sum syntax: {}", query).into());
+        };
+        
+        if let Ok(result) = execute_simple_query(tsdb, inner_query, Some(time)) {
+            match result {
+                QueryResult::Matrix { result: matrix } => {
+                    if !matrix.is_empty() {
+                        if let Some(group_labels) = group_by_labels {
+                            // Group by specified labels
+                            let mut grouped_series: std::collections::HashMap<
+                                std::collections::BTreeMap<String, String>,
+                                std::collections::HashMap<i64, f64>
+                            > = std::collections::HashMap::new();
+                            
+                            for series in &matrix {
+                                // Extract the grouping key
+                                let mut group_key = std::collections::BTreeMap::new();
+                                for label in &group_labels {
+                                    if let Some(value) = series.metric.get(label) {
+                                        group_key.insert(label.clone(), value.clone());
+                                    }
+                                }
+                                
+                                // Add values to the group
+                                let group_values = grouped_series.entry(group_key).or_insert_with(std::collections::HashMap::new);
+                                for (timestamp, value_str) in &series.values {
+                                    let value: f64 = value_str.parse().unwrap_or(0.0);
+                                    *group_values.entry(*timestamp).or_insert(0.0) += value;
+                                }
+                            }
+                            
+                            // Convert grouped series to results
+                            let mut results = Vec::new();
+                            for (group_labels, timestamp_values) in grouped_series {
+                                let mut values: Vec<(i64, String)> = timestamp_values.into_iter()
+                                    .map(|(ts, val)| (ts, val.to_string()))
+                                    .collect();
+                                values.sort_by_key(|&(ts, _)| ts);
+                                
+                                let mut metric_labels = std::collections::HashMap::new();
+                                if let Some(name) = matrix[0].metric.get("__name__") {
+                                    metric_labels.insert("__name__".to_string(), name.clone());
+                                }
+                                // Add the group labels
+                                for (k, v) in group_labels {
+                                    metric_labels.insert(k, v);
+                                }
+                                
+                                results.push(MatrixResult {
+                                    metric: metric_labels,
+                                    values,
+                                });
+                            }
+                            
+                            // Sort results for consistent ordering
+                            results.sort_by(|a, b| {
+                                // Create a stable sort key from all labels
+                                // Sort labels alphabetically and format as {key1="value1", key2="value2"}
+                                let format_labels = |labels: &std::collections::HashMap<String, String>| -> String {
+                                    let mut sorted_labels: Vec<_> = labels.iter()
+                                        .filter(|(k, _)| *k != "__name__") // Exclude __name__ from sort key
+                                        .collect();
+                                    sorted_labels.sort_by_key(|(k, _)| k.as_str());
+                                    
+                                    let label_strings: Vec<String> = sorted_labels.iter()
+                                        .map(|(k, v)| format!("{}=\"{}\"", k, v))
+                                        .collect();
+                                    format!("{{{}}}", label_strings.join(", "))
+                                };
+                                
+                                // First try to compare by ID if it exists
+                                let a_id = a.metric.get("id").map(|s| s.as_str()).unwrap_or("");
+                                let b_id = b.metric.get("id").map(|s| s.as_str()).unwrap_or("");
+                                
+                                let id_cmp = match (a_id.parse::<i32>(), b_id.parse::<i32>()) {
+                                    (Ok(a_num), Ok(b_num)) => a_num.cmp(&b_num),
+                                    _ => a_id.cmp(b_id)
+                                };
+                                
+                                if id_cmp != std::cmp::Ordering::Equal {
+                                    return id_cmp;
+                                }
+                                
+                                // If IDs are equal or don't exist, use full label comparison
+                                let a_labels = format_labels(&a.metric);
+                                let b_labels = format_labels(&b.metric);
+                                a_labels.cmp(&b_labels)
+                            });
+                            
+                            return Ok(QueryResult::Matrix { result: results });
+                        } else {
+                            // No grouping - sum all series together
+                            let mut sum_values: std::collections::HashMap<i64, f64> = std::collections::HashMap::new();
+                            
+                            for series in &matrix {
+                                for (timestamp, value_str) in &series.values {
+                                    let value: f64 = value_str.parse().unwrap_or(0.0);
+                                    *sum_values.entry(*timestamp).or_insert(0.0) += value;
+                                }
+                            }
+                            
+                            let mut values: Vec<(i64, String)> = sum_values.into_iter()
+                                .map(|(timestamp, sum)| (timestamp, sum.to_string()))
+                                .collect();
+                            values.sort_by_key(|&(ts, _)| ts);
+                            
+                            let mut metric_labels = std::collections::HashMap::new();
+                            if let Some(name) = matrix[0].metric.get("__name__") {
+                                metric_labels.insert("__name__".to_string(), name.clone());
+                            }
+                            
+                            return Ok(QueryResult::Matrix {
+                                result: vec![MatrixResult {
+                                    metric: metric_labels,
+                                    values,
+                                }],
+                            });
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        return Err(format!("Failed to execute sum query: {}", query).into());
+    }
+
     // Parse simple metric queries like "cpu_usage" or "network_bytes{direction=\"transmit\"}"
     if let Some((metric, labels)) = parse_simple_metric_query(query) {
         // Check for irate() function
@@ -331,26 +596,74 @@ fn execute_simple_query(
             let label_refs: Vec<(&str, &str)> = labels.iter()
                 .map(|(k, v)| (k.as_str(), v.as_str()))
                 .collect();
+            
+            // Return all individual series (don't aggregate unless explicitly requested)
             if let Some(collection) = tsdb.counters(&metric, label_refs.as_slice()) {
-                let series = collection.rate().sum();
+                let rate_collection = collection.rate();
                 
-                // Return the full time series as matrix data
-                let mut values = Vec::new();
-                for (timestamp, value) in series.inner.iter() {
-                    // Convert timestamp from nanoseconds since epoch to seconds
-                    let timestamp_secs = (*timestamp as f64 / 1_000_000_000.0) as i64;
-                    values.push((timestamp_secs, value.to_string()));
+                // Always return individual series
+                let mut results = Vec::new();
+                
+                for (labels, series) in rate_collection.iter() {
+                    let mut values = Vec::new();
+                    for (timestamp, value) in series.inner.iter() {
+                        let timestamp_secs = (*timestamp as f64 / 1_000_000_000.0) as i64;
+                        values.push((timestamp_secs, value.to_string()));
+                    }
+                    
+                    if !values.is_empty() {
+                        let mut metric_labels = std::collections::HashMap::new();
+                        metric_labels.insert("__name__".to_string(), metric.clone());
+                        // Add the actual labels
+                        for (k, v) in &labels.inner {
+                            metric_labels.insert(k.clone(), v.clone());
+                        }
+                        
+                        results.push(MatrixResult {
+                            metric: metric_labels,
+                            values,
+                        });
+                    }
                 }
                 
-                let mut metric_labels = std::collections::HashMap::new();
-                metric_labels.insert("__name__".to_string(), metric);
+                // Sort results if we have any
+                if !results.is_empty() {
+                    results.sort_by(|a, b| {
+                        let a_id = a.metric.get("id").map(|s| s.as_str()).unwrap_or("");
+                        let b_id = b.metric.get("id").map(|s| s.as_str()).unwrap_or("");
+                        
+                        // First compare by ID (numeric if possible)
+                        let id_cmp = match (a_id.parse::<i32>(), b_id.parse::<i32>()) {
+                            (Ok(a_num), Ok(b_num)) => a_num.cmp(&b_num),
+                            _ => a_id.cmp(b_id)
+                        };
+                        
+                        if id_cmp != std::cmp::Ordering::Equal {
+                            return id_cmp;
+                        }
+                        
+                        // If IDs are equal, create a stable sort key from all labels
+                        // Sort labels alphabetically and format as {key1="value1", key2="value2"}
+                        let format_labels = |labels: &std::collections::HashMap<String, String>| -> String {
+                            let mut sorted_labels: Vec<_> = labels.iter()
+                                .filter(|(k, _)| *k != "__name__") // Exclude __name__ from sort key
+                                .collect();
+                            sorted_labels.sort_by_key(|(k, _)| k.as_str());
+                            
+                            let label_strings: Vec<String> = sorted_labels.iter()
+                                .map(|(k, v)| format!("{}=\"{}\"", k, v))
+                                .collect();
+                            format!("{{{}}}", label_strings.join(", "))
+                        };
+                        
+                        let a_labels = format_labels(&a.metric);
+                        let b_labels = format_labels(&b.metric);
+                        a_labels.cmp(&b_labels)
+                    });
+                }
                 
-                return Ok(QueryResult::Matrix {
-                    result: vec![MatrixResult {
-                        metric: metric_labels,
-                        values,
-                    }],
-                });
+                // Return results (even if empty)
+                return Ok(QueryResult::Matrix { result: results });
             }
         } else {
             // Direct metric query - try counters first, then gauges

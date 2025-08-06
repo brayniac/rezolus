@@ -51,13 +51,22 @@ export function configureMultiSeriesChart(chart) {
     // Create series configurations for each data series
     const series = [];
 
-    // Get deterministic colors for all cgroups in this chart
-    const cgroupColors = globalColorMapper.getColors(seriesNames);
+    // Determine if this is a cgroup chart (where consistent colors matter)
+    const isCgroupChart = opts.id && opts.id.includes('cgroup');
+    
+    // Get colors - use deterministic colors for cgroups, index-based for others
+    let colors;
+    if (isCgroupChart) {
+        colors = globalColorMapper.getColors(seriesNames);
+    } else {
+        // Use index-based colors for better distinction
+        colors = seriesNames.map((_, index) => globalColorMapper.getColorByIndex(index));
+    }
 
     for (let i = 1; i < data.length; i++) {
         const name = seriesNames[i - 1];
         const isOtherCategory = name === "Other";
-        const color = (i <= cgroupColors.length) ? cgroupColors[i - 1] : undefined;
+        const color = (i <= colors.length) ? colors[i - 1] : undefined;
 
         const zippedData = timeData.map((t, j) => [t * 1000, data[i][j]]);
 
@@ -102,8 +111,8 @@ export function configureMultiSeriesChart(chart) {
                 val => val),
         },
         series: series,
-        // Don't use the default color palette for normal cgroups
-        color: cgroupColors,
+        // Use our custom color palette
+        color: colors,
     };
 
     chart.echart.setOption(option);
