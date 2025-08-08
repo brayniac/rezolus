@@ -36,4 +36,8 @@ impl HistogramCollection {
 
         result
     }
+    
+    pub fn labels(&self) -> impl Iterator<Item = &Labels> {
+        self.inner.keys()
+    }
 }

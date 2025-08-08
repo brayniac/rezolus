@@ -33,4 +33,13 @@ impl CounterSeries {
 
         rates
     }
+
+    /// Convert counter values to untyped series without applying rate
+    pub fn untyped(&self) -> UntypedSeries {
+        let mut result = UntypedSeries::default();
+        for (ts, value) in self.inner.iter() {
+            result.inner.insert(*ts, *value as f64);
+        }
+        result
+    }
 }

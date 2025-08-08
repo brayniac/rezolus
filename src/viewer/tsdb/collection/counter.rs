@@ -36,4 +36,19 @@ impl CounterCollection {
 
         result
     }
+
+    /// Convert counter collection to untyped without applying rate
+    pub fn untyped(&self) -> UntypedCollection {
+        let mut result = UntypedCollection::default();
+
+        for (labels, series) in self.inner.iter() {
+            result.insert(labels.clone(), series.untyped());
+        }
+
+        result
+    }
+    
+    pub fn labels(&self) -> impl Iterator<Item = &Labels> {
+        self.inner.keys()
+    }
 }

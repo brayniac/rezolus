@@ -44,4 +44,8 @@ impl GaugeCollection {
     pub fn sum(&self) -> UntypedSeries {
         self.untyped().sum()
     }
+    
+    pub fn labels(&self) -> impl Iterator<Item = &Labels> {
+        self.inner.keys()
+    }
 }

@@ -67,7 +67,7 @@ pub struct PromQLQueryDef {
     pub interval: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PanelOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub log_scale: Option<bool>,
@@ -75,6 +75,8 @@ pub struct PanelOptions {
     pub stack: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fill: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cgroup_filter: Option<String>,
 }
 
 pub fn default_sections() -> Vec<DashboardSection> {

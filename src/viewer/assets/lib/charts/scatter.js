@@ -24,7 +24,23 @@ export function configureScatterChart(chart) {
     const baseOption = getBaseOption(opts.title);
 
     if (!data || data.length < 2) {
-        return baseOption;
+        // Show empty chart with "No data" message
+        const emptyOption = {
+            ...baseOption,
+            yAxis: getBaseYAxisOption(false, undefined, undefined, opts.format?.unit_system),
+            graphic: {
+                type: 'text',
+                left: 'center',
+                top: 'middle',
+                style: {
+                    text: 'No data',
+                    fontSize: 14,
+                    fill: '#999'
+                }
+            }
+        };
+        chart.echart.setOption(emptyOption);
+        return;
     }
 
     // Access format properties using snake_case naming to match Rust serialization
@@ -38,6 +54,27 @@ export function configureScatterChart(chart) {
 
     // For percentile data, the format is [times, percentile1Values, percentile2Values, ...]
     const timeData = data[0];
+    
+    // Check if time data is empty
+    if (!timeData || timeData.length === 0) {
+        // Show empty chart with "No data" message
+        const emptyOption = {
+            ...baseOption,
+            yAxis: getBaseYAxisOption(logScale, minValue, maxValue, unitSystem),
+            graphic: {
+                type: 'text',
+                left: 'center',
+                top: 'middle',
+                style: {
+                    text: 'No data',
+                    fontSize: 14,
+                    fill: '#999'
+                }
+            }
+        };
+        chart.echart.setOption(emptyOption);
+        return;
+    }
 
     // Create series for each percentile
     const series = [];

@@ -93,6 +93,7 @@ fn create_syscall_panel(name: &str, id: &str, op: Option<&str>) -> Vec<PromQLPan
         ],
         unit: Unit::Time,
         options: Some(PanelOptions {
+                            cgroup_filter: None,
             log_scale: Some(true),
             stack: None,
             fill: None,

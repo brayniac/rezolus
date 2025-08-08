@@ -3,6 +3,7 @@ use axum::extract::{Query as QueryParams, State};
 use axum::response::Json;
 use axum::routing::get;
 use axum::Router;
+use regex;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -29,6 +30,10 @@ pub struct InstantQueryParams {
     pub query: String,
     /// Evaluation timestamp (Unix seconds)
     pub time: Option<i64>,
+    /// Selected cgroups for filtering (comma-separated)
+    pub selected_cgroups: Option<String>,
+    /// Filter type for cgroup panels (selected/unselected)
+    pub cgroup_filter: Option<String>,
 }
 
 /// Range query parameters
@@ -72,13 +77,78 @@ impl<T> ApiResponse<T> {
     }
 }
 
+/// Apply cgroup filter template to a query
+fn apply_cgroup_filter_template(
+    query: &str,
+    selected_cgroups: Option<&str>,
+    filter_type: Option<&str>,
+) -> String {
+    // If no template placeholder, return as-is
+    if !query.contains("{{CGROUP_FILTER}}") {
+        return query.to_string();
+    }
+    
+    eprintln!("DEBUG template: query='{}', selected='{}', filter_type='{}'", 
+             query, selected_cgroups.unwrap_or("none"), filter_type.unwrap_or("none"));
+    
+    // Determine what to replace the template with
+    let filter_clause = match filter_type {
+        Some("unselected") => {
+            // For unselected, we want to exclude the selected cgroups
+            match selected_cgroups {
+                Some(cgroups) if !cgroups.is_empty() => {
+                    // Parse comma-separated cgroups
+                    let cgroup_list: Vec<&str> = cgroups.split(',').collect();
+                    let pattern = cgroup_list.join("|");
+                    format!("{{name!~\"{}\"}}", pattern)
+                }
+                _ => {
+                    // No cgroups selected, include all
+                    String::new()
+                }
+            }
+        }
+        Some("selected") => {
+            // For selected, we want to include only the selected cgroups
+            match selected_cgroups {
+                Some(cgroups) if !cgroups.is_empty() => {
+                    // Parse comma-separated cgroups
+                    let cgroup_list: Vec<&str> = cgroups.split(',').collect();
+                    let pattern = cgroup_list.join("|");
+                    format!("{{name=~\"{}\"}}", pattern)
+                }
+                _ => {
+                    // No cgroups selected, return no data
+                    "{name=\"__none__\"}".to_string()
+                }
+            }
+        }
+        _ => {
+            // No filter type specified, remove the placeholder
+            String::new()
+        }
+    };
+    
+    eprintln!("  Replacing {{{{CGROUP_FILTER}}}} with: '{}'", filter_clause);
+    let result = query.replace("{{CGROUP_FILTER}}", &filter_clause);
+    eprintln!("  Result: '{}'", result);
+    result
+}
+
 /// Execute an instant query
 async fn instant_query(
     State(state): State<Arc<QueryState>>,
     QueryParams(params): QueryParams<InstantQueryParams>,
 ) -> Json<ApiResponse<QueryResult>> {
-    // For now, execute simplified queries against the TSDB
-    match execute_simple_query(&state.tsdb, &params.query, params.time) {
+    // Apply cgroup filter template if present
+    let query = apply_cgroup_filter_template(
+        &params.query,
+        params.selected_cgroups.as_deref(),
+        params.cgroup_filter.as_deref(),
+    );
+    
+    // Execute the templated query
+    match execute_simple_query(&state.tsdb, &query, params.time) {
         Ok(result) => Json(ApiResponse::success(result)),
         Err(e) => Json(ApiResponse::error(e.to_string())),
     }
@@ -114,7 +184,7 @@ async fn list_dashboards() -> Json<ApiResponse<Vec<DashboardInfo>>> {
 async fn get_dashboard(
     axum::extract::Path(name): axum::extract::Path<String>,
 ) -> Json<ApiResponse<super::dashboard::common::PromQLDashboard>> {
-    match super::dashboard::promql_dashboards::get_dashboard(&name) {
+    match super::dashboard::get_dashboard(&name) {
         Some(dashboard) => Json(ApiResponse::success(dashboard)),
         None => Json(ApiResponse::error(format!("Dashboard '{}' not found", name))),
     }
@@ -238,8 +308,49 @@ fn execute_simple_query(
     if query.contains(" / ") {
         let parts: Vec<&str> = query.split(" / ").collect();
         if parts.len() == 2 {
-            let left_str = parts[0].trim();
-            let right_str = parts[1].trim();
+            let mut left_str = parts[0].trim();
+            let mut right_str = parts[1].trim();
+            
+            // Remove outer parentheses if the entire expression is wrapped
+            if left_str.starts_with('(') && left_str.ends_with(')') {
+                // Check if parentheses are balanced (simple check)
+                let mut paren_count = 0;
+                let mut is_outer = true;
+                for (i, ch) in left_str.chars().enumerate() {
+                    if ch == '(' {
+                        paren_count += 1;
+                    } else if ch == ')' {
+                        paren_count -= 1;
+                        // If we hit 0 before the end, these aren't just outer parens
+                        if paren_count == 0 && i < left_str.len() - 1 {
+                            is_outer = false;
+                            break;
+                        }
+                    }
+                }
+                if is_outer && paren_count == 0 {
+                    left_str = &left_str[1..left_str.len()-1];
+                }
+            }
+            
+            if right_str.starts_with('(') && right_str.ends_with(')') {
+                let mut paren_count = 0;
+                let mut is_outer = true;
+                for (i, ch) in right_str.chars().enumerate() {
+                    if ch == '(' {
+                        paren_count += 1;
+                    } else if ch == ')' {
+                        paren_count -= 1;
+                        if paren_count == 0 && i < right_str.len() - 1 {
+                            is_outer = false;
+                            break;
+                        }
+                    }
+                }
+                if is_outer && paren_count == 0 {
+                    right_str = &right_str[1..right_str.len()-1];
+                }
+            }
             
             // Try to parse right side as a number first (common case for unit conversions)
             if let Some(divisor) = parse_number(right_str) {
@@ -288,42 +399,77 @@ fn execute_simple_query(
                 }
             } else {
                 // Right side is another query - time series division
-                if let Ok(left_result) = execute_simple_query(tsdb, left_str, Some(time)) {
-                    if let Ok(right_result) = execute_simple_query(tsdb, right_str, Some(time)) {
+                let left_result = execute_simple_query(tsdb, left_str, Some(time));
+                let right_result = execute_simple_query(tsdb, right_str, Some(time));
+                
+                if let (Ok(left_result), Ok(right_result)) = (left_result, right_result) {
                         match (left_result, right_result) {
                             (QueryResult::Matrix { result: left_matrix }, QueryResult::Matrix { result: right_matrix }) => {
                                 if !left_matrix.is_empty() && !right_matrix.is_empty() {
-                                    let left_series = &left_matrix[0];
-                                    let right_series = &right_matrix[0];
+                                    // Handle multiple series by matching on labels
+                                    let mut result_series = Vec::new();
                                     
-                                    // Create a map for efficient lookup of right side values by timestamp
-                                    let right_values: std::collections::HashMap<i64, f64> = right_series.values.iter()
-                                        .map(|(ts, val_str)| (*ts, val_str.parse().unwrap_or(0.0)))
-                                        .collect();
+                                    // Create a map of right series by their labels for efficient lookup
+                                    let mut right_series_map: std::collections::HashMap<String, &MatrixResult> = std::collections::HashMap::new();
+                                    for series in &right_matrix {
+                                        // Create a key from the metric labels (usually the 'name' label for cgroups)
+                                        let key = if let Some(name) = series.metric.get("name") {
+                                            name.clone()
+                                        } else {
+                                            // For aggregated sums without labels, use empty key to match any
+                                            // This handles cases like sum(...) / sum(...)
+                                            String::new()
+                                        };
+                                        right_series_map.insert(key, series);
+                                    }
                                     
-                                    // Divide left series by right series at matching timestamps
-                                    let transformed_values: Vec<(i64, String)> = left_series.values.iter()
-                                        .filter_map(|(timestamp, value_str)| {
-                                            let left_value: f64 = value_str.parse().unwrap_or(0.0);
-                                            if let Some(&right_value) = right_values.get(timestamp) {
-                                                if right_value != 0.0 {
-                                                    let result = left_value / right_value;
-                                                    Some((*timestamp, result.to_string()))
-                                                } else {
-                                                    None // Skip division by zero
-                                                }
-                                            } else {
-                                                None // Skip if no matching timestamp
-                                            }
-                                        })
-                                        .collect();
+                                    // Process each left series
+                                    for left_series in &left_matrix {
+                                        // Find matching right series
+                                        let key = if let Some(name) = left_series.metric.get("name") {
+                                            name.clone()
+                                        } else {
+                                            // For aggregated sums without labels, use empty key to match any
+                                            String::new()
+                                        };
                                         
-                                    return Ok(QueryResult::Matrix {
-                                        result: vec![MatrixResult {
-                                            metric: left_series.metric.clone(),
-                                            values: transformed_values,
-                                        }],
-                                    });
+                                        if let Some(right_series) = right_series_map.get(&key) {
+                                            // Create a map for efficient lookup of right side values by timestamp
+                                            let right_values: std::collections::HashMap<i64, f64> = right_series.values.iter()
+                                                .map(|(ts, val_str)| (*ts, val_str.parse().unwrap_or(0.0)))
+                                                .collect();
+                                            
+                                            // Divide left series by right series at matching timestamps
+                                            let transformed_values: Vec<(i64, String)> = left_series.values.iter()
+                                                .filter_map(|(timestamp, value_str)| {
+                                                    let left_value: f64 = value_str.parse().unwrap_or(0.0);
+                                                    if let Some(&right_value) = right_values.get(timestamp) {
+                                                        if right_value != 0.0 {
+                                                            let result = left_value / right_value;
+                                                            Some((*timestamp, result.to_string()))
+                                                        } else {
+                                                            None // Skip division by zero
+                                                        }
+                                                    } else {
+                                                        None // Skip if no matching timestamp
+                                                    }
+                                                })
+                                                .collect();
+                                                
+                                            if !transformed_values.is_empty() {
+                                                result_series.push(MatrixResult {
+                                                    metric: left_series.metric.clone(),
+                                                    values: transformed_values,
+                                                });
+                                            }
+                                        }
+                                    }
+                                    
+                                    if !result_series.is_empty() {
+                                        return Ok(QueryResult::Matrix {
+                                            result: result_series,
+                                        });
+                                    }
                                 }
                             }
                             (QueryResult::Vector { result: left_vector }, QueryResult::Vector { result: right_vector }) => {
@@ -345,7 +491,6 @@ fn execute_simple_query(
                             _ => {
                             }
                         }
-                    }
                 }
             }
         }
@@ -590,10 +735,109 @@ fn execute_simple_query(
 
     // Parse simple metric queries like "cpu_usage" or "network_bytes{direction=\"transmit\"}"
     if let Some((metric, labels)) = parse_simple_metric_query(query) {
+        // Helper function to check if a label set matches the filters
+        let matches_filters = |series_labels: &super::tsdb::Labels| -> bool {
+            for (filter_key, filter_value) in &labels {
+                // Handle special operators
+                if filter_key.starts_with("__regex__") {
+                    // Regex match operator =~
+                    let actual_key = &filter_key[9..];
+                    if let Some(series_value) = series_labels.inner.get(actual_key) {
+                        if let Ok(re) = regex::Regex::new(filter_value) {
+                            if !re.is_match(series_value) {
+                                return false;
+                            }
+                        } else {
+                            return false;
+                        }
+                    } else {
+                        return false;
+                    }
+                } else if filter_key.starts_with("__nregex__") {
+                    // Not-regex operator !~
+                    let actual_key = &filter_key[10..];
+                    if let Some(series_value) = series_labels.inner.get(actual_key) {
+                        if let Ok(re) = regex::Regex::new(filter_value) {
+                            if re.is_match(series_value) {
+                                return false;
+                            }
+                        }
+                    }
+                } else if filter_key.starts_with("__ne__") {
+                    // Not-equal operator !=
+                    let actual_key = &filter_key[6..];
+                    if let Some(series_value) = series_labels.inner.get(actual_key) {
+                        if series_value == filter_value {
+                            return false;
+                        }
+                    }
+                } else {
+                    // Normal equality operator =
+                    if let Some(series_value) = series_labels.inner.get(filter_key) {
+                        if series_value != filter_value {
+                            return false;
+                        }
+                    } else {
+                        return false;
+                    }
+                }
+            }
+            true
+        };
+        
         // Check for irate() function
         if query.starts_with("irate(") {
-            // Convert to the format Labels expects
+            // Get the metric data - for regex operators, get all series then filter
+            let has_special_operators = labels.iter().any(|(k, _)| k.starts_with("__"));
+            
+            if has_special_operators {
+                // Get all series, convert to rate, then filter
+                // This is not ideal but works with current API
+                if let Some(collection) = tsdb.counters(&metric, ()) {
+                    let rate_collection = collection.rate();
+                    
+                    // Filter the rate collection
+                    let mut filtered_collection = super::tsdb::UntypedCollection::default();
+                    for (series_labels, series) in rate_collection.iter() {
+                        if matches_filters(&series_labels) {
+                            filtered_collection.insert(series_labels.clone(), series.clone());
+                        }
+                    }
+                    
+                    let rate_collection = filtered_collection;
+                    
+                    // Convert to results - filtering already applied
+                    let mut results = Vec::new();
+                    for (series_labels, series) in rate_collection.iter() {
+                        let mut values = Vec::new();
+                        for (timestamp, value) in series.inner.iter() {
+                            let timestamp_secs = (*timestamp as f64 / 1_000_000_000.0) as i64;
+                            values.push((timestamp_secs, value.to_string()));
+                        }
+                        
+                        if !values.is_empty() {
+                            let mut metric_labels = std::collections::HashMap::new();
+                            metric_labels.insert("__name__".to_string(), metric.clone());
+                            // Add all labels from the series
+                            for (k, v) in &series_labels.inner {
+                                metric_labels.insert(k.clone(), v.clone());
+                            }
+                            
+                            results.push(MatrixResult {
+                                metric: metric_labels,
+                                values,
+                            });
+                        }
+                    }
+                    
+                    return Ok(QueryResult::Matrix { result: results });
+                }
+            }
+            
+            // Non-cgroup metrics or cgroups without filters - use original logic
+            // Convert to the format Labels expects (but only for non-special operators)
             let label_refs: Vec<(&str, &str)> = labels.iter()
+                .filter(|(k, _)| !k.starts_with("__"))  // Skip special operators
                 .map(|(k, v)| (k.as_str(), v.as_str()))
                 .collect();
             
@@ -666,53 +910,190 @@ fn execute_simple_query(
                 return Ok(QueryResult::Matrix { result: results });
             }
         } else {
-            // Direct metric query - try counters first, then gauges
-            let label_refs: Vec<(&str, &str)> = labels.iter()
-                .map(|(k, v)| (k.as_str(), v.as_str()))
-                .collect();
+            // Direct metric query - check if we need to apply special filtering
+            let has_special_operators = labels.iter().any(|(k, _)| k.starts_with("__"));
             
-            // Try counters first (most metrics are counters)
-            if let Some(collection) = tsdb.counters(&metric, label_refs.as_slice()) {
-                let series = collection.rate().sum(); // For counters, use rate
-                
-                let mut values = Vec::new();
-                for (timestamp, value) in series.inner.iter() {
-                    // Convert timestamp from nanoseconds since epoch to seconds
-                    let timestamp_secs = (*timestamp as f64 / 1_000_000_000.0) as i64;
-                    values.push((timestamp_secs, value.to_string()));
+            if has_special_operators {
+                // Get all series and filter them
+                // Try counters first
+                if let Some(collection) = tsdb.counters(&metric, ()) {
+                    // Convert to untyped (raw values, no rate)
+                    let untyped_collection = collection.untyped();
+                    
+                    // Filter and return individual series
+                    let mut results = Vec::new();
+                    for (series_labels, series) in untyped_collection.iter() {
+                        if matches_filters(&series_labels) {
+                            let mut values = Vec::new();
+                            for (timestamp, value) in series.inner.iter() {
+                                let timestamp_secs = (*timestamp as f64 / 1_000_000_000.0) as i64;
+                                values.push((timestamp_secs, value.to_string()));
+                            }
+                            
+                            if !values.is_empty() {
+                                let mut metric_labels = std::collections::HashMap::new();
+                                metric_labels.insert("__name__".to_string(), metric.clone());
+                                // Add all labels from the series
+                                for (k, v) in &series_labels.inner {
+                                    metric_labels.insert(k.clone(), v.clone());
+                                }
+                                
+                                results.push(MatrixResult {
+                                    metric: metric_labels,
+                                    values,
+                                });
+                            }
+                        }
+                    }
+                    
+                    if !results.is_empty() {
+                        return Ok(QueryResult::Matrix { result: results });
+                    }
                 }
                 
-                let mut metric_labels = std::collections::HashMap::new();
-                metric_labels.insert("__name__".to_string(), metric);
+                // Try gauges
+                if let Some(collection) = tsdb.gauges(&metric, ()) {
+                    // Convert gauge collection to untyped
+                    let untyped_collection = collection.untyped();
+                    
+                    // Filter and return individual series
+                    let mut results = Vec::new();
+                    for (series_labels, series) in untyped_collection.iter() {
+                        if matches_filters(&series_labels) {
+                            let mut values = Vec::new();
+                            for (timestamp, value) in series.inner.iter() {
+                                let timestamp_secs = (*timestamp as f64 / 1_000_000_000.0) as i64;
+                                values.push((timestamp_secs, value.to_string()));
+                            }
+                            
+                            if !values.is_empty() {
+                                let mut metric_labels = std::collections::HashMap::new();
+                                metric_labels.insert("__name__".to_string(), metric.clone());
+                                // Add all labels from the series
+                                for (k, v) in &series_labels.inner {
+                                    metric_labels.insert(k.clone(), v.clone());
+                                }
+                                
+                                results.push(MatrixResult {
+                                    metric: metric_labels,
+                                    values,
+                                });
+                            }
+                        }
+                    }
+                    
+                    if !results.is_empty() {
+                        return Ok(QueryResult::Matrix { result: results });
+                    }
+                }
+            } else {
+                // No special operators - use normal filtering
+                let label_refs: Vec<(&str, &str)> = labels.iter()
+                    .map(|(k, v)| (k.as_str(), v.as_str()))
+                    .collect();
                 
-                return Ok(QueryResult::Matrix {
-                    result: vec![MatrixResult {
-                        metric: metric_labels,
-                        values,
-                    }],
-                });
-            }
-            
-            // Try gauges for instantaneous values
-            if let Some(collection) = tsdb.gauges(&metric, label_refs.as_slice()) {
-                let series = collection.sum();
-                
-                let mut values = Vec::new();
-                for (timestamp, value) in series.inner.iter() {
-                    // Convert timestamp from nanoseconds since epoch to seconds
-                    let timestamp_secs = (*timestamp as f64 / 1_000_000_000.0) as i64;
-                    values.push((timestamp_secs, value.to_string()));
+                // Special handling for cgroup metrics - return individual series
+                if metric.starts_with("cgroup_") && labels.is_empty() {
+                    // Get all cgroup series without aggregation
+                    if let Some(collection) = tsdb.counters(&metric, ()) {
+                        let rate_collection = collection.rate();
+                        
+                        let mut results = Vec::new();
+                        for (series_labels, series) in rate_collection.iter() {
+                            let mut values = Vec::new();
+                            for (timestamp, value) in series.inner.iter() {
+                                let timestamp_secs = (*timestamp as f64 / 1_000_000_000.0) as i64;
+                                values.push((timestamp_secs, value.to_string()));
+                            }
+                            
+                            if !values.is_empty() {
+                                let mut metric_labels = std::collections::HashMap::new();
+                                metric_labels.insert("__name__".to_string(), metric.clone());
+                                // Add all labels from the series
+                                for (k, v) in &series_labels.inner {
+                                    metric_labels.insert(k.clone(), v.clone());
+                                }
+                                
+                                results.push(MatrixResult {
+                                    metric: metric_labels,
+                                    values,
+                                });
+                            }
+                        }
+                        
+                        if !results.is_empty() {
+                            return Ok(QueryResult::Matrix { result: results });
+                        }
+                    }
                 }
                 
-                let mut metric_labels = std::collections::HashMap::new();
-                metric_labels.insert("__name__".to_string(), metric);
+                // Try counters first (most metrics are counters)
+                if let Some(collection) = tsdb.counters(&metric, label_refs.as_slice()) {
+                    // Return raw counter values, not rate
+                    let untyped_collection = collection.untyped();
+                    
+                    // If there are specific label filters, return the matching series
+                    // Otherwise, return all individual series
+                    let mut results = Vec::new();
+                    for (series_labels, series) in untyped_collection.iter() {
+                        let mut values = Vec::new();
+                        for (timestamp, value) in series.inner.iter() {
+                            let timestamp_secs = (*timestamp as f64 / 1_000_000_000.0) as i64;
+                            values.push((timestamp_secs, value.to_string()));
+                        }
+                        
+                        if !values.is_empty() {
+                            let mut metric_labels = std::collections::HashMap::new();
+                            metric_labels.insert("__name__".to_string(), metric.clone());
+                            // Add all labels from the series
+                            for (k, v) in &series_labels.inner {
+                                metric_labels.insert(k.clone(), v.clone());
+                            }
+                            
+                            results.push(MatrixResult {
+                                metric: metric_labels,
+                                values,
+                            });
+                        }
+                    }
+                    
+                    if !results.is_empty() {
+                        return Ok(QueryResult::Matrix { result: results });
+                    }
+                }
                 
-                return Ok(QueryResult::Matrix {
-                    result: vec![MatrixResult {
-                        metric: metric_labels,
-                        values,
-                    }],
-                });
+                // Try gauges for instantaneous values
+                if let Some(collection) = tsdb.gauges(&metric, label_refs.as_slice()) {
+                    // Return raw gauge values, not summed
+                    let untyped_collection = collection.untyped();
+                    
+                    let mut results = Vec::new();
+                    for (series_labels, series) in untyped_collection.iter() {
+                        let mut values = Vec::new();
+                        for (timestamp, value) in series.inner.iter() {
+                            let timestamp_secs = (*timestamp as f64 / 1_000_000_000.0) as i64;
+                            values.push((timestamp_secs, value.to_string()));
+                        }
+                        
+                        if !values.is_empty() {
+                            let mut metric_labels = std::collections::HashMap::new();
+                            metric_labels.insert("__name__".to_string(), metric.clone());
+                            // Add all labels from the series
+                            for (k, v) in &series_labels.inner {
+                                metric_labels.insert(k.clone(), v.clone());
+                            }
+                            
+                            results.push(MatrixResult {
+                                metric: metric_labels,
+                                values,
+                            });
+                        }
+                    }
+                    
+                    if !results.is_empty() {
+                        return Ok(QueryResult::Matrix { result: results });
+                    }
+                }
             }
         }
     }
@@ -729,11 +1110,20 @@ fn parse_simple_metric_query(query: &str) -> Option<(String, Vec<(String, String
         query
     };
     
-    // Remove time range like [1m] if present
+    // Remove time range like [1m] if present, but preserve labels
     let query = if let Some(bracket_pos) = query.find('[') {
-        &query[..bracket_pos]
+        if let Some(close_bracket) = query[bracket_pos..].find(']') {
+            // Remove just the time range part [1m], keeping everything else
+            let before_bracket = &query[..bracket_pos];
+            let after_bracket = &query[bracket_pos + close_bracket + 1..];
+            let mut result = String::from(before_bracket);
+            result.push_str(after_bracket);
+            result
+        } else {
+            query.to_string()
+        }
     } else {
-        query
+        query.to_string()
     };
     
     // Split metric name and labels
@@ -741,20 +1131,40 @@ fn parse_simple_metric_query(query: &str) -> Option<(String, Vec<(String, String
         let metric = query[..brace_pos].to_string();
         let labels_str = &query[brace_pos+1..query.len()-1];
         
-        // Parse labels
-        let labels: Vec<(String, String)> = labels_str
-            .split(',')
-            .filter_map(|pair| {
-                let parts: Vec<&str> = pair.split('=').collect();
-                if parts.len() == 2 {
-                    let key = parts[0].trim().to_string();
-                    let value = parts[1].trim().trim_matches('"').to_string();
-                    Some((key, value))
-                } else {
-                    None
-                }
-            })
-            .collect();
+        // Parse labels - handle =, !=, =~, !~ operators
+        let mut labels = Vec::new();
+        
+        for pair in labels_str.split(',') {
+            let pair = pair.trim();
+            
+            // Check for regex match operator =~
+            if let Some(pos) = pair.find("=~") {
+                let key = pair[..pos].trim().to_string();
+                let value = pair[pos+2..].trim().trim_matches('"').to_string();
+                // Mark this as a regex match with a special prefix
+                labels.push((format!("__regex__{}", key), value));
+            }
+            // Check for not-equal operator !=
+            else if let Some(pos) = pair.find("!=") {
+                let key = pair[..pos].trim().to_string();
+                let value = pair[pos+2..].trim().trim_matches('"').to_string();
+                // Mark this as a not-equal match
+                labels.push((format!("__ne__{}", key), value));
+            }
+            // Check for not-regex operator !~
+            else if let Some(pos) = pair.find("!~") {
+                let key = pair[..pos].trim().to_string();
+                let value = pair[pos+2..].trim().trim_matches('"').to_string();
+                // Mark this as a not-regex match
+                labels.push((format!("__nregex__{}", key), value));
+            }
+            // Normal equality operator =
+            else if let Some(pos) = pair.find('=') {
+                let key = pair[..pos].trim().to_string();
+                let value = pair[pos+1..].trim().trim_matches('"').to_string();
+                labels.push((key, value));
+            }
+        }
         
         Some((metric, labels))
     } else {
@@ -816,8 +1226,26 @@ fn extract_metric_names(tsdb: &Tsdb) -> Vec<String> {
 
 /// Extract label names for a metric
 fn extract_label_names(tsdb: &Tsdb, metric: &str) -> Vec<String> {
-    // This would need to be implemented based on TSDB structure
-    // For now, return common labels based on metric
+    // For cgroup metrics, extract actual cgroup names (values of the "name" label)
+    if metric.starts_with("cgroup_") {
+        let mut cgroup_names = std::collections::HashSet::new();
+        
+        // Try to get the collection and extract the "name" label values
+        if let Some(collection) = tsdb.counters(metric, ()) {
+            for labels in collection.labels() {
+                if let Some(name) = labels.inner.get("name") {
+                    cgroup_names.insert(name.clone());
+                }
+            }
+        }
+        
+        // Convert to sorted vector
+        let mut names: Vec<String> = cgroup_names.into_iter().collect();
+        names.sort();
+        return names;
+    }
+    
+    // For other metrics, return common labels based on metric
     match metric {
         "cpu_usage" => vec!["state".to_string(), "cpu".to_string()],
         "network_bytes" | "network_packets" => vec!["direction".to_string()],

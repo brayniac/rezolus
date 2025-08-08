@@ -245,16 +245,15 @@ network traffic, error rates, packet processing, and overall network health.
 
 ### network_interfaces
 
-Produces network interface statistics from /sys/class/net for TX/RX errors.
-These metrics can help monitor network interface health.
+Collects network interface statistics using BPF to monitor packet drops, transmission errors,
+and network health issues.
 
 | Metric | Description | Metadata |
 |--------|-------------|----------|
-| `network_carrier_changes` | The number of times the link has changes between the UP and DOWN states | |
-| `network_receive_errors_crc` | The number of packets received which had CRC errors | |
-| `network_receive_dropped` | The number of packets received but not processed. Usually due to lack of resources or unsupported protocol. Does not include hardware interface buffer exhaustion. | |
-| `network_receive_errors_missed` | The number of packets missed due to buffer exhaustion | |
-| `network_transmit_dropped` | The number of packets dropped on the transmit path. Usually due to lack of resources. | |
+| `network_drop` | Packets dropped anywhere in the network stack due to errors, resource exhaustion, or policy enforcement | |
+| `network_transmit_busy` | Packets encountering retryable device busy status. High rates indicate transmit path backpressure | |
+| `network_transmit_complete` | Packets successfully transmitted by the driver. Compare with network_transmit_packets to detect transmission issues | |
+| `network_transmit_timeout` | Transmit timeout events indicating hardware lockup or severe transmission delays. These are serious issues requiring investigation | |
 
 ### network_traffic
 

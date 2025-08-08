@@ -11,21 +11,21 @@ pub fn dashboard() -> PromQLDashboard {
                 id: "rezolus".to_string(),
                 panels: vec![
                     PromQLPanel {
-                        title: "CPU %".to_string(),
+                        title: "CPU Cores".to_string(),
                         id: "cpu".to_string(),
                         panel_type: PanelType::Line,
                         queries: vec![
                             PromQLQueryDef {
-                                expr: "irate(rezolus_cpu_usage[1m]) / 1e9".to_string(),
+                                expr: "sum(irate(rezolus_cpu_usage[1m])) / 1e9".to_string(),
                                 legend: Some("CPU Usage".to_string()),
                                 interval: None,
                             },
                         ],
-                        unit: Unit::Percentage,
+                        unit: Unit::Count,
                         options: None,
                     },
                     PromQLPanel {
-                        title: "Memory (RSS)".to_string(),
+                        title: "Memory RSS".to_string(),
                         id: "memory".to_string(),
                         panel_type: PanelType::Line,
                         queries: vec![
@@ -53,12 +53,12 @@ pub fn dashboard() -> PromQLDashboard {
                         options: None,
                     },
                     PromQLPanel {
-                        title: "Syscalls".to_string(),
+                        title: "Syscall Rate".to_string(),
                         id: "syscalls".to_string(),
                         panel_type: PanelType::Line,
                         queries: vec![
                             PromQLQueryDef {
-                                expr: "irate(cgroup_syscall{name=\"/system.slice/rezolus.service\"}[1m])".to_string(),
+                                expr: "sum(irate(cgroup_syscall{name=\"/system.slice/rezolus.service\"}[1m]))".to_string(),
                                 legend: Some("Rate".to_string()),
                                 interval: None,
                             },
@@ -67,12 +67,12 @@ pub fn dashboard() -> PromQLDashboard {
                         options: None,
                     },
                     PromQLPanel {
-                        title: "Total BPF Overhead".to_string(),
+                        title: "BPF Overhead".to_string(),
                         id: "bpf-overhead".to_string(),
                         panel_type: PanelType::Line,
                         queries: vec![
                             PromQLQueryDef {
-                                expr: "irate(rezolus_bpf_run_time[1m]) / 1e9".to_string(),
+                                expr: "sum(irate(rezolus_bpf_run_time[1m])) / 1e9".to_string(),
                                 legend: Some("Overhead".to_string()),
                                 interval: None,
                             },

@@ -6,8 +6,10 @@
 
 :root {
     --bg: #111;
+    --bg-primary: #111;
     --bg-secondary: #1E1E1E;
     --fg: #E0E0E0;
+    --text-primary: #E0E0E0;
     --fg-secondary: #ABABAB;
     --width: 90%;
     --sidebar-width: 100px
@@ -111,5 +113,94 @@ div.metadata {
 
     input[type="checkbox"] {
         margin-right: 0.75em;
+    }
+    
+    .cgroup-selector {
+        margin-bottom: 1.5em;
+        
+        h3 {
+            margin-top: 0;
+            margin-bottom: 1em;
+            color: #4a9eff;
+        }
+        
+        h4 {
+            margin-top: 0;
+            margin-bottom: 0.5em;
+            font-size: 0.9em;
+            color: #aaa;
+        }
+    }
+    
+    .selector-columns {
+        display: flex;
+        gap: 1em;
+        align-items: center;
+    }
+    
+    .selector-column {
+        flex: 1;
+        
+        .cgroup-list {
+            width: 100%;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            border: 1px solid #333;
+            border-radius: 4px;
+            padding: 0.5em;
+            font-family: monospace;
+            font-size: 0.9em;
+            
+            option {
+                padding: 0.25em;
+                
+                &:hover {
+                    background: #333;
+                }
+                
+                &[disabled] {
+                    color: #666;
+                    font-style: italic;
+                }
+            }
+            
+            option:focus,
+            option:checked {
+                background: #4a9eff33;
+            }
+        }
+    }
+    
+    .selector-buttons {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5em;
+        
+        button {
+            padding: 0.5em 1em;
+            background: #4a9eff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 1.2em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+            
+            &:hover:not(:disabled) {
+                background: #3a8eef;
+            }
+            
+            &:disabled {
+                background: #333;
+                color: #666;
+                cursor: not-allowed;
+            }
+        }
+    }
+    
+    .cgroup-options {
+        padding-top: 1em;
+        border-top: 1px solid #333;
     }
 }

@@ -31,7 +31,34 @@ export function configureHeatmap(chart) {
     const baseOption = getBaseOption(opts.title);
 
     if (!data || data.length < 1) {
-        return baseOption;
+        // Show empty chart with "No data" message
+        const emptyOption = {
+            ...baseOption,
+            yAxis: {
+                type: 'category',
+                data: [],
+                axisLine: {
+                    lineStyle: {
+                        color: '#ABABAB'
+                    }
+                },
+                axisLabel: {
+                    color: '#ABABAB'
+                }
+            },
+            graphic: {
+                type: 'text',
+                left: 'center',
+                top: 'middle',
+                style: {
+                    text: 'No data',
+                    fontSize: 14,
+                    fill: '#999'
+                }
+            }
+        };
+        chart.echart.setOption(emptyOption);
+        return;
     }
 
     // Extract all unique CPU IDs

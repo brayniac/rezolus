@@ -2459,6 +2459,7 @@ dependencies = [
  "perf-event-open-sys2",
  "perf-event2",
  "plain",
+ "regex",
  "reqwest",
  "ringlog",
  "rmp-serde",

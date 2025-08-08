@@ -16,8 +16,22 @@ pub fn dashboard() -> PromQLDashboard {
                         panel_type: PanelType::Line,
                         queries: vec![
                             PromQLQueryDef {
-                                expr: "irate(softirq[1m])".to_string(),
+                                expr: "sum(irate(softirq[1m]))".to_string(),
                                 legend: Some("Total".to_string()),
+                                interval: None,
+                            },
+                        ],
+                        unit: Unit::Rate,
+                        options: None,
+                    },
+                    PromQLPanel {
+                        title: "Rate by Core".to_string(),
+                        id: "softirq-rate-heatmap".to_string(),
+                        panel_type: PanelType::Heatmap,
+                        queries: vec![
+                            PromQLQueryDef {
+                                expr: "sum by (id) (irate(softirq[1m]))".to_string(),
+                                legend: None,
                                 interval: None,
                             },
                         ],
@@ -32,6 +46,20 @@ pub fn dashboard() -> PromQLDashboard {
                             PromQLQueryDef {
                                 expr: "avg(irate(softirq_time[1m])) / 1e9".to_string(),
                                 legend: Some("Average".to_string()),
+                                interval: None,
+                            },
+                        ],
+                        unit: Unit::Percentage,
+                        options: None,
+                    },
+                    PromQLPanel {
+                        title: "CPU % by Core".to_string(),
+                        id: "softirq-time-heatmap".to_string(),
+                        panel_type: PanelType::Heatmap,
+                        queries: vec![
+                            PromQLQueryDef {
+                                expr: "sum by (id) (irate(softirq_time[1m])) / 1e9".to_string(),
+                                legend: None,
                                 interval: None,
                             },
                         ],

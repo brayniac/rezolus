@@ -327,6 +327,39 @@ impl Tsdb {
     pub fn filename(&self) -> String {
         self.filename.clone()
     }
+    
+    /// Get unique label values for a metric (formatted as "key=value")
+    pub fn get_label_values(&self, metric: &str) -> Vec<String> {
+        use std::collections::HashSet;
+        
+        let mut label_values = HashSet::new();
+        
+        // Get the labels from the appropriate metric type
+        if let Some(counters) = self.counters.get(metric) {
+            for labels in counters.labels() {
+                for (key, value) in &labels.inner {
+                    label_values.insert(format!("{}={}", key, value));
+                }
+            }
+        } else if let Some(gauges) = self.gauges.get(metric) {
+            for labels in gauges.labels() {
+                for (key, value) in &labels.inner {
+                    label_values.insert(format!("{}={}", key, value));
+                }
+            }
+        } else if let Some(histograms) = self.histograms.get(metric) {
+            for labels in histograms.labels() {
+                for (key, value) in &labels.inner {
+                    label_values.insert(format!("{}={}", key, value));
+                }
+            }
+        }
+        
+        // Convert to sorted vector
+        let mut result: Vec<String> = label_values.into_iter().collect();
+        result.sort();
+        result
+    }
 }
 
 #[derive(Default, Clone)]
