@@ -742,18 +742,22 @@ async function fetchDashboard(name) {
 async function fetchMetadata() {
     if (!metadataCache) {
         try {
-            // Try to get metadata from the overview endpoint first
+            // Fetch metadata from the API endpoint
             const response = await m.request({
                 method: "GET",
-                url: "/data/overview.json",
+                url: "/api/metadata",
                 withCredentials: true,
             });
             
-            metadataCache = {
-                source: response.source || 'Rezolus',
-                version: response.version || 'unknown',
-                filename: response.filename || 'metrics.parquet'
-            };
+            if (response.status === 'success' && response.data) {
+                metadataCache = {
+                    source: response.data.source || 'Rezolus',
+                    version: response.data.version || 'unknown',
+                    filename: response.data.filename || 'metrics.parquet'
+                };
+            } else {
+                throw new Error('Invalid metadata response');
+            }
         } catch (error) {
             console.error("Failed to fetch metadata:", error);
             metadataCache = {

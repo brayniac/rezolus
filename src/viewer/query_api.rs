@@ -16,6 +16,7 @@ pub fn query_router() -> Router<Arc<QueryState>> {
         .route("/dashboard/{name}", get(get_dashboard))
         .route("/metrics", get(list_metrics))
         .route("/labels/{metric}", get(list_labels))
+        .route("/metadata", get(get_metadata))
 }
 
 /// State for query API
@@ -1253,4 +1254,26 @@ fn extract_label_names(tsdb: &Tsdb, metric: &str) -> Vec<String> {
         "syscall" | "syscall_latency" => vec!["op".to_string()],
         _ => vec![],
     }
+}
+
+/// Metadata response
+#[derive(Debug, Serialize)]
+struct MetadataResponse {
+    source: String,
+    version: String,
+    filename: String,
+}
+
+/// Get metadata about the data source
+async fn get_metadata(
+    State(state): State<Arc<QueryState>>,
+) -> Json<ApiResponse<MetadataResponse>> {
+    // Access metadata from the TSDB
+    let metadata = MetadataResponse {
+        source: state.tsdb.source(),
+        version: state.tsdb.version(),
+        filename: state.tsdb.filename(),
+    };
+    
+    Json(ApiResponse::success(metadata))
 }
