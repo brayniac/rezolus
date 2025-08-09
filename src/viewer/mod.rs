@@ -28,9 +28,11 @@ static ASSETS: Dir<'_> = include_dir!("src/viewer/assets");
 
 const PERCENTILES: &[f64] = &[50.0, 90.0, 99.0, 99.9, 99.99];
 
+mod chart_templates;
 mod dashboard;
+mod metric_descriptions;
 mod plot;
-mod tsdb;
+pub mod tsdb;
 mod query_api;
 
 use tsdb::*;

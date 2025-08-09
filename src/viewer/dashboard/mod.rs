@@ -8,6 +8,7 @@ pub mod syscall;
 pub mod softirq;
 pub mod rezolus;
 pub mod cgroups;
+pub mod ai;
 
 use self::common::PromQLDashboard;
 
@@ -28,6 +29,7 @@ pub fn get_dashboard(name: &str) -> Option<PromQLDashboard> {
         "rezolus" => Some(rezolus::dashboard()),
         "cgroups" => Some(cgroups::dashboard()),
         "overview" => Some(overview::dashboard()),
+        "ai" => Some(ai::dashboard()),
         _ => None,
     }
 }

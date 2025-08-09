@@ -1,7 +1,8 @@
 use super::*;
-use axum::extract::{Query as QueryParams, State};
+use crate::viewer::dashboard::common::{PanelType, PromQLDashboard, PromQLGroup, PromQLPanel, PromQLQueryDef, Unit};
+use axum::extract::{Path, Query as QueryParams, State};
 use axum::response::Json;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 use regex;
 use serde::{Deserialize, Serialize};
@@ -17,6 +18,8 @@ pub fn query_router() -> Router<Arc<QueryState>> {
         .route("/metrics", get(list_metrics))
         .route("/labels/{metric}", get(list_labels))
         .route("/metadata", get(get_metadata))
+        .route("/metrics/detailed", get(list_metrics_detailed))
+        .route("/ai/generate", post(generate_ai_dashboard))
 }
 
 /// State for query API
@@ -183,7 +186,7 @@ async fn list_dashboards() -> Json<ApiResponse<Vec<DashboardInfo>>> {
 
 /// Get a specific dashboard definition
 async fn get_dashboard(
-    axum::extract::Path(name): axum::extract::Path<String>,
+    Path(name): Path<String>,
 ) -> Json<ApiResponse<super::dashboard::common::PromQLDashboard>> {
     match super::dashboard::get_dashboard(&name) {
         Some(dashboard) => Json(ApiResponse::success(dashboard)),
@@ -240,6 +243,35 @@ pub struct MatrixResult {
 }
 
 /// Execute a simplified query against the TSDB
+/// Helper function to extract content respecting parentheses balance
+fn extract_balanced_content(s: &str) -> String {
+    s.to_string()
+}
+
+/// Helper function to find an operator at the top level (not inside parentheses)
+fn find_top_level_operator(query: &str, op: &str) -> Option<usize> {
+    let mut paren_depth = 0;
+    let bytes = query.as_bytes();
+    let op_bytes = op.as_bytes();
+    
+    for i in 0..bytes.len() {
+        if bytes[i] == b'(' {
+            paren_depth += 1;
+        } else if bytes[i] == b')' {
+            paren_depth -= 1;
+        } else if paren_depth == 0 {
+            // Check if we found the operator at top level
+            if i + op_bytes.len() <= bytes.len() {
+                let slice = &bytes[i..i + op_bytes.len()];
+                if slice == op_bytes {
+                    return Some(i);
+                }
+            }
+        }
+    }
+    None
+}
+
 /// This is a temporary implementation until full PromQL support is added
 fn execute_simple_query(
     tsdb: &Tsdb,
@@ -248,15 +280,197 @@ fn execute_simple_query(
 ) -> Result<QueryResult, Box<dyn std::error::Error>> {
     let time = time.unwrap_or_else(|| chrono::Utc::now().timestamp());
     
-    // Check for arithmetic operations FIRST
-    if query.contains(" * ") {
-        let parts: Vec<&str> = query.split(" * ").collect();
-        if parts.len() == 2 {
-            let left_str = parts[0].trim();
-            let right_str = parts[1].trim();
-            
-            // Try to parse right side as a number first (common case for unit conversions)
-            if let Some(multiplier) = parse_number(right_str) {
+    // Check for aggregation functions FIRST (before arithmetic operations)
+    // This ensures we properly handle queries like avg(sum(...) / 1e9)
+    
+    // Check for avg() function
+    if query.starts_with("avg(") && query.ends_with(")") {
+        let inner_query = extract_balanced_content(&query[4..query.len()-1]);
+        if let Ok(result) = execute_simple_query(tsdb, &inner_query, Some(time)) {
+            match result {
+                QueryResult::Matrix { result: matrix } => {
+                    if !matrix.is_empty() {
+                        // Average the values across all series
+                        let mut avg_values: std::collections::HashMap<i64, (f64, usize)> = std::collections::HashMap::new();
+                        
+                        for series in &matrix {
+                            for (timestamp, value_str) in &series.values {
+                                let value: f64 = value_str.parse().unwrap_or(0.0);
+                                let entry = avg_values.entry(*timestamp).or_insert((0.0, 0));
+                                entry.0 += value;
+                                entry.1 += 1;
+                            }
+                        }
+                        
+                        // Convert to single series with averaged values
+                        let mut values: Vec<(i64, String)> = avg_values.into_iter()
+                            .map(|(timestamp, (sum, count))| {
+                                let avg = if count > 0 { sum / count as f64 } else { 0.0 };
+                                (timestamp, avg.to_string())
+                            })
+                            .collect();
+                        values.sort_by_key(|v| v.0);
+                        
+                        return Ok(QueryResult::Matrix {
+                            result: vec![MatrixResult {
+                                metric: std::collections::HashMap::new(),
+                                values,
+                            }],
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+        
+        return Err(format!("Failed to execute avg query: {}", query).into());
+    }
+    
+    // Handle parenthesized expressions first
+    // If the entire query is wrapped in parentheses, evaluate the inner expression
+    if query.starts_with('(') && query.ends_with(')') {
+        // Check if these are just outer parentheses
+        let mut paren_count = 0;
+        let mut is_outer = true;
+        for (i, ch) in query.chars().enumerate() {
+            if ch == '(' {
+                paren_count += 1;
+            } else if ch == ')' {
+                paren_count -= 1;
+                // If we hit 0 before the end, these aren't just outer parens
+                if paren_count == 0 && i < query.len() - 1 {
+                    is_outer = false;
+                    break;
+                }
+            }
+        }
+        if is_outer && paren_count == 0 {
+            // Remove outer parentheses and re-evaluate
+            let inner = &query[1..query.len()-1];
+            return execute_simple_query(tsdb, inner, Some(time));
+        }
+    }
+    
+    // Now check for arithmetic operations at the top level only
+    // Use a smarter approach that respects parentheses
+    // Check operations in reverse order of precedence: +, -, *, /
+    // This ensures that lower precedence operations are evaluated last
+    
+    // Check for addition operation first (lowest precedence)
+    if let Some(op_pos) = find_top_level_operator(query, " + ") {
+        let left_str = query[..op_pos].trim();
+        let right_str = query[op_pos + 3..].trim();
+        
+        // Execute both sides
+        let left_result = execute_simple_query(tsdb, left_str, Some(time));
+        let right_result = execute_simple_query(tsdb, right_str, Some(time));
+        
+        if let (Ok(left_result), Ok(right_result)) = (left_result, right_result) {
+            match (left_result, right_result) {
+                (QueryResult::Matrix { result: left_matrix }, QueryResult::Matrix { result: right_matrix }) => {
+                    if !left_matrix.is_empty() && !right_matrix.is_empty() {
+                        // For simplicity, assume single series (common for gauge metrics)
+                        if left_matrix.len() == 1 && right_matrix.len() == 1 {
+                            let left_series = &left_matrix[0];
+                            let right_series = &right_matrix[0];
+                            
+                            // Create a map for efficient lookup of right side values
+                            let right_values: std::collections::HashMap<i64, f64> = right_series.values.iter()
+                                .map(|(ts, val_str)| (*ts, val_str.parse().unwrap_or(0.0)))
+                                .collect();
+                            
+                            // Add left and right at matching timestamps
+                            let result_values: Vec<(i64, String)> = left_series.values.iter()
+                                .filter_map(|(timestamp, value_str)| {
+                                    let left_value: f64 = value_str.parse().unwrap_or(0.0);
+                                    if let Some(&right_value) = right_values.get(timestamp) {
+                                        let result = left_value + right_value;
+                                        Some((*timestamp, result.to_string()))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect();
+                            
+                            if !result_values.is_empty() {
+                                return Ok(QueryResult::Matrix {
+                                    result: vec![MatrixResult {
+                                        metric: std::collections::HashMap::new(),
+                                        values: result_values,
+                                    }],
+                                });
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        
+        return Err(format!("Failed to execute addition query: {}", query).into());
+    }
+    
+    // Check for subtraction operation
+    if let Some(op_pos) = find_top_level_operator(query, " - ") {
+        let left_str = query[..op_pos].trim();
+        let right_str = query[op_pos + 3..].trim();
+        
+        // Execute both sides
+        let left_result = execute_simple_query(tsdb, left_str, Some(time));
+        let right_result = execute_simple_query(tsdb, right_str, Some(time));
+        
+        if let (Ok(left_result), Ok(right_result)) = (left_result, right_result) {
+            match (left_result, right_result) {
+                (QueryResult::Matrix { result: left_matrix }, QueryResult::Matrix { result: right_matrix }) => {
+                    if !left_matrix.is_empty() && !right_matrix.is_empty() {
+                        // For simplicity, assume single series (common for gauge metrics)
+                        if left_matrix.len() == 1 && right_matrix.len() == 1 {
+                            let left_series = &left_matrix[0];
+                            let right_series = &right_matrix[0];
+                            
+                            // Create a map for efficient lookup of right side values
+                            let right_values: std::collections::HashMap<i64, f64> = right_series.values.iter()
+                                .map(|(ts, val_str)| (*ts, val_str.parse().unwrap_or(0.0)))
+                                .collect();
+                            
+                            // Subtract right from left at matching timestamps
+                            let result_values: Vec<(i64, String)> = left_series.values.iter()
+                                .filter_map(|(timestamp, value_str)| {
+                                    let left_value: f64 = value_str.parse().unwrap_or(0.0);
+                                    if let Some(&right_value) = right_values.get(timestamp) {
+                                        let result = left_value - right_value;
+                                        Some((*timestamp, result.to_string()))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect();
+                            
+                            if !result_values.is_empty() {
+                                return Ok(QueryResult::Matrix {
+                                    result: vec![MatrixResult {
+                                        metric: std::collections::HashMap::new(),
+                                        values: result_values,
+                                    }],
+                                });
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        
+        return Err(format!("Failed to execute subtraction query: {}", query).into());
+    }
+    
+    // Check for multiplication (higher precedence)
+    if let Some(op_pos) = find_top_level_operator(query, " * ") {
+        let left_str = query[..op_pos].trim();
+        let right_str = query[op_pos + 3..].trim();
+        
+        // Try to parse right side as a number first (common case for unit conversions)
+        if let Some(multiplier) = parse_number(right_str) {
                 // Execute left side and multiply by scalar
                 if let Ok(left_result) = execute_simple_query(tsdb, left_str, Some(time)) {
                     // Handle scalar multiplication
@@ -300,17 +514,14 @@ fn execute_simple_query(
                         _ => {}
                     }
                 }
-            }
         }
         
         return Err(format!("Failed to execute multiplication query: {}", query).into());
     }
     
-    if query.contains(" / ") {
-        let parts: Vec<&str> = query.split(" / ").collect();
-        if parts.len() == 2 {
-            let mut left_str = parts[0].trim();
-            let mut right_str = parts[1].trim();
+    if let Some(op_pos) = find_top_level_operator(query, " / ") {
+        let mut left_str = query[..op_pos].trim();
+        let mut right_str = query[op_pos + 3..].trim();
             
             // Remove outer parentheses if the entire expression is wrapped
             if left_str.starts_with('(') && left_str.ends_with(')') {
@@ -494,9 +705,116 @@ fn execute_simple_query(
                         }
                 }
             }
-        }
         
         return Err(format!("Failed to execute division query: {}", query).into());
+    }
+    
+    // Check for subtraction operation
+    if let Some(op_pos) = find_top_level_operator(query, " - ") {
+        let left_str = query[..op_pos].trim();
+        let right_str = query[op_pos + 3..].trim();
+        
+        // Execute both sides
+        let left_result = execute_simple_query(tsdb, left_str, Some(time));
+        let right_result = execute_simple_query(tsdb, right_str, Some(time));
+        
+        if let (Ok(left_result), Ok(right_result)) = (left_result, right_result) {
+            match (left_result, right_result) {
+                (QueryResult::Matrix { result: left_matrix }, QueryResult::Matrix { result: right_matrix }) => {
+                    if !left_matrix.is_empty() && !right_matrix.is_empty() {
+                        // For simplicity, assume single series (common for gauge metrics)
+                        if left_matrix.len() == 1 && right_matrix.len() == 1 {
+                            let left_series = &left_matrix[0];
+                            let right_series = &right_matrix[0];
+                            
+                            // Create a map for efficient lookup of right side values
+                            let right_values: std::collections::HashMap<i64, f64> = right_series.values.iter()
+                                .map(|(ts, val_str)| (*ts, val_str.parse().unwrap_or(0.0)))
+                                .collect();
+                            
+                            // Subtract right from left at matching timestamps
+                            let result_values: Vec<(i64, String)> = left_series.values.iter()
+                                .filter_map(|(timestamp, value_str)| {
+                                    let left_value: f64 = value_str.parse().unwrap_or(0.0);
+                                    if let Some(&right_value) = right_values.get(timestamp) {
+                                        let result = left_value - right_value;
+                                        Some((*timestamp, result.to_string()))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect();
+                            
+                            if !result_values.is_empty() {
+                                return Ok(QueryResult::Matrix {
+                                    result: vec![MatrixResult {
+                                        metric: std::collections::HashMap::new(),
+                                        values: result_values,
+                                    }],
+                                });
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        
+        return Err(format!("Failed to execute subtraction query: {}", query).into());
+    }
+    
+    // Check for addition operation
+    if let Some(op_pos) = find_top_level_operator(query, " + ") {
+        let left_str = query[..op_pos].trim();
+        let right_str = query[op_pos + 3..].trim();
+        
+        // Execute both sides
+        let left_result = execute_simple_query(tsdb, left_str, Some(time));
+        let right_result = execute_simple_query(tsdb, right_str, Some(time));
+        
+        if let (Ok(left_result), Ok(right_result)) = (left_result, right_result) {
+            match (left_result, right_result) {
+                (QueryResult::Matrix { result: left_matrix }, QueryResult::Matrix { result: right_matrix }) => {
+                    if !left_matrix.is_empty() && !right_matrix.is_empty() {
+                        // For simplicity, assume single series (common for gauge metrics)
+                        if left_matrix.len() == 1 && right_matrix.len() == 1 {
+                            let left_series = &left_matrix[0];
+                            let right_series = &right_matrix[0];
+                            
+                            // Create a map for efficient lookup of right side values
+                            let right_values: std::collections::HashMap<i64, f64> = right_series.values.iter()
+                                .map(|(ts, val_str)| (*ts, val_str.parse().unwrap_or(0.0)))
+                                .collect();
+                            
+                            // Add left and right at matching timestamps
+                            let result_values: Vec<(i64, String)> = left_series.values.iter()
+                                .filter_map(|(timestamp, value_str)| {
+                                    let left_value: f64 = value_str.parse().unwrap_or(0.0);
+                                    if let Some(&right_value) = right_values.get(timestamp) {
+                                        let result = left_value + right_value;
+                                        Some((*timestamp, result.to_string()))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect();
+                            
+                            if !result_values.is_empty() {
+                                return Ok(QueryResult::Matrix {
+                                    result: vec![MatrixResult {
+                                        metric: std::collections::HashMap::new(),
+                                        values: result_values,
+                                    }],
+                                });
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        
+        return Err(format!("Failed to execute addition query: {}", query).into());
     }
     
     // Check for histogram_quantile function
@@ -1276,4 +1594,519 @@ async fn get_metadata(
     };
     
     Json(ApiResponse::success(metadata))
+}
+
+/// Detailed metric information for AI context
+#[derive(Debug, Serialize)]
+struct DetailedMetric {
+    name: String,
+    description: String,
+    unit: String,
+    labels: Vec<String>,
+    example_query: String,
+}
+
+/// List all metrics with detailed descriptions
+async fn list_metrics_detailed(
+    State(_state): State<Arc<QueryState>>,
+) -> Json<ApiResponse<Vec<DetailedMetric>>> {
+    let metrics = vec![
+        DetailedMetric {
+            name: "cpu_usage".to_string(),
+            description: "CPU usage in nanoseconds per core. Use with irate() to get utilization.".to_string(),
+            unit: "nanoseconds".to_string(),
+            labels: vec!["id".to_string(), "state".to_string()],
+            example_query: "sum by (id) (irate(cpu_usage[1m])) / 1e9".to_string(),
+        },
+        DetailedMetric {
+            name: "cpu_instructions".to_string(),
+            description: "CPU instructions executed per core".to_string(),
+            unit: "count".to_string(),
+            labels: vec!["id".to_string()],
+            example_query: "irate(cpu_instructions[1m])".to_string(),
+        },
+        DetailedMetric {
+            name: "cpu_cycles".to_string(),
+            description: "CPU cycles per core".to_string(),
+            unit: "count".to_string(),
+            labels: vec!["id".to_string()],
+            example_query: "irate(cpu_cycles[1m])".to_string(),
+        },
+        DetailedMetric {
+            name: "memory_cached".to_string(),
+            description: "Memory used for cache".to_string(),
+            unit: "bytes".to_string(),
+            labels: vec![],
+            example_query: "memory_cached".to_string(),
+        },
+        DetailedMetric {
+            name: "memory_buffers".to_string(),
+            description: "Memory used for buffers".to_string(),
+            unit: "bytes".to_string(),
+            labels: vec![],
+            example_query: "memory_buffers".to_string(),
+        },
+        DetailedMetric {
+            name: "network_bytes".to_string(),
+            description: "Network bytes transmitted/received".to_string(),
+            unit: "bytes".to_string(),
+            labels: vec!["direction".to_string()],
+            example_query: "irate(network_bytes{direction=\"receive\"}[1m]) * 8".to_string(),
+        },
+        DetailedMetric {
+            name: "network_packets".to_string(),
+            description: "Network packets transmitted/received".to_string(),
+            unit: "packets".to_string(),
+            labels: vec!["direction".to_string()],
+            example_query: "irate(network_packets{direction=\"receive\"}[1m])".to_string(),
+        },
+        DetailedMetric {
+            name: "tcp_bytes".to_string(),
+            description: "TCP bytes transmitted/received".to_string(),
+            unit: "bytes".to_string(),
+            labels: vec!["direction".to_string()],
+            example_query: "irate(tcp_bytes{direction=\"receive\"}[1m]) * 8".to_string(),
+        },
+        DetailedMetric {
+            name: "tcp_packets".to_string(),
+            description: "TCP packets transmitted/received".to_string(),
+            unit: "packets".to_string(),
+            labels: vec!["direction".to_string()],
+            example_query: "irate(tcp_packets[1m])".to_string(),
+        },
+        DetailedMetric {
+            name: "tcp_retransmit".to_string(),
+            description: "TCP retransmissions".to_string(),
+            unit: "count".to_string(),
+            labels: vec![],
+            example_query: "irate(tcp_retransmit[1m])".to_string(),
+        },
+        DetailedMetric {
+            name: "tcp_packet_latency".to_string(),
+            description: "TCP packet latency histogram".to_string(),
+            unit: "nanoseconds".to_string(),
+            labels: vec![],
+            example_query: "histogram_quantile(0.99, tcp_packet_latency)".to_string(),
+        },
+        DetailedMetric {
+            name: "blockio_operations".to_string(),
+            description: "Block I/O operations".to_string(),
+            unit: "operations".to_string(),
+            labels: vec!["op".to_string()],
+            example_query: "irate(blockio_operations{op=\"read\"}[1m])".to_string(),
+        },
+        DetailedMetric {
+            name: "scheduler_context_switch".to_string(),
+            description: "Context switches per CPU".to_string(),
+            unit: "count".to_string(),
+            labels: vec!["id".to_string()],
+            example_query: "sum(irate(scheduler_context_switch[1m]))".to_string(),
+        },
+        DetailedMetric {
+            name: "syscall".to_string(),
+            description: "System calls".to_string(),
+            unit: "count".to_string(),
+            labels: vec![],
+            example_query: "sum(irate(syscall[1m]))".to_string(),
+        },
+        DetailedMetric {
+            name: "softirq".to_string(),
+            description: "Software interrupts".to_string(),
+            unit: "count".to_string(),
+            labels: vec![],
+            example_query: "sum(irate(softirq[1m]))".to_string(),
+        },
+        DetailedMetric {
+            name: "cgroup_cpu_usage".to_string(),
+            description: "CPU usage per cgroup in nanoseconds".to_string(),
+            unit: "nanoseconds".to_string(),
+            labels: vec!["name".to_string()],
+            example_query: "sum by (name) (irate(cgroup_cpu_usage[1m])) / 1e9".to_string(),
+        },
+        DetailedMetric {
+            name: "cgroup_cpu_instructions".to_string(),
+            description: "Instructions executed per cgroup".to_string(),
+            unit: "count".to_string(),
+            labels: vec!["name".to_string()],
+            example_query: "sum by (name) (irate(cgroup_cpu_instructions[1m]))".to_string(),
+        },
+        DetailedMetric {
+            name: "cgroup_cpu_cycles".to_string(),
+            description: "CPU cycles per cgroup".to_string(),
+            unit: "count".to_string(),
+            labels: vec!["name".to_string()],
+            example_query: "sum by (name) (irate(cgroup_cpu_cycles[1m]))".to_string(),
+        },
+    ];
+    
+    Json(ApiResponse::success(metrics))
+}
+
+/// AI dashboard generation request
+#[derive(Debug, Deserialize)]
+struct AIDashboardRequest {
+    prompt: String,
+}
+
+/// AI dashboard response
+#[derive(Debug, Serialize, Deserialize)]
+struct AIDashboardResponse {
+    panels: Vec<PromQLPanel>,
+}
+
+/// Extract metrics information from TSDB
+fn extract_metrics_from_tsdb(tsdb: &Tsdb) -> String {
+    use crate::viewer::metric_descriptions::get_metric_description;
+    
+    let mut counters = Vec::new();
+    let mut gauges = Vec::new();
+    let mut histograms = Vec::new();
+    
+    // Get all counter metrics
+    for name in tsdb.counter_names() {
+        let labels = tsdb.get_metric_labels(name);
+        // Try to get description from TSDB first, then fallback to hardcoded descriptions
+        let description = tsdb.get_metric_description(name)
+            .or_else(|| get_metric_description(name))
+            .unwrap_or("");
+        
+        // Generate proper examples with actual label values
+        let (label_desc, example) = if name == "cpu_usage" {
+            let desc = if !labels.is_empty() {
+                format!(" (labels: {})", labels.join(", "))
+            } else {
+                String::new()
+            };
+            (desc, format!("sum by (id) (irate({}[1m])) / 1e9 - USE type:\"heatmap\" for per-CPU view!", name))
+        } else if name == "network_bytes" {
+            (" (labels: direction=\"receive\"|\"transmit\")".to_string(),
+             format!("irate({}{{direction=\"receive\"}}[1m]) * 8", name))
+        } else if name == "tcp_bytes" {
+            (" (labels: direction=\"receive\"|\"transmit\")".to_string(),
+             format!("irate({}{{direction=\"receive\"}}[1m]) * 8", name))
+        } else if name == "blockio_operations" {
+            (" (labels: op=\"read\"|\"write\")".to_string(),
+             format!("irate({}{{op=\"read\"}}[1m])", name))
+        } else if name == "syscall" && !labels.is_empty() {
+            (" (labels: op=\"read\"|\"write\"|...)".to_string(),
+             format!("irate({}{{op=\"read\"}}[1m])", name))
+        } else if !labels.is_empty() {
+            (format!(" (labels: {})", labels.join(", ")),
+             format!("irate({}[1m])", name))
+        } else {
+            (String::new(), format!("irate({}[1m])", name))
+        };
+        
+        let desc_text = if !description.is_empty() {
+            format!(". {}", description)
+        } else {
+            String::new()
+        };
+        counters.push(format!("- {}{}: Counter{}. Example: {}", name, label_desc, desc_text, example));
+    }
+    
+    // Get all gauge metrics  
+    for name in tsdb.gauge_names() {
+        let labels = tsdb.get_metric_labels(name);
+        // Try to get description from TSDB first, then fallback to hardcoded descriptions
+        let description = tsdb.get_metric_description(name)
+            .or_else(|| get_metric_description(name))
+            .unwrap_or("");
+        let label_desc = if !labels.is_empty() {
+            format!(" (labels: {})", labels.join(", "))
+        } else {
+            String::new()
+        };
+        let desc_text = if !description.is_empty() {
+            format!(". {}", description)
+        } else {
+            String::new()
+        };
+        gauges.push(format!("- {}{}: Gauge{}. Use directly: {}", name, label_desc, desc_text, name));
+    }
+    
+    // Get all histogram metrics
+    for name in tsdb.histogram_names() {
+        let labels = tsdb.get_metric_labels(name);
+        // Try to get description from TSDB first, then fallback to hardcoded descriptions
+        let description = tsdb.get_metric_description(name)
+            .or_else(|| get_metric_description(name))
+            .unwrap_or("");
+        let label_desc = if !labels.is_empty() {
+            format!(" (labels: {})", labels.join(", "))
+        } else {
+            String::new()
+        };
+        let desc_text = if !description.is_empty() {
+            format!(". {}", description)
+        } else {
+            String::new()
+        };
+        histograms.push(format!("- {}{}: Histogram{}. Example: histogram_quantile(0.99, {})", 
+                               name, label_desc, desc_text, name));
+    }
+    
+    let mut result = String::new();
+    
+    if !counters.is_empty() {
+        result.push_str("COUNTERS (monotonically increasing values - MUST use irate() or rate()):\n");
+        result.push_str(&counters.join("\n"));
+        result.push_str("\n\n");
+    }
+    
+    if !gauges.is_empty() {
+        result.push_str("GAUGES (instantaneous values - use directly WITHOUT rate functions):\n");
+        result.push_str(&gauges.join("\n"));
+        result.push_str("\n\n");
+    }
+    
+    if !histograms.is_empty() {
+        result.push_str("HISTOGRAMS (distributions - use histogram_quantile()):\n");
+        result.push_str(&histograms.join("\n"));
+        result.push_str("\n\n");
+    }
+    
+    result
+}
+
+/// Generate AI dashboard based on user prompt
+async fn generate_ai_dashboard(
+    State(state): State<Arc<QueryState>>,
+    Json(request): Json<AIDashboardRequest>,
+) -> Json<ApiResponse<AIDashboardResponse>> {
+    // For now, create a mock implementation that we'll replace with actual LLM call
+    // This will call the local llama-server on port 8080
+    
+    // Extract actual metrics from TSDB
+    let metrics_info = extract_metrics_from_tsdb(&state.tsdb);
+    
+    // Get chart templates
+    let chart_templates = crate::viewer::chart_templates::format_templates_for_prompt();
+    
+    // Build the system prompt with metric information
+    let system_prompt = format!(r#"You are an expert in system performance analysis. Generate a dashboard of charts based on the user's request.
+
+CRITICAL: These are SYSTEM-WIDE metrics that monitor the ENTIRE system, not individual applications.
+- Metrics track ALL processes together - there is NO way to filter by application
+- DO NOT add {{metric_type="redis"}}, {{app="nginx"}}, or ANY application-specific labels
+- The ONLY valid labels are the ones explicitly listed for each metric below
+- If user asks for "redis metrics", show general system metrics that would be relevant for monitoring ANY application
+
+CORRECT examples:
+✓ irate(cpu_usage[1m])
+✓ irate(network_bytes{{direction="receive"}}[1m])  
+✓ memory_cached
+
+INCORRECT examples (NEVER do this):
+✗ irate(cpu_usage{{metric_type="redis"}}[1m])
+✗ network_bytes{{app="nginx"}}
+✗ memory_cached{{service="postgresql"}}
+
+AVAILABLE METRICS:
+
+{}
+
+You must return valid JSON with this exact structure:
+{{
+  "panels": [
+    {{
+      "title": "Chart Title",
+      "id": "unique-id",
+      "type": "line",
+      "queries": [
+        {{
+          "expr": "PromQL expression",
+          "legend": "Series name"
+        }}
+      ],
+      "unit": "percentage"
+    }}
+  ]
+}}
+
+Valid unit values (lowercase): percentage, count, rate, bytes, bitrate, datarate, time, frequency
+Valid type values (lowercase): line, heatmap, scatter, multi
+
+IMPORTANT - PERCENTAGE HANDLING:
+- When unit is "percentage", express values as ratios from 0.0 to 1.0
+- DO NOT multiply by 100 to convert to percent - the UI handles this automatically
+- CORRECT: (memory_total - memory_free) / memory_total  → shows as 0-100% in UI
+- INCORRECT: (memory_total - memory_free) / memory_total * 100  → would show as 0-10000% in UI
+- Example for memory usage percentage: (memory_total - memory_free) / memory_total with unit:"percentage"
+
+CHOOSING THE RIGHT CHART TYPE:
+- line: Use for trends over time with few series (< 10 lines)
+- heatmap: BEST for per-CPU or per-core metrics when you have many cores (shows all CPUs as a color gradient)
+- scatter: Use for percentile distributions (P50, P90, P99) of a SINGLE metric
+- multi: RESERVED for special cases - avoid mixing different metrics
+
+ABSOLUTE REQUIREMENTS - YOU MUST FOLLOW THESE:
+1. NEVER add application-specific labels (NO {{metric_type="redis"}}, {{app="..."}} etc.)
+2. For each metric, ONLY use the labels shown in parentheses above (if any)
+3. Most metrics have NO labels - use them without any labels
+4. network_bytes ONLY accepts {{direction="receive"}} or {{direction="transmit"}}
+5. blockio_operations ONLY accepts {{op="read"}} or {{op="write"}}
+6. cpu_usage has NO labels - use it as: irate(cpu_usage[1m])
+7. memory metrics have NO labels - use them as: memory_cached, memory_free, etc.
+
+QUERY RULES:
+- COUNTERS: Must use irate() or rate() - e.g., irate(network_bytes{{direction="receive"}}[1m])
+- GAUGES: Use directly WITHOUT rate() - e.g., memory_cached
+- For total CPU: avg(sum by (id) (irate(cpu_usage[1m]))) / 1e9 with type:"line" and unit:"percentage" (division MUST be outside avg!)
+- For per-CPU breakdown: sum by (id) (irate(cpu_usage[1m])) / 1e9 with type:"heatmap" and unit:"percentage" (MUCH better than 128 lines!)
+- For network bitrate: irate(network_bytes{{direction="receive"}}[1m]) * 8
+- IMPORTANT: Division and multiplication MUST be at the outermost level, not inside aggregations
+- Create 4-8 relevant charts based on the user's query
+
+CHART SEPARATION RULES:
+- ALWAYS use separate charts for different metrics (one metric type per chart)
+- GOOD: Multiple percentiles of the SAME metric on one chart (P50, P90, P99 of tcp_latency)
+- GOOD: Multiple series of the SAME metric with different labels (receive vs transmit for network_bytes)
+- BAD: Mixing different metric types (DON'T put cpu_usage and memory_free on same chart)
+- BAD: Combining unrelated metrics just to reduce chart count
+- Exception: CPU efficiency metrics (IPC/IPNS) can be shown together as they're directly related
+
+HEATMAP EXAMPLE (use for many series like per-CPU metrics):
+{{
+  "title": "Per-CPU Usage Heatmap",
+  "id": "cpu-heatmap",
+  "type": "heatmap",
+  "queries": [
+    {{
+      "expr": "sum by (id) (irate(cpu_usage[1m])) / 1e9",
+      "legend": "CPU Cores"
+    }}
+  ],
+  "unit": "percentage"
+}}
+
+CORRECT query patterns:
+✓ avg(sum by (id) (irate(cpu_usage[1m]))) / 1e9  -- Division outside aggregation
+✓ sum by (id) (irate(cpu_usage[1m])) / 1e9      -- Division at the end
+✓ irate(network_bytes{{direction="receive"}}[1m]) * 8  -- Multiplication at the end
+✓ (memory_total - memory_free) / memory_total    -- Memory usage as ratio (0.0-1.0) for percentage unit
+
+INCORRECT patterns (will fail):
+✗ avg(sum by (id) (irate(cpu_usage[1m])) / 1e9)  -- Division inside avg() fails
+✗ sum(irate(network_bytes[1m]) * 8)               -- Multiplication inside sum() fails
+✗ (memory_total - memory_free) / memory_total * 100  -- Don't multiply by 100 for percentages!
+
+SMART DASHBOARD TIPS:
+- When showing CPU metrics, include BOTH:
+  1. A line chart with average CPU (for overall trend)
+  2. A heatmap with per-CPU breakdown (to spot hot cores or imbalances)
+- For systems with many cores (>8), ALWAYS prefer heatmap over multiple lines
+- Heatmaps make it easy to spot: hot cores, NUMA imbalances, scheduling issues
+
+REMEMBER: These metrics monitor the ENTIRE SYSTEM. When user asks for "redis" or any app metrics,
+you show SYSTEM metrics that would be useful for monitoring system performance while that app runs.
+
+{}
+"#, metrics_info, chart_templates);
+
+    // Print the complete prompt for debugging
+    eprintln!("=== LLM SYSTEM PROMPT ===");
+    eprintln!("{}", system_prompt);
+    eprintln!("=== USER PROMPT ===");
+    eprintln!("Create a dashboard to help with: {}", request.prompt);
+    eprintln!("=== END PROMPTS ===");
+    
+    // Call the local LLM server
+    let client = reqwest::Client::new();
+    
+    let llm_request = serde_json::json!({
+        "model": "qwen",
+        "messages": [
+            {
+                "role": "system",
+                "content": system_prompt
+            },
+            {
+                "role": "user", 
+                "content": format!("Create a dashboard to help with: {}", request.prompt)
+            }
+        ],
+        "temperature": 0.7,
+        "response_format": { "type": "json_object" }
+    });
+    
+    match client
+        .post("http://localhost:8080/v1/chat/completions")
+        .json(&llm_request)
+        .send()
+        .await
+    {
+        Ok(response) => {
+            if let Ok(llm_response) = response.json::<serde_json::Value>().await {
+                // Extract the content from the LLM response
+                if let Some(content) = llm_response
+                    .get("choices")
+                    .and_then(|c| c.get(0))
+                    .and_then(|c| c.get("message"))
+                    .and_then(|m| m.get("content"))
+                    .and_then(|c| c.as_str())
+                {
+                    eprintln!("LLM response content: {}", content);
+                    // Parse the JSON response
+                    match serde_json::from_str::<AIDashboardResponse>(content) {
+                        Ok(panels_response) => {
+                            eprintln!("Successfully parsed {} panels from LLM", panels_response.panels.len());
+                            return Json(ApiResponse::success(panels_response));
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to parse LLM response: {}", e);
+                        }
+                    }
+                } else {
+                    eprintln!("Failed to extract content from LLM response: {:?}", llm_response);
+                }
+            } else {
+                eprintln!("Failed to parse LLM response as JSON");
+            }
+        }
+        Err(e) => {
+            eprintln!("Error calling LLM: {}", e);
+        }
+    }
+    
+    // Fallback response if LLM fails
+    let fallback_panels = vec![
+        PromQLPanel {
+            title: "CPU Usage".to_string(),
+            id: "ai-cpu".to_string(),
+            panel_type: PanelType::Line,
+            queries: vec![
+                PromQLQueryDef {
+                    expr: "avg(sum by (id) (irate(cpu_usage[1m]))) / 1e9".to_string(),
+                    legend: Some("CPU %".to_string()),
+                    interval: None,
+                },
+            ],
+            unit: Unit::Percentage,
+            options: None,
+        },
+        PromQLPanel {
+            title: "Network Traffic".to_string(),
+            id: "ai-network".to_string(),
+            panel_type: PanelType::Line,
+            queries: vec![
+                PromQLQueryDef {
+                    expr: "irate(network_bytes{direction=\"receive\"}[1m]) * 8".to_string(),
+                    legend: Some("Receive".to_string()),
+                    interval: None,
+                },
+                PromQLQueryDef {
+                    expr: "irate(network_bytes{direction=\"transmit\"}[1m]) * 8".to_string(),
+                    legend: Some("Transmit".to_string()),
+                    interval: None,
+                },
+            ],
+            unit: Unit::Bitrate,
+            options: None,
+        },
+    ];
+    
+    Json(ApiResponse::success(AIDashboardResponse {
+        panels: fallback_panels,
+    }))
 }

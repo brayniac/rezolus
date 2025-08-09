@@ -90,5 +90,6 @@ pub fn default_sections() -> Vec<DashboardSection> {
         DashboardSection { name: "BlockIO".to_string(), route: "/blockio".to_string() },
         DashboardSection { name: "cgroups".to_string(), route: "/cgroups".to_string() },
         DashboardSection { name: "Rezolus".to_string(), route: "/rezolus".to_string() },
+        DashboardSection { name: "AI".to_string(), route: "/ai".to_string() },
     ]
 }

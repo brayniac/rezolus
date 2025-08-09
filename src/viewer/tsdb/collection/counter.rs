@@ -27,6 +27,16 @@ impl CounterCollection {
         result
     }
 
+    pub fn average_rate(&self) -> HashMap<Labels, Option<f64>> {
+        let mut result = HashMap::new();
+
+        for (labels, series) in self.inner.iter() {
+            result.insert(labels.clone(), series.average_rate());
+        }
+
+        result
+    }
+
     pub fn rate(&self) -> UntypedCollection {
         let mut result = UntypedCollection::default();
 

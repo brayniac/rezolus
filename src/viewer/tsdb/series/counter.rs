@@ -11,6 +11,37 @@ impl CounterSeries {
         self.inner.insert(timestamp, value);
     }
 
+    pub fn average_rate(&self) -> Option<f64> {
+        // Use iterative approach to handle multiple resets properly
+        if self.inner.len() < 2 {
+            return None;
+        }
+        
+        let mut total_value_increase = 0u64;
+        let mut total_time = 0u64;
+        let mut prev: Option<(u64, u64)> = None;
+        
+        for (ts, value) in self.inner.iter() {
+            if let Some((prev_ts, prev_v)) = prev {
+                let delta = value.wrapping_sub(prev_v);
+                let time_delta = ts.wrapping_sub(prev_ts);
+                
+                // Only include segments where delta < 2^63 (not a reset)
+                if delta < (1 << 63) && time_delta > 0 {
+                    total_value_increase = total_value_increase.saturating_add(delta);
+                    total_time = total_time.saturating_add(time_delta);
+                }
+            }
+            prev = Some((*ts, *value));
+        }
+        
+        if total_time > 0 {
+            Some(total_value_increase as f64 / total_time as f64)
+        } else {
+            None
+        }
+    }
+
     pub fn rate(&self) -> UntypedSeries {
         let mut rates = UntypedSeries::default();
         let mut prev: Option<(u64, u64)> = None;

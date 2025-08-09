@@ -35,6 +35,7 @@ pub struct Tsdb {
     counters: HashMap<String, CounterCollection>,
     gauges: HashMap<String, GaugeCollection>,
     histograms: HashMap<String, HistogramCollection>,
+    metric_descriptions: HashMap<String, String>,
 }
 
 impl Tsdb {
@@ -133,10 +134,18 @@ impl Tsdb {
                 let max_value_power: Option<Result<u8, ParseIntError>> =
                     meta.remove("max_value_power").map(|v| v.parse());
 
+                // Extract and store description if present
+                if let Some(description) = meta.remove("description") {
+                    data.metric_descriptions.insert(name.clone(), description);
+                }
+
                 let mut labels = Labels::default();
 
                 for (k, v) in meta.iter() {
-                    labels.inner.insert(k.to_string(), v.to_string());
+                    // Skip internal metadata fields when creating labels
+                    if k != "metric" && k != "metric_type" && k != "unit" && k != "description" {
+                        labels.inner.insert(k.to_string(), v.to_string());
+                    }
                 }
 
                 let column = batch.column(id);
@@ -326,6 +335,69 @@ impl Tsdb {
 
     pub fn filename(&self) -> String {
         self.filename.clone()
+    }
+    
+    /// Get all counter metric names
+    pub fn counter_names(&self) -> Vec<&str> {
+        self.counters.keys().map(|s| s.as_str()).collect()
+    }
+    
+    /// Get all gauge metric names
+    pub fn gauge_names(&self) -> Vec<&str> {
+        self.gauges.keys().map(|s| s.as_str()).collect()
+    }
+    
+    /// Get all histogram metric names
+    pub fn histogram_names(&self) -> Vec<&str> {
+        self.histograms.keys().map(|s| s.as_str()).collect()
+    }
+    
+    /// Get description for a metric
+    pub fn get_metric_description(&self, metric: &str) -> Option<&str> {
+        self.metric_descriptions.get(metric).map(|s| s.as_str())
+    }
+    
+    /// Get unique labels for a metric
+    pub fn get_metric_labels(&self, metric: &str) -> Vec<String> {
+        use std::collections::HashSet;
+        
+        let mut label_keys = HashSet::new();
+        
+        // Check counters
+        if let Some(counters) = self.counters.get(metric) {
+            for labels in counters.labels() {
+                for key in labels.inner.keys() {
+                    // Skip internal metadata labels
+                    if key != "id" && key != "sampler" && key != "metric" && key != "metric_type" && key != "unit" {
+                        label_keys.insert(format!("{}=\"...\"", key));
+                    }
+                }
+            }
+        }
+        
+        // Check gauges
+        if let Some(gauges) = self.gauges.get(metric) {
+            for labels in gauges.labels() {
+                for key in labels.inner.keys() {
+                    if key != "id" && key != "sampler" {
+                        label_keys.insert(format!("{}=\"...\"", key));
+                    }
+                }
+            }
+        }
+        
+        // Check histograms
+        if let Some(histograms) = self.histograms.get(metric) {
+            for labels in histograms.labels() {
+                for key in labels.inner.keys() {
+                    if key != "id" && key != "sampler" {
+                        label_keys.insert(format!("{}=\"...\"", key));
+                    }
+                }
+            }
+        }
+        
+        label_keys.into_iter().collect()
     }
     
     /// Get unique label values for a metric (formatted as "key=value")

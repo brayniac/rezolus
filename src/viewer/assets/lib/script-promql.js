@@ -64,11 +64,14 @@ const SectionContent = {
         
         return m("div#section-content", [
             attrs.section === "cgroups" ? m(CgroupsControls) : undefined,
+            attrs.section === "ai" ? m(AIControls) : undefined,
             m("div#groups",
-                attrs.dashboard.groups.map((group) => m(Group, { 
-                    ...group,
-                    section: attrs.section 
-                }))
+                attrs.section === "ai" ? 
+                    m(AIGeneratedDashboard) :
+                    attrs.dashboard.groups.map((group) => m(Group, { 
+                        ...group,
+                        section: attrs.section 
+                    }))
             )
         ]);
     }
@@ -211,6 +214,108 @@ const CgroupsControls = {
                     }),
                     "Keep cgroup colors consistent across charts"
                 ])
+            ])
+        ]);
+    }
+};
+
+// AI Controls component
+const AIControls = {
+    prompt: "",
+    loading: false,
+    error: null,
+    
+    async generateDashboard() {
+        if (!this.prompt.trim()) {
+            this.error = "Please enter a prompt";
+            return;
+        }
+        
+        this.loading = true;
+        this.error = null;
+        
+        try {
+            const response = await m.request({
+                method: "POST",
+                url: "/api/ai/generate",
+                body: { prompt: this.prompt },
+                withCredentials: true,
+            });
+            
+            if (response.status === 'success' && response.data) {
+                // Store the generated panels globally with a timestamp to force re-render
+                window.aiGeneratedPanels = response.data.panels;
+                window.aiGeneratedTimestamp = Date.now(); // Add timestamp to force new keys
+                chartsState.clear(); // Clear existing charts
+                m.redraw();
+            } else {
+                this.error = "Failed to generate dashboard";
+            }
+        } catch (error) {
+            console.error("Error generating AI dashboard:", error);
+            this.error = "Error: " + error.message;
+        } finally {
+            this.loading = false;
+            m.redraw();
+        }
+    },
+    
+    view() {
+        return m("div#ai-controls", [
+            m("div.ai-prompt-container", [
+                m("h3", "AI Dashboard Assistant"),
+                m("p", "Describe what you want to analyze, e.g., 'Help me understand why the redis server is slow'"),
+                m("div.prompt-input-group", [
+                    m("textarea.ai-prompt-input", {
+                        placeholder: "Enter your query here...",
+                        value: this.prompt,
+                        oninput: (e) => { this.prompt = e.target.value; },
+                        disabled: this.loading,
+                        rows: 3,
+                        style: "width: 100%; padding: 10px; font-size: 14px; border: 1px solid #333; background: #1a1a1a; color: #fff; border-radius: 4px;"
+                    }),
+                    m("button.generate-btn", {
+                        onclick: () => this.generateDashboard(),
+                        disabled: this.loading || !this.prompt.trim(),
+                        style: "margin-top: 10px; padding: 10px 20px; background: #4a9eff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;"
+                    }, this.loading ? "Generating..." : "Generate Dashboard"),
+                ]),
+                this.error && m("div.error-message", {
+                    style: "color: #ff4444; margin-top: 10px;"
+                }, this.error),
+            ])
+        ]);
+    }
+};
+
+// AI Generated Dashboard component
+const AIGeneratedDashboard = {
+    view() {
+        const panels = window.aiGeneratedPanels || [];
+        
+        if (panels.length === 0) {
+            return m("div.ai-placeholder", {
+                style: "text-align: center; padding: 50px; color: #666;"
+            }, [
+                m("h3", "No dashboard generated yet"),
+                m("p", "Use the prompt above to describe what you want to analyze")
+            ]);
+        }
+        
+        // Use timestamp to force re-creation of chart components
+        const timestamp = window.aiGeneratedTimestamp || 0;
+        
+        return m("div.ai-dashboard", [
+            m("div.group", [
+                m("h2", "AI Generated Charts"),
+                m("div.charts", panels.map(panel => 
+                    m(PromQLChart, { 
+                        key: `${panel.id}-${timestamp}`, // Unique key forces component recreation
+                        panel, 
+                        chartsState,
+                        section: "ai"
+                    })
+                ))
             ])
         ]);
     }
