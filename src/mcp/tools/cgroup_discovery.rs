@@ -223,7 +223,7 @@ pub fn format_cgroup_report(results: &[CgroupCorrelationResult]) -> String {
             continue;
         }
         
-        summary.push_str(&format!("📦 CGROUP: {}\n", cgroup_name));
+        summary.push_str(&format!(" CGROUP: {}\n", cgroup_name));
         
         // Top correlations for this cgroup
         let mut sorted = cgroup_results.clone();
@@ -241,7 +241,7 @@ pub fn format_cgroup_report(results: &[CgroupCorrelationResult]) -> String {
     }
     
     // Overall strongest correlations
-    summary.push_str("🏆 STRONGEST CGROUP CORRELATIONS OVERALL:\n");
+    summary.push_str(" STRONGEST CGROUP CORRELATIONS OVERALL:\n");
     let mut all_sorted = results.to_vec();
     all_sorted.sort_by(|a, b| {
         b.correlation.abs().partial_cmp(&a.correlation.abs()).unwrap()

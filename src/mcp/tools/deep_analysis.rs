@@ -559,9 +559,9 @@ impl DeepAnalysisReport {
         
         // Cross-core analysis
         s.push_str(&format!("🖥️ CROSS-CORE ANALYSIS:\n"));
-        s.push_str(&format!("  • Cores analyzed: {}\n", self.cross_core_analysis.total_cores_analyzed));
-        s.push_str(&format!("  • Core imbalance score: {:.2}%\n", self.cross_core_analysis.core_imbalance_score * 100.0));
-        s.push_str(&format!("  • Inter-core correlations found: {}\n", self.cross_core_analysis.inter_core_correlations.len()));
+        s.push_str(&format!("   Cores analyzed: {}\n", self.cross_core_analysis.total_cores_analyzed));
+        s.push_str(&format!("   Core imbalance score: {:.2}%\n", self.cross_core_analysis.core_imbalance_score * 100.0));
+        s.push_str(&format!("   Inter-core correlations found: {}\n", self.cross_core_analysis.inter_core_correlations.len()));
         
         if !self.cross_core_analysis.hottest_cores.is_empty() {
             s.push_str("\n  Hottest cores:\n");
@@ -596,14 +596,14 @@ impl DeepAnalysisReport {
         }
         
         // Workload classification
-        s.push_str(&format!("\n📊 WORKLOAD CLASSIFICATION:\n"));
-        s.push_str(&format!("  • Dominant type: {}\n", self.workload_classification.dominant_workload_type));
-        s.push_str("  • Workload mix:\n");
+        s.push_str(&format!("\n WORKLOAD CLASSIFICATION:\n"));
+        s.push_str(&format!("   Dominant type: {}\n", self.workload_classification.dominant_workload_type));
+        s.push_str("   Workload mix:\n");
         for (wtype, intensity) in &self.workload_classification.workload_mix {
             s.push_str(&format!("    {}: {:.1}%\n", wtype, intensity * 100.0));
         }
         
-        s.push_str(&format!("\n⏰ Total analysis time: {}ms\n", self.total_analysis_time_ms));
+        s.push_str(&format!("\n Total analysis time: {}ms\n", self.total_analysis_time_ms));
         
         s
     }

@@ -368,19 +368,19 @@ impl CompleteAnalysisReport {
     pub fn to_detailed_summary(&self) -> String {
         let mut s = String::new();
         
-        s.push_str(&format!("📊 COMPLETE CORRELATION ANALYSIS REPORT\n"));
+        s.push_str(&format!(" COMPLETE CORRELATION ANALYSIS REPORT\n"));
         s.push_str(&format!("=====================================\n\n"));
         
-        s.push_str(&format!("📈 Analysis Summary:\n"));
-        s.push_str(&format!("  • Total metrics: {}\n", self.total_metrics));
-        s.push_str(&format!("  • Pairs analyzed: {}\n", self.total_pairs_analyzed));
-        s.push_str(&format!("  • Analysis time: {}ms\n", self.analysis_time_ms));
+        s.push_str(&format!(" Analysis Summary:\n"));
+        s.push_str(&format!("   Total metrics: {}\n", self.total_metrics));
+        s.push_str(&format!("   Pairs analyzed: {}\n", self.total_pairs_analyzed));
+        s.push_str(&format!("   Analysis time: {}ms\n", self.analysis_time_ms));
         
         if let Some(cgroup) = &self.cgroup_analysis {
-            s.push_str(&format!("\n📦 Cgroup Analysis:\n"));
-            s.push_str(&format!("  • Total cgroups: {}\n", cgroup.total_cgroups));
-            s.push_str(&format!("  • Most active: {}\n", cgroup.most_active_cgroup));
-            s.push_str(&format!("  • Strongest: {}\n", cgroup.highest_internal_correlation));
+            s.push_str(&format!("\n Cgroup Analysis:\n"));
+            s.push_str(&format!("   Total cgroups: {}\n", cgroup.total_cgroups));
+            s.push_str(&format!("   Most active: {}\n", cgroup.most_active_cgroup));
+            s.push_str(&format!("   Strongest: {}\n", cgroup.highest_internal_correlation));
         }
         
         s.push_str(&format!("\n🔥 TOP POSITIVE CORRELATIONS:\n"));
@@ -396,9 +396,9 @@ impl CompleteAnalysisReport {
         }
         
         if !self.surprising_discoveries.is_empty() {
-            s.push_str(&format!("\n🎯 SURPRISING DISCOVERIES:\n"));
+            s.push_str(&format!("\n SURPRISING DISCOVERIES:\n"));
             for corr in &self.surprising_discoveries {
-                s.push_str(&format!("  • {} vs {} (r={:.3})\n", 
+                s.push_str(&format!("   {} vs {} (r={:.3})\n", 
                     corr.metric1, corr.metric2, corr.correlation));
             }
         }
@@ -406,7 +406,7 @@ impl CompleteAnalysisReport {
         if !self.metric_connectivity.is_empty() {
             s.push_str(&format!("\n🕸️ MOST CONNECTED METRICS:\n"));
             for conn in self.metric_connectivity.iter().take(10) {
-                s.push_str(&format!("  • {} ({} strong correlations, avg r={:.3})\n    Most correlated with: {}\n",
+                s.push_str(&format!("   {} ({} strong correlations, avg r={:.3})\n    Most correlated with: {}\n",
                     conn.metric, conn.strong_correlations, conn.avg_correlation, conn.most_correlated_with));
             }
         }

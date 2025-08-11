@@ -12,6 +12,7 @@ pub struct CgroupsReport {
     pub available_metrics: Vec<String>,
 }
 
+#[derive(Clone)]
 pub struct CgroupInfo {
     pub name: String,
     pub has_cpu: bool,
@@ -21,6 +22,7 @@ pub struct CgroupInfo {
     pub cpu_usage_cores: f64,
     pub cpu_usage_pct: f64,
     pub syscall_rate: f64,
+    pub syscalls_per_cpu_second: f64,  // Syscall efficiency metric
 }
 
 fn get_cpu_cores(tsdb: &Arc<Tsdb>) -> Result<usize, Box<dyn std::error::Error>> {
@@ -129,6 +131,13 @@ pub fn list_cgroups(tsdb: &Arc<Tsdb>) -> Result<CgroupsReport, Box<dyn std::erro
             false
         };
         
+        // Calculate syscall efficiency (syscalls per CPU second)
+        let syscalls_per_cpu_second = if cpu_usage_cores > 0.0 {
+            syscall_rate / cpu_usage_cores
+        } else {
+            0.0
+        };
+        
         cgroups.push(CgroupInfo {
             name: cgroup_name.clone(),
             has_cpu,
@@ -138,6 +147,7 @@ pub fn list_cgroups(tsdb: &Arc<Tsdb>) -> Result<CgroupsReport, Box<dyn std::erro
             cpu_usage_cores,
             cpu_usage_pct,
             syscall_rate,
+            syscalls_per_cpu_second,
         });
     }
     
@@ -159,37 +169,37 @@ impl CgroupsReport {
     pub fn to_summary(&self) -> String {
         let mut s = String::new();
         
-        s.push_str(&format!("📦 CGROUPS ANALYSIS\n"));
-        s.push_str(&format!("===================\n\n"));
+        s.push_str("CGROUPS ANALYSIS\n");
+        s.push_str("================\n\n");
         
         s.push_str(&format!("Found {} cgroups in the dataset\n\n", self.total_count));
         
-        s.push_str("📊 Available Metric Types:\n");
+        s.push_str("Available Metric Types:\n");
         if self.has_cpu_metrics {
-            s.push_str("  ✓ CPU metrics\n");
+            s.push_str("  - CPU metrics\n");
         }
         if self.has_memory_metrics {
-            s.push_str("  ✓ Memory metrics\n");
+            s.push_str("  - Memory metrics\n");
         }
         if self.has_syscall_metrics {
-            s.push_str("  ✓ Syscall metrics\n");
+            s.push_str("  - Syscall metrics\n");
         }
         if self.has_network_metrics {
-            s.push_str("  ✓ Network metrics\n");
+            s.push_str("  - Network metrics\n");
         }
         
-        s.push_str(&format!("\n🗂️ Cgroups List (sorted by CPU usage):\n"));
+        s.push_str("\n");
         
         // Show top CPU consumers first
-        let top_consumers: Vec<_> = self.cgroups.iter()
+        let top_cpu: Vec<_> = self.cgroups.iter()
             .filter(|c| c.cpu_usage_cores > 0.01)
             .take(10)
             .collect();
         
-        if !top_consumers.is_empty() {
-            s.push_str("\n📊 Top CPU Consumers:\n");
-            for cgroup in &top_consumers {
-                s.push_str(&format!("  • {:40} {:6.2} cores ({:5.1}%)",
+        if !top_cpu.is_empty() {
+            s.push_str("\nTop CPU Consumers:\n");
+            for cgroup in &top_cpu {
+                s.push_str(&format!("  {:40} {:6.2} cores ({:5.1}%)",
                     cgroup.name,
                     cgroup.cpu_usage_cores,
                     cgroup.cpu_usage_pct
@@ -202,10 +212,58 @@ impl CgroupsReport {
             }
         }
         
+        // Show top syscall rate consumers
+        if self.has_syscall_metrics {
+            let mut by_syscalls = self.cgroups.clone();
+            by_syscalls.sort_by(|a, b| b.syscall_rate.partial_cmp(&a.syscall_rate).unwrap());
+            
+            let top_syscalls: Vec<_> = by_syscalls.iter()
+                .filter(|c| c.syscall_rate > 1000.0)
+                .take(10)
+                .collect();
+            
+            if !top_syscalls.is_empty() {
+                s.push_str("\nTop Syscall Rate:\n");
+                for cgroup in &top_syscalls {
+                    s.push_str(&format!("  {:40} {:.0} syscalls/sec",
+                        cgroup.name,
+                        cgroup.syscall_rate
+                    ));
+                    
+                    if cgroup.cpu_usage_cores > 0.0 {
+                        s.push_str(&format!(" | {:.2} cores", cgroup.cpu_usage_cores));
+                    }
+                    s.push_str("\n");
+                }
+            }
+            
+            // Show services with high syscall efficiency (kernel-heavy workloads)
+            let mut by_efficiency = self.cgroups.clone();
+            by_efficiency.sort_by(|a, b| b.syscalls_per_cpu_second.partial_cmp(&a.syscalls_per_cpu_second).unwrap());
+            
+            let high_efficiency: Vec<_> = by_efficiency.iter()
+                .filter(|c| c.cpu_usage_cores > 0.1 && c.syscalls_per_cpu_second > 10000.0)
+                .take(10)
+                .collect();
+            
+            if !high_efficiency.is_empty() {
+                s.push_str("\nHigh Syscall Efficiency (syscalls per CPU-second):\n");
+                for cgroup in &high_efficiency {
+                    s.push_str(&format!("  {:40} {:.0} syscalls/cpu-sec",
+                        cgroup.name,
+                        cgroup.syscalls_per_cpu_second
+                    ));
+                    s.push_str(&format!(" | {:.0} total/sec on {:.2} cores", 
+                        cgroup.syscall_rate, cgroup.cpu_usage_cores));
+                    s.push_str("\n");
+                }
+            }
+        }
+        
         // Show all cgroups with basic info
-        s.push_str(&format!("\n📋 All Cgroups ({} total):\n", self.cgroups.len()));
+        s.push_str(&format!("\nAll Cgroups ({} total):\n", self.cgroups.len()));
         for cgroup in &self.cgroups {
-            s.push_str(&format!("  • {}", cgroup.name));
+            s.push_str(&format!("  {}", cgroup.name));
             
             // Show CPU usage if significant
             if cgroup.cpu_usage_cores > 0.01 {
@@ -225,9 +283,9 @@ impl CgroupsReport {
         }
         
         if self.available_metrics.len() > 0 {
-            s.push_str(&format!("\n📈 Available Cgroup Metrics ({}):\n", self.available_metrics.len()));
+            s.push_str(&format!("\nAvailable Cgroup Metrics ({}):\n", self.available_metrics.len()));
             for metric in &self.available_metrics[..10.min(self.available_metrics.len())] {
-                s.push_str(&format!("  • {}\n", metric));
+                s.push_str(&format!("  {}\n", metric));
             }
             if self.available_metrics.len() > 10 {
                 s.push_str(&format!("  ... and {} more\n", self.available_metrics.len() - 10));
@@ -235,10 +293,10 @@ impl CgroupsReport {
         }
         
         // Add recommendations
-        s.push_str("\n💡 Analysis Recommendations:\n");
+        s.push_str("\nAnalysis Recommendations:\n");
         if self.total_count > 0 {
-            s.push_str("  • Use --isolate-cgroup flag to analyze specific cgroup isolation\n");
-            s.push_str("  • Use 'complete' analysis for exhaustive correlation discovery\n");
+            s.push_str("  - Use --isolate-cgroup flag to analyze specific cgroup isolation\n");
+            s.push_str("  - Use 'complete' analysis for exhaustive correlation discovery\n");
             
             // Suggest interesting cgroups
             let system_cgroups: Vec<_> = self.cgroups.iter()
@@ -247,7 +305,7 @@ impl CgroupsReport {
             if !system_cgroups.is_empty() {
                 s.push_str(&format!("\n  System services found ({}):\n", system_cgroups.len()));
                 for cgroup in system_cgroups.iter().take(3) {
-                    s.push_str(&format!("    • {}\n", cgroup.name));
+                    s.push_str(&format!("    - {}\n", cgroup.name));
                 }
             }
         } else {

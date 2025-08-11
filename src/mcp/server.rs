@@ -31,27 +31,49 @@ impl MCPServer {
         let reader = BufReader::new(stdin);
         let mut lines = reader.lines();
 
-        // Send initialization message
-        self.send_capabilities(&mut stdout).await?;
-
-        while let Some(line) = lines.next_line().await? {
-            if line.trim().is_empty() {
-                continue;
-            }
+        eprintln!("MCP DEBUG: MCP server ready, waiting for messages...");
+        info!("MCP server ready, waiting for messages...");
+        loop {
+            debug!("Waiting for next line...");
+            let line = match lines.next_line().await? {
+                Some(line) => {
+                    if line.trim().is_empty() {
+                        debug!("Received empty line, continuing");
+                        continue;
+                    }
+                    debug!("Received message: {}", line);
+                    line
+                },
+                None => {
+                    eprintln!("MCP DEBUG: stdin closed, no more messages");
+                    info!("stdin closed, no more messages");
+                    break;
+                }
+            };
 
             match self.handle_message(&line).await {
                 Ok(response) => {
                     if let Some(resp) = response {
                         let response_str = serde_json::to_string(&resp)?;
+                        debug!("Sending response: {}", response_str);
                         stdout.write_all(response_str.as_bytes()).await?;
                         stdout.write_all(b"\n").await?;
                         stdout.flush().await?;
+                        debug!("Response sent successfully");
                     }
                 }
                 Err(e) => {
-                    eprintln!("MCP Error: {}", e);
+                    error!("MCP Error: {}", e);
+                    // Try to extract request ID from the original message for error response
+                    let error_id = if let Ok(req) = serde_json::from_str::<Value>(&line) {
+                        req.get("id").cloned()
+                    } else {
+                        None
+                    };
+                    
                     let error_response = json!({
                         "jsonrpc": "2.0",
+                        "id": error_id,
                         "error": {
                             "code": -1,
                             "message": e.to_string()
@@ -65,32 +87,10 @@ impl MCPServer {
             }
         }
 
+        info!("MCP server stdin closed, exiting");
         Ok(())
     }
 
-    async fn send_capabilities(&self, stdout: &mut io::Stdout) -> Result<(), Box<dyn std::error::Error>> {
-        let capabilities = json!({
-            "jsonrpc": "2.0",
-            "result": {
-                "capabilities": {
-                    "tools": {
-                        "listChanged": false
-                    }
-                },
-                "serverInfo": {
-                    "name": "rezolus-mcp",
-                    "version": env!("CARGO_PKG_VERSION")
-                }
-            }
-        });
-        
-        let response_str = serde_json::to_string(&capabilities)?;
-        stdout.write_all(response_str.as_bytes()).await?;
-        stdout.write_all(b"\n").await?;
-        stdout.flush().await?;
-        
-        Ok(())
-    }
 
     async fn handle_message(&mut self, message: &str) -> Result<Option<Value>, Box<dyn std::error::Error>> {
         let request: Value = serde_json::from_str(message)?;
@@ -103,10 +103,12 @@ impl MCPServer {
 
         match method {
             "initialize" => {
+                info!("Received initialize request");
                 Ok(Some(json!({
                     "jsonrpc": "2.0",
                     "id": id,
                     "result": {
+                        "protocolVersion": "2025-06-18",
                         "capabilities": {
                             "tools": {
                                 "listChanged": false
@@ -118,6 +120,11 @@ impl MCPServer {
                         }
                     }
                 })))
+            }
+            "initialized" | "notifications/initialized" => {
+                info!("Received initialized notification");
+                // This is a notification, no response needed
+                Ok(None)
             }
             "tools/list" => {
                 Ok(Some(json!({
@@ -213,6 +220,38 @@ impl MCPServer {
                                     },
                                     "required": ["file_path"]
                                 }
+                            },
+                            {
+                                "name": "cgroup_isolation",
+                                "description": "Analyze cgroup isolation and resource attribution",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "file_path": {
+                                            "type": "string",
+                                            "description": "Path to the Rezolus .parquet file"
+                                        },
+                                        "cgroup_path": {
+                                            "type": "string",
+                                            "description": "Full path to the cgroup to analyze (e.g., /system.slice/redis.service)"
+                                        }
+                                    },
+                                    "required": ["file_path", "cgroup_path"]
+                                }
+                            },
+                            {
+                                "name": "correlation",
+                                "description": "Discover correlations between all metrics",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "file_path": {
+                                            "type": "string",
+                                            "description": "Path to the Rezolus .parquet file"
+                                        }
+                                    },
+                                    "required": ["file_path"]
+                                }
                             }
                         ]
                     }
@@ -286,6 +325,36 @@ impl MCPServer {
             }
             "detect_anomalies" => {
                 let result = self.detect_anomalies(arguments).await?;
+                Ok(Some(json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": result
+                            }
+                        ]
+                    }
+                })))
+            }
+            "cgroup_isolation" => {
+                let result = self.cgroup_isolation(arguments).await?;
+                Ok(Some(json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": result
+                            }
+                        ]
+                    }
+                })))
+            }
+            "correlation" => {
+                let result = self.correlation_analysis(arguments).await?;
                 Ok(Some(json!({
                     "jsonrpc": "2.0",
                     "id": id,
@@ -387,7 +456,7 @@ impl MCPServer {
         // If cgroup isolation analysis requested
         if let Some(cgroup_name) = isolate_cgroup {
             use crate::mcp::tools::cgroup_isolation::analyze_cgroup_isolation;
-            eprintln!("Performing cgroup isolation analysis for: {}", cgroup_name);
+            info!("Performing cgroup isolation analysis for: {}", cgroup_name);
             let report = analyze_cgroup_isolation(&tsdb, cgroup_name)?;
             return Ok(report.to_detailed_summary());
         }
@@ -395,7 +464,7 @@ impl MCPServer {
         // If deep analysis requested, do that
         if deep {
             use crate::mcp::tools::deep_analysis::deep_correlation_analysis;
-            eprintln!("Performing DEEP correlation analysis...");
+            info!("Performing DEEP correlation analysis...");
             let report = deep_correlation_analysis(&tsdb)?;
             return Ok(report.to_detailed_summary());
         }
@@ -403,7 +472,7 @@ impl MCPServer {
         // If complete analysis requested, do that instead
         if complete {
             use crate::mcp::tools::complete_analysis::complete_correlation_analysis;
-            eprintln!("Performing COMPLETE correlation analysis...");
+            info!("Performing COMPLETE correlation analysis...");
             let report = complete_correlation_analysis(&tsdb, min_correlation.unwrap_or(0.5))?;
             return Ok(report.to_detailed_summary());
         }
@@ -415,14 +484,14 @@ impl MCPServer {
             // Use parallel cgroup-aware discovery
             use crate::mcp::tools::parallel_discovery::parallel_cgroup_correlations;
             use crate::mcp::tools::cgroup_discovery::format_cgroup_report;
-            eprintln!("Using parallel cgroup-aware correlation discovery");
+            info!("Using parallel cgroup-aware correlation discovery");
             let cgroup_results = parallel_cgroup_correlations(&tsdb, min_correlation, Some(10))?;
             return Ok(format_cgroup_report(&cgroup_results));
         }
         
         // Use parallel discovery for non-cgroup metrics
         use crate::mcp::tools::parallel_discovery::parallel_discover_correlations;
-        eprintln!("Using parallel correlation discovery");
+        info!("Using parallel correlation discovery");
         let results = parallel_discover_correlations(&tsdb, min_correlation)?;
         
         // Format results
@@ -475,6 +544,41 @@ impl MCPServer {
         ))
     }
 
+    async fn cgroup_isolation(&mut self, arguments: &Value) -> Result<String, Box<dyn std::error::Error>> {
+        let file_path = arguments.get("file_path")
+            .and_then(|p| p.as_str())
+            .ok_or("Missing file_path")?;
+        
+        let cgroup_path = arguments.get("cgroup_path")
+            .and_then(|p| p.as_str())
+            .ok_or("Missing cgroup_path")?;
+
+        // Load TSDB (with caching)
+        let tsdb = self.get_or_load_tsdb(file_path).await?;
+        
+        // Perform cgroup isolation analysis
+        use crate::mcp::tools::cgroup_isolation::analyze_cgroup_isolation;
+        let analysis = analyze_cgroup_isolation(&tsdb, cgroup_path)?;
+        
+        Ok(analysis.to_detailed_summary())
+    }
+    
+    async fn correlation_analysis(&mut self, arguments: &Value) -> Result<String, Box<dyn std::error::Error>> {
+        let file_path = arguments.get("file_path")
+            .and_then(|p| p.as_str())
+            .ok_or("Missing file_path")?;
+
+        // Load TSDB (with caching)
+        let tsdb = self.get_or_load_tsdb(file_path).await?;
+        
+        // Perform correlation analysis
+        use crate::mcp::tools::discovery::discover_correlations;
+        let report = discover_correlations(&tsdb, Some(0.5), Some(100))?;  // Limit to 100 pairs for faster response
+        
+        // Use the report's to_summary method
+        Ok(report.to_summary())
+    }
+
     async fn get_or_load_tsdb(&mut self, file_path: &str) -> Result<Arc<Tsdb>, Box<dyn std::error::Error>> {
         // Check cache first
         {
@@ -502,13 +606,51 @@ impl MCPServer {
 
 /// Run the MCP server
 pub fn run(config: Config) {
+    // Immediate stderr output that should appear in Claude Desktop logs
+    eprintln!("MCP DEBUG: Starting rezolus MCP server with verbose={}", config.verbose);
+    
+    // Initialize ringlog to ensure all logging goes to stderr
+    let debug_output: Box<dyn Output> = Box::new(Stderr::new());
+
+    let level = match config.verbose {
+        0 => Level::Info,
+        1 => Level::Debug,
+        _ => Level::Trace,
+    };
+
+    let debug_log = if level <= Level::Info {
+        LogBuilder::new().format(ringlog::default_format)
+    } else {
+        LogBuilder::new()
+    }
+    .output(debug_output)
+    .build()
+    .expect("failed to initialize debug log");
+
+    let mut log = MultiLogBuilder::new()
+        .level_filter(level.to_level_filter())
+        .default(debug_log)
+        .build()
+        .start();
+
     let rt = tokio::runtime::Runtime::new().unwrap();
     
+    // spawn logging thread
+    rt.spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            let _ = log.flush();
+        }
+    });
+    
     rt.block_on(async {
+        eprintln!("MCP DEBUG: About to start server.run_stdio()");
         let mut server = MCPServer::new(config);
         if let Err(e) = server.run_stdio().await {
-            eprintln!("MCP Server error: {}", e);
+            eprintln!("MCP DEBUG: Server error: {}", e);
+            error!("MCP Server error: {}", e);
             std::process::exit(1);
         }
+        eprintln!("MCP DEBUG: Server.run_stdio() completed normally");
     });
 }

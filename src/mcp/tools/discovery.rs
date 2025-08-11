@@ -55,7 +55,7 @@ impl DiscoveryReport {
         }
         
         if !self.surprising.is_empty() {
-            summary.push_str("\n🎯 SURPRISING DISCOVERIES:\n");
+            summary.push_str("\n SURPRISING DISCOVERIES:\n");
             summary.push_str("(Unexpected strong correlations between unrelated metrics)\n");
             for result in &self.surprising {
                 summary.push_str(&format!(

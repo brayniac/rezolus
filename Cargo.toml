@@ -9,10 +9,6 @@ description = "High resolution systems performance telemetry agent"
 name = "rezolus"
 path = "src/main.rs"
 
-[[bin]]
-name = "test_mcp"
-path = "src/bin/test_mcp.rs"
-
 [dependencies]
 anyhow = "1.0.98"
 archspec = "0.1.3"

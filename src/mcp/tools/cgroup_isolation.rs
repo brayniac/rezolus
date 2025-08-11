@@ -817,85 +817,85 @@ impl CgroupIsolationReport {
     pub fn to_detailed_summary(&self) -> String {
         let mut s = String::new();
         
-        s.push_str(&format!("🔴 CGROUP ISOLATION ANALYSIS\n"));
+        s.push_str(&format!(" CGROUP ISOLATION ANALYSIS\n"));
         s.push_str(&format!("=====================================\n"));
         s.push_str(&format!("Target: {}\n\n", self.target_cgroup));
         
-        s.push_str(&format!("📊 TARGET CGROUP METRICS:\n"));
-        s.push_str(&format!("  • CPU Usage: {:.2} cores ({:.1}%)\n", self.target_metrics.cpu_usage_cores, self.target_metrics.cpu_usage_pct));
-        s.push_str(&format!("  • Syscall Rate: {:.0}/sec\n", self.target_metrics.syscall_rate));
-        s.push_str(&format!("  • Instruction Rate: {:.2}M/sec\n", self.target_metrics.instruction_rate / 1_000_000.0));
-        s.push_str(&format!("  • CPU Cycles: {:.2}M/sec\n", self.target_metrics.cycles_rate / 1_000_000.0));
-        s.push_str(&format!("  • Context Switches: {:.0}/sec\n", self.target_metrics.context_switches));
+        s.push_str(&format!(" TARGET CGROUP METRICS:\n"));
+        s.push_str(&format!("  CPU Usage: {:.2} cores ({:.1}%)\n", self.target_metrics.cpu_usage_cores, self.target_metrics.cpu_usage_pct));
+        s.push_str(&format!("  Syscall Rate: {:.0}/sec\n", self.target_metrics.syscall_rate));
+        s.push_str(&format!("  Instruction Rate: {:.2}M/sec\n", self.target_metrics.instruction_rate / 1_000_000.0));
+        s.push_str(&format!("  CPU Cycles: {:.2}M/sec\n", self.target_metrics.cycles_rate / 1_000_000.0));
+        s.push_str(&format!("  Context Switches: {:.0}/sec\n", self.target_metrics.context_switches));
         if self.target_metrics.cpu_throttled_pct > 0.0 {
-            s.push_str(&format!("  • CPU Throttled: {:.1}%\n", self.target_metrics.cpu_throttled_pct));
+            s.push_str(&format!("  CPU Throttled: {:.1}%\n", self.target_metrics.cpu_throttled_pct));
         }
         
-        s.push_str(&format!("\n💻 SYSTEM METRICS:\n"));
-        s.push_str(&format!("  • Total CPU: {:.2} cores ({:.1}%)\n", self.system_metrics.total_cpu_cores, self.system_metrics.total_cpu_usage));
-        s.push_str(&format!("  • Softirq CPU: {:.2} cores\n", self.system_metrics.softirq_cores));
-        s.push_str(&format!("  • Total Syscalls: {:.0}/sec\n", self.system_metrics.total_syscalls));
-        s.push_str(&format!("  • Network: {:.2} MB/sec\n", self.system_metrics.total_network_bytes / 1_000_000.0));
-        s.push_str(&format!("  • Disk I/O: {:.2} MB/sec\n", self.system_metrics.total_disk_io / 1_000_000.0));
+        s.push_str(&format!("\n SYSTEM METRICS:\n"));
+        s.push_str(&format!("  Total CPU: {:.2} cores ({:.1}%)\n", self.system_metrics.total_cpu_cores, self.system_metrics.total_cpu_usage));
+        s.push_str(&format!("  Softirq CPU: {:.2} cores\n", self.system_metrics.softirq_cores));
+        s.push_str(&format!("  Total Syscalls: {:.0}/sec\n", self.system_metrics.total_syscalls));
+        s.push_str(&format!("  Network: {:.2} MB/sec\n", self.system_metrics.total_network_bytes / 1_000_000.0));
+        s.push_str(&format!("  Disk I/O: {:.2} MB/sec\n", self.system_metrics.total_disk_io / 1_000_000.0));
         
-        s.push_str(&format!("\n🎯 TARGET VS SYSTEM:\n"));
-        s.push_str(&format!("  • Target CPU Share: {:.1}% of system\n", self.target_vs_system.target_cpu_share));
-        s.push_str(&format!("  • Target Syscall Share: {:.1}% of system\n", self.target_vs_system.target_syscall_share));
-        s.push_str(&format!("  • CPU Efficiency (IPC): {:.2}\n", self.target_vs_system.cpu_efficiency));
+        s.push_str(&format!("\n TARGET VS SYSTEM:\n"));
+        s.push_str(&format!("  Target CPU Share: {:.1}% of system\n", self.target_vs_system.target_cpu_share));
+        s.push_str(&format!("  Target Syscall Share: {:.1}% of system\n", self.target_vs_system.target_syscall_share));
+        s.push_str(&format!("  CPU Efficiency (IPC): {:.2}\n", self.target_vs_system.cpu_efficiency));
         
         if !self.target_vs_system.correlations_with_system.is_empty() {
             s.push_str(&format!("\n  System Correlations:\n"));
             for (metric, corr) in &self.target_vs_system.correlations_with_system {
-                s.push_str(&format!("    • {} : r={:.3}\n", metric, corr));
+                s.push_str(&format!("    {} : r={:.3}\n", metric, corr));
             }
         }
         
         if !self.target_vs_system.bottleneck_analysis.is_empty() {
-            s.push_str(&format!("\n  ⚠️ Bottlenecks:\n"));
+            s.push_str(&format!("\n   Bottlenecks:\n"));
             for bottleneck in &self.target_vs_system.bottleneck_analysis {
-                s.push_str(&format!("    • {}\n", bottleneck));
+                s.push_str(&format!("    {}\n", bottleneck));
             }
         }
         
-        s.push_str(&format!("\n📈 RESOURCE ATTRIBUTION:\n"));
-        s.push_str(&format!("  • Target cgroup: {:.2} cores\n", self.resource_attribution.target_attributed_cpu));
-        s.push_str(&format!("  • Other Services: {:.2} cores\n", self.resource_attribution.other_services_cpu));
-        s.push_str(&format!("  • System Overhead: {:.2} cores\n", self.resource_attribution.system_overhead_cpu));
-        s.push_str(&format!("  • Idle: {:.2} cores\n", self.resource_attribution.idle_cpu));
+        s.push_str(&format!("\n RESOURCE ATTRIBUTION:\n"));
+        s.push_str(&format!("  Target cgroup: {:.2} cores\n", self.resource_attribution.target_attributed_cpu));
+        s.push_str(&format!("  Other Services: {:.2} cores\n", self.resource_attribution.other_services_cpu));
+        s.push_str(&format!("  System Overhead: {:.2} cores\n", self.resource_attribution.system_overhead_cpu));
+        s.push_str(&format!("  Idle: {:.2} cores\n", self.resource_attribution.idle_cpu));
         
         if !self.other_cgroups.is_empty() {
-            s.push_str(&format!("\n🏃 OTHER CGROUPS (Top 5):\n"));
+            s.push_str(&format!("\n OTHER CGROUPS (Top 5):\n"));
             for cgroup in self.other_cgroups.iter().take(5) {
-                s.push_str(&format!("  • {}\n", cgroup.cgroup_name));
+                s.push_str(&format!("  {}\n", cgroup.cgroup_name));
                 s.push_str(&format!("    CPU: {:.1}%, Correlation: r={:.3}, {}\n",
                     cgroup.cpu_usage_pct, cgroup.correlation_with_target, cgroup.resource_competition));
             }
         }
         
-        s.push_str(&format!("\n⚡ INTERFERENCE ANALYSIS:\n"));
-        s.push_str(&format!("  • Interference Score: {:.1}%\n", self.interference_analysis.interference_score * 100.0));
+        s.push_str(&format!("\n INTERFERENCE ANALYSIS:\n"));
+        s.push_str(&format!("  Interference Score: {:.1}%\n", self.interference_analysis.interference_score * 100.0));
         if !self.interference_analysis.competing_cgroups.is_empty() {
-            s.push_str(&format!("  • Competing Services: {}\n", 
+            s.push_str(&format!("  Competing Services: {}\n", 
                 self.interference_analysis.competing_cgroups.join(", ")));
         }
         
         if !self.interference_analysis.recommendations.is_empty() {
-            s.push_str(&format!("\n💡 RECOMMENDATIONS:\n"));
+            s.push_str(&format!("\n RECOMMENDATIONS:\n"));
             for rec in &self.interference_analysis.recommendations {
-                s.push_str(&format!("  • {}\n", rec));
+                s.push_str(&format!("  {}\n", rec));
             }
         }
         
-        s.push_str(&format!("\n🔧 IRQ ISOLATION ANALYSIS:\n"));
-        s.push_str(&format!("  • Isolation Quality: {}\n", self.irq_isolation_analysis.isolation_quality));
-        s.push_str(&format!("  • Softirq Total: {:.2} cores\n", self.irq_isolation_analysis.softirq_total_cores));
+        s.push_str(&format!("\n IRQ ISOLATION ANALYSIS:\n"));
+        s.push_str(&format!("  Isolation Quality: {}\n", self.irq_isolation_analysis.isolation_quality));
+        s.push_str(&format!("  Softirq Total: {:.2} cores\n", self.irq_isolation_analysis.softirq_total_cores));
         
         if !self.irq_isolation_analysis.irq_isolated_cores.is_empty() {
-            s.push_str(&format!("  • IRQ Cores: {:?}\n", self.irq_isolation_analysis.irq_isolated_cores));
+            s.push_str(&format!("  IRQ Cores: {:?}\n", self.irq_isolation_analysis.irq_isolated_cores));
         }
         
         if !self.irq_isolation_analysis.application_cores.is_empty() {
-            s.push_str(&format!("  • Application Cores: {:?}\n", self.irq_isolation_analysis.application_cores));
+            s.push_str(&format!("  Application Cores: {:?}\n", self.irq_isolation_analysis.application_cores));
         }
         
         if !self.system_metrics.softirq_by_core.is_empty() {
@@ -916,41 +916,41 @@ impl CgroupIsolationReport {
         if !self.irq_isolation_analysis.findings.is_empty() {
             s.push_str(&format!("\n  Findings:\n"));
             for finding in &self.irq_isolation_analysis.findings {
-                s.push_str(&format!("    • {}\n", finding));
+                s.push_str(&format!("    {}\n", finding));
             }
         }
         
         // Add workload characterization
-        s.push_str(&format!("\n🔍 WORKLOAD CHARACTERIZATION:\n"));
-        s.push_str(&format!("  • Primary Type: {}\n", self.target_metrics.workload_characterization.primary_type));
-        s.push_str(&format!("  • Characterization: {}\n", self.target_metrics.workload_characterization.characterization));
-        s.push_str(&format!("  • I/O Intensity: {:.0} ops/sec\n", self.target_metrics.workload_characterization.io_intensity));
-        s.push_str(&format!("  • Network Intensity: {:.0} ops/sec\n", self.target_metrics.workload_characterization.network_intensity));
-        s.push_str(&format!("  • Lock Contention: {:.0} ops/sec\n", self.target_metrics.workload_characterization.lock_contention));
+        s.push_str(&format!("\n WORKLOAD CHARACTERIZATION:\n"));
+        s.push_str(&format!("  Primary Type: {}\n", self.target_metrics.workload_characterization.primary_type));
+        s.push_str(&format!("  Characterization: {}\n", self.target_metrics.workload_characterization.characterization));
+        s.push_str(&format!("  I/O Intensity: {:.0} ops/sec\n", self.target_metrics.workload_characterization.io_intensity));
+        s.push_str(&format!("  Network Intensity: {:.0} ops/sec\n", self.target_metrics.workload_characterization.network_intensity));
+        s.push_str(&format!("  Lock Contention: {:.0} ops/sec\n", self.target_metrics.workload_characterization.lock_contention));
         
         // Add syscall breakdown
         if !self.target_metrics.syscall_by_type.is_empty() {
             s.push_str(&format!("\n  Syscall Breakdown:\n"));
             for (syscall_type, rate) in &self.target_metrics.syscall_by_type[..5.min(self.target_metrics.syscall_by_type.len())] {
                 let pct = (rate / self.target_metrics.syscall_rate) * 100.0;
-                s.push_str(&format!("    • {}: {:.0}/sec ({:.1}%)\n", syscall_type, rate, pct));
+                s.push_str(&format!("    {}: {:.0}/sec ({:.1}%)\n", syscall_type, rate, pct));
             }
         }
         
         // Add syscall comparison insights
-        s.push_str(&format!("\n📈 SYSCALL PATTERN ANALYSIS:\n"));
-        s.push_str(&format!("  • Profile Similarity: {:.1}%\n", self.syscall_comparison.profile_similarity * 100.0));
+        s.push_str(&format!("\n SYSCALL PATTERN ANALYSIS:\n"));
+        s.push_str(&format!("  Profile Similarity: {:.1}%\n", self.syscall_comparison.profile_similarity * 100.0));
         if !self.syscall_comparison.dominant_operations.is_empty() {
-            s.push_str(&format!("  • Dominant Operations: {}\n", self.syscall_comparison.dominant_operations.join(", ")));
+            s.push_str(&format!("  Dominant Operations: {}\n", self.syscall_comparison.dominant_operations.join(", ")));
         }
         if !self.syscall_comparison.insights.is_empty() {
             s.push_str(&format!("\n  Insights:\n"));
             for insight in &self.syscall_comparison.insights {
-                s.push_str(&format!("    • {}\n", insight));
+                s.push_str(&format!("    {}\n", insight));
             }
         }
         
-        s.push_str(&format!("\n⏰ Analysis time: {}ms\n", self.analysis_time_ms));
+        s.push_str(&format!("\n Analysis time: {}ms\n", self.analysis_time_ms));
         
         s
     }
