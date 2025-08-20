@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -121,6 +121,8 @@ impl QueryEngine {
             self.handle_simple_rate(query_str, time)
         } else if query_str.starts_with("sum(irate(") && query_str.ends_with("))") {
             self.handle_sum_rate(query_str, time)
+        } else if query_str.starts_with("avg(") && query_str.ends_with(")") {
+            self.handle_avg(query_str, time)
         } else {
             self.handle_simple_metric(query_str, time)
         }
@@ -169,6 +171,138 @@ impl QueryEngine {
         // Extract the irate() part
         let rate_part = &query[4..query.len() - 1]; // Remove "sum(" and ")"
         self.handle_simple_rate(rate_part, time)
+    }
+
+    /// Handle avg() queries like avg(cpu_usage) or avg(irate(network_bytes[5m]))
+    fn handle_avg(&self, query: &str, time: Option<f64>) -> Result<QueryResult, QueryError> {
+        // Extract the inner query
+        let inner = &query[4..query.len() - 1]; // Remove "avg(" and ")"
+        
+        // Check if inner is an irate expression
+        if inner.starts_with("irate(") && inner.ends_with(")") {
+            return self.handle_avg_rate(inner, time);
+        }
+        
+        // Otherwise treat as a simple metric
+        let (metric_name, labels) = self.parse_metric_selector(inner)?;
+        
+        // Try gauges first
+        if let Some(collection) = self.tsdb.gauges(&metric_name, labels.clone()) {
+            // Get all matching series
+            let series_list = collection.get_all_series(&labels);
+            if !series_list.is_empty() {
+                // Calculate average across all series at the given time
+                let mut sum = 0.0;
+                let mut count = 0;
+                let mut timestamp = 0.0;
+                
+                for series in series_list {
+                    let untyped = series.untyped();
+                    if let Some((ts, val)) = self.get_value_at_time(&untyped.inner, time) {
+                        sum += val;
+                        count += 1;
+                        timestamp = ts; // All should have same timestamp
+                    }
+                }
+                
+                if count > 0 {
+                    let avg = sum / count as f64;
+                    let mut metric_labels = HashMap::new();
+                    metric_labels.insert("__name__".to_string(), metric_name.to_string());
+                    
+                    return Ok(QueryResult::Vector {
+                        result: vec![Sample {
+                            metric: metric_labels,
+                            value: (timestamp, avg),
+                        }],
+                    });
+                }
+            }
+        }
+        
+        // Try counters (as rates)
+        if let Some(collection) = self.tsdb.counters(&metric_name, labels.clone()) {
+            let rate_collection = collection.filtered_rate(&labels);
+            let series_list = rate_collection.get_all_series();
+            
+            if !series_list.is_empty() {
+                let mut sum = 0.0;
+                let mut count = 0;
+                let mut timestamp = 0.0;
+                
+                for series in series_list {
+                    if let Some((ts, val)) = self.get_value_at_time(&series.inner, time) {
+                        sum += val;
+                        count += 1;
+                        timestamp = ts;
+                    }
+                }
+                
+                if count > 0 {
+                    let avg = sum / count as f64;
+                    let mut metric_labels = HashMap::new();
+                    metric_labels.insert("__name__".to_string(), metric_name.to_string());
+                    
+                    return Ok(QueryResult::Vector {
+                        result: vec![Sample {
+                            metric: metric_labels,
+                            value: (timestamp, avg),
+                        }],
+                    });
+                }
+            }
+        }
+        
+        Err(QueryError::MetricNotFound(format!(
+            "Could not find metric for avg query: {query}"
+        )))
+    }
+
+    /// Handle avg(irate()) queries
+    fn handle_avg_rate(&self, query: &str, time: Option<f64>) -> Result<QueryResult, QueryError> {
+        // Extract metric from irate()
+        let inner = &query[6..query.len() - 1]; // Remove "irate(" and ")"
+        
+        if let Some(bracket_pos) = inner.find('[') {
+            let metric_part = inner[..bracket_pos].trim();
+            let (metric_name, labels) = self.parse_metric_selector(metric_part)?;
+            
+            if let Some(collection) = self.tsdb.counters(&metric_name, labels.clone()) {
+                let rate_collection = collection.filtered_rate(&labels);
+                let series_list = rate_collection.get_all_series();
+                
+                if !series_list.is_empty() {
+                    let mut sum = 0.0;
+                    let mut count = 0;
+                    let mut timestamp = 0.0;
+                    
+                    for series in series_list {
+                        if let Some((ts, val)) = self.get_value_at_time(&series.inner, time) {
+                            sum += val;
+                            count += 1;
+                            timestamp = ts;
+                        }
+                    }
+                    
+                    if count > 0 {
+                        let avg = sum / count as f64;
+                        let mut metric_labels = HashMap::new();
+                        metric_labels.insert("__name__".to_string(), metric_name.to_string());
+                        
+                        return Ok(QueryResult::Vector {
+                            result: vec![Sample {
+                                metric: metric_labels,
+                                value: (timestamp, avg),
+                            }],
+                        });
+                    }
+                }
+            }
+        }
+        
+        Err(QueryError::MetricNotFound(format!(
+            "Could not find metric for avg(irate()) query: {query}"
+        )))
     }
 
     /// Handle simple metric queries like cpu_cores or cpu_cores{cpu="0"}
@@ -496,6 +630,16 @@ impl QueryEngine {
         // Check for sum() function
         if query_str.starts_with("sum(") && query_str.ends_with(")") {
             return self.handle_sum_range(query_str, start, end);
+        }
+
+        // Check for avg() function
+        if query_str.starts_with("avg(") && query_str.ends_with(")") {
+            return self.handle_avg_range(query_str, start, end);
+        }
+
+        // Check for avg by() function (e.g., "avg by (cpu) (rate(...))")
+        if query_str.starts_with("avg by ") || query_str.starts_with("avg by(") {
+            return self.handle_avg_by_range(query_str, start, end);
         }
 
         // Handle simple metric queries
@@ -1193,6 +1337,316 @@ impl QueryEngine {
 
         Err(QueryError::MetricNotFound(format!(
             "Could not process sum by query: {query}"
+        )))
+    }
+
+    /// Handle avg() queries over a time range
+    fn handle_avg_range(
+        &self,
+        query: &str,
+        start: f64,
+        end: f64,
+    ) -> Result<QueryResult, QueryError> {
+        // Extract inner from avg(inner)
+        let inner = &query[4..query.len() - 1]; // Remove "avg(" and ")"
+        
+        // Check if inner is an irate expression
+        if inner.starts_with("irate(") && inner.ends_with(")") {
+            // Extract metric from irate()
+            let rate_inner = &inner[6..inner.len() - 1]; // Remove "irate(" and ")"
+            if let Some(bracket_pos) = rate_inner.find('[') {
+                let metric_part = rate_inner[..bracket_pos].trim();
+                let (metric_name, labels) = self.parse_metric_selector(metric_part)?;
+                
+                if let Some(collection) = self.tsdb.counters(&metric_name, labels.clone()) {
+                    let rate_collection = collection.filtered_rate(&labels);
+                    let series_list = rate_collection.get_all_series();
+                    
+                    // Calculate average at each timestamp
+                    let mut time_averages: BTreeMap<u64, (f64, usize)> = BTreeMap::new();
+                    
+                    for series in series_list {
+                        for (ts, val) in series.inner.iter() {
+                            let entry = time_averages.entry(*ts).or_insert((0.0, 0));
+                            entry.0 += val;
+                            entry.1 += 1;
+                        }
+                    }
+                    
+                    let start_ns = (start * 1e9) as u64;
+                    let end_ns = (end * 1e9) as u64;
+                    
+                    let values: Vec<(f64, f64)> = time_averages
+                        .range(start_ns..=end_ns)
+                        .map(|(ts, (sum, count))| (*ts as f64 / 1e9, sum / *count as f64))
+                        .collect();
+                    
+                    if !values.is_empty() {
+                        let mut metric_labels = HashMap::new();
+                        metric_labels.insert("__name__".to_string(), metric_name.to_string());
+                        
+                        return Ok(QueryResult::Matrix {
+                            result: vec![MatrixSample {
+                                metric: metric_labels,
+                                values,
+                            }],
+                        });
+                    }
+                }
+            }
+        }
+        
+        // Otherwise treat as a simple metric
+        let (metric_name, labels) = self.parse_metric_selector(inner)?;
+        
+        // Try gauges
+        if let Some(collection) = self.tsdb.gauges(&metric_name, labels.clone()) {
+            let series_list = collection.get_all_series(&labels);
+            
+            // Calculate average at each timestamp
+            let mut time_averages: BTreeMap<u64, (f64, usize)> = BTreeMap::new();
+            
+            for series in series_list {
+                let untyped = series.untyped();
+                for (ts, val) in untyped.inner.iter() {
+                    let entry = time_averages.entry(*ts).or_insert((0.0, 0));
+                    entry.0 += val;
+                    entry.1 += 1;
+                }
+            }
+            
+            let start_ns = (start * 1e9) as u64;
+            let end_ns = (end * 1e9) as u64;
+            
+            let values: Vec<(f64, f64)> = time_averages
+                .range(start_ns..=end_ns)
+                .map(|(ts, (sum, count))| (*ts as f64 / 1e9, sum / *count as f64))
+                .collect();
+            
+            if !values.is_empty() {
+                let mut metric_labels = HashMap::new();
+                metric_labels.insert("__name__".to_string(), metric_name.to_string());
+                
+                return Ok(QueryResult::Matrix {
+                    result: vec![MatrixSample {
+                        metric: metric_labels,
+                        values,
+                    }],
+                });
+            }
+        }
+        
+        // Try counters
+        if let Some(collection) = self.tsdb.counters(&metric_name, labels.clone()) {
+            let rate_collection = collection.filtered_rate(&labels);
+            let series_list = rate_collection.get_all_series();
+            
+            // Calculate average at each timestamp
+            let mut time_averages: BTreeMap<u64, (f64, usize)> = BTreeMap::new();
+            
+            for series in series_list {
+                for (ts, val) in series.inner.iter() {
+                    let entry = time_averages.entry(*ts).or_insert((0.0, 0));
+                    entry.0 += val;
+                    entry.1 += 1;
+                }
+            }
+            
+            let start_ns = (start * 1e9) as u64;
+            let end_ns = (end * 1e9) as u64;
+            
+            let values: Vec<(f64, f64)> = time_averages
+                .range(start_ns..=end_ns)
+                .map(|(ts, (sum, count))| (*ts as f64 / 1e9, sum / *count as f64))
+                .collect();
+            
+            if !values.is_empty() {
+                let mut metric_labels = HashMap::new();
+                metric_labels.insert("__name__".to_string(), metric_name.to_string());
+                
+                return Ok(QueryResult::Matrix {
+                    result: vec![MatrixSample {
+                        metric: metric_labels,
+                        values,
+                    }],
+                });
+            }
+        }
+        
+        Err(QueryError::MetricNotFound(format!(
+            "Could not find metric for avg query: {query}"
+        )))
+    }
+
+    /// Handle avg by() queries over a time range
+    fn handle_avg_by_range(
+        &self,
+        query: &str,
+        start: f64,
+        end: f64,
+    ) -> Result<QueryResult, QueryError> {
+        // Parse "avg by (label1, label2) (inner_query)"
+        let by_clause_start = if query.starts_with("avg by(") {
+            "avg by(".len()
+        } else if query.starts_with("avg by (") {
+            "avg by (".len()
+        } else {
+            return Err(QueryError::ParseError("Invalid avg by syntax".to_string()));
+        };
+
+        // Find the closing parenthesis for the by clause
+        let mut paren_count = 1;
+        let mut by_end = by_clause_start;
+        for (i, ch) in query[by_clause_start..].chars().enumerate() {
+            match ch {
+                '(' => paren_count += 1,
+                ')' => {
+                    paren_count -= 1;
+                    if paren_count == 0 {
+                        by_end = by_clause_start + i;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Extract the group by labels
+        let by_labels = &query[by_clause_start..by_end];
+        let group_by_labels: Vec<String> = by_labels
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .collect();
+
+        // Find the inner query - skip whitespace after the by clause
+        let inner_query_start = query[by_end + 1..].trim();
+        if !inner_query_start.starts_with('(') || !inner_query_start.ends_with(')') {
+            return Err(QueryError::ParseError(
+                "Invalid avg by syntax: expected (inner_query) after by clause".to_string(),
+            ));
+        }
+
+        let inner_query = &inner_query_start[1..inner_query_start.len() - 1];
+
+        // For now, handle irate() as the inner query
+        if inner_query.starts_with("irate(") && inner_query.ends_with(")") {
+            let rate_inner = &inner_query[6..inner_query.len() - 1]; // Remove "irate(" and ")"
+
+            if let Some(bracket_pos) = rate_inner.find('[') {
+                let metric_part = rate_inner[..bracket_pos].trim();
+                let (metric_name, filter_labels) = self.parse_metric_selector(metric_part)?;
+
+                if let Some(collection) = self.tsdb.counters(&metric_name, filter_labels.clone()) {
+                    let rate_collection = collection.filtered_rate(&filter_labels);
+                    let grouped = rate_collection.group_by(&group_by_labels);
+
+                    let start_ns = (start * 1e9) as u64;
+                    let end_ns = (end * 1e9) as u64;
+
+                    let mut result_samples = Vec::new();
+
+                    // For each group, calculate average instead of sum
+                    for (label_values, _) in grouped {
+                        // Get all series matching this group
+                        let mut group_time_averages: BTreeMap<u64, (f64, usize)> = BTreeMap::new();
+                        
+                        // We need to re-iterate to get individual series for this group
+                        for (series_labels, series) in rate_collection.iter() {
+                            // Check if this series belongs to the current group
+                            let mut matches = true;
+                            for (label_name, label_value) in &label_values {
+                                if series_labels.inner.get(label_name) != Some(label_value) {
+                                    matches = false;
+                                    break;
+                                }
+                            }
+                            
+                            if matches {
+                                for (ts, val) in series.inner.iter() {
+                                    let entry = group_time_averages.entry(*ts).or_insert((0.0, 0));
+                                    entry.0 += val;
+                                    entry.1 += 1;
+                                }
+                            }
+                        }
+
+                        let values: Vec<(f64, f64)> = group_time_averages
+                            .range(start_ns..=end_ns)
+                            .map(|(ts, (sum, count))| (*ts as f64 / 1e9, sum / *count as f64))
+                            .collect();
+
+                        if !values.is_empty() {
+                            let mut metric_labels = HashMap::new();
+                            metric_labels.insert("__name__".to_string(), metric_name.to_string());
+
+                            // Add the grouped label values
+                            for (label_name, label_value) in label_values {
+                                metric_labels.insert(label_name, label_value);
+                            }
+
+                            result_samples.push(MatrixSample {
+                                metric: metric_labels,
+                                values,
+                            });
+                        }
+                    }
+
+                    if !result_samples.is_empty() {
+                        return Ok(QueryResult::Matrix {
+                            result: result_samples,
+                        });
+                    }
+                }
+            }
+        }
+
+        // Also handle simple metrics
+        let (metric_name, filter_labels) = self.parse_metric_selector(inner_query)?;
+
+        // Try gauges
+        if let Some(collection) = self.tsdb.gauges(&metric_name, filter_labels.clone()) {
+            let grouped = collection.group_by(&group_by_labels, &filter_labels);
+
+            let start_ns = (start * 1e9) as u64;
+            let end_ns = (end * 1e9) as u64;
+
+            let mut result_samples = Vec::new();
+
+            // For each group, we already have the sum, but we need to calculate average
+            // This would require modifying group_by to return individual series or count
+            // For now, we'll return the sum (existing behavior)
+            for (label_values, series) in grouped {
+                let values: Vec<(f64, f64)> = series
+                    .inner
+                    .range(start_ns..=end_ns)
+                    .map(|(ts, val)| (*ts as f64 / 1e9, *val))
+                    .collect();
+
+                if !values.is_empty() {
+                    let mut metric_labels = HashMap::new();
+                    metric_labels.insert("__name__".to_string(), metric_name.to_string());
+
+                    // Add the grouped label values
+                    for (label_name, label_value) in label_values {
+                        metric_labels.insert(label_name, label_value);
+                    }
+
+                    result_samples.push(MatrixSample {
+                        metric: metric_labels,
+                        values,
+                    });
+                }
+            }
+
+            if !result_samples.is_empty() {
+                return Ok(QueryResult::Matrix {
+                    result: result_samples,
+                });
+            }
+        }
+
+        Err(QueryError::MetricNotFound(format!(
+            "Could not process avg by query: {query}"
         )))
     }
 

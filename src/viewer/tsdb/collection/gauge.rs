@@ -53,6 +53,15 @@ impl GaugeCollection {
         result
     }
 
+    /// Get all individual series matching the filter (without summing)
+    pub fn get_all_series(&self, filter: &Labels) -> Vec<&GaugeSeries> {
+        self.inner
+            .iter()
+            .filter(|(labels, _)| labels.matches(filter))
+            .map(|(_, series)| series)
+            .collect()
+    }
+
     /// Group by the specified labels, returning a map of label values to summed series
     pub fn group_by(
         &self,

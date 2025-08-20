@@ -302,6 +302,30 @@ impl Tsdb {
     pub fn filename(&self) -> &str {
         &self.filename
     }
+
+    /// Get all counter metric names
+    pub fn counter_names(&self) -> Vec<&str> {
+        self.counters.keys().map(|s| s.as_str()).collect()
+    }
+
+    /// Get all gauge metric names
+    pub fn gauge_names(&self) -> Vec<&str> {
+        self.gauges.keys().map(|s| s.as_str()).collect()
+    }
+
+    /// Get all histogram metric names
+    pub fn histogram_names(&self) -> Vec<&str> {
+        self.histograms.keys().map(|s| s.as_str()).collect()
+    }
+
+    /// Get all metric names
+    pub fn all_metric_names(&self) -> Vec<&str> {
+        let mut names = Vec::new();
+        names.extend(self.counter_names());
+        names.extend(self.gauge_names());
+        names.extend(self.histogram_names());
+        names
+    }
 }
 
 #[derive(Default, Clone)]

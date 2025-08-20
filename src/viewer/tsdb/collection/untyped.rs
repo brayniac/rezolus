@@ -14,6 +14,11 @@ impl UntypedCollection {
         self.inner.iter()
     }
 
+    /// Get all individual series as a vector
+    pub fn get_all_series(&self) -> Vec<&UntypedSeries> {
+        self.inner.values().collect()
+    }
+
     pub fn sum(&self) -> UntypedSeries {
         let mut result = UntypedSeries::default();
 

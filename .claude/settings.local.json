@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git checkout:*)",
+      "Bash(git stash:*)",
+      "Bash(rm:*)",
+      "Bash(mv:*)",
+      "Bash(cargo build:*)",
+      "Bash(cargo check:*)",
+      "Bash(cargo test:*)",
+      "Bash(curl:*)",
+      "Bash(python3:*)",
+      "Bash(lsof:*)",
+      "Bash(kill:*)",
+      "Bash(pkill:*)",
+      "Bash(grep:*)",
+      "Bash(/dev/null)",
+      "Bash(cargo clippy:*)",
+      "Bash(rg:*)",
+      "Bash(rustc:*)",
+      "Bash(./test_label_matching)",
+      "Bash(npx prettier:*)",
+      "Bash(cargo:*)",
+      "Bash(./target/debug/rezolus:*)",
+      "Bash(chmod:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
