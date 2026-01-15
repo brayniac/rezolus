@@ -56,8 +56,13 @@ impl CpuPerfCounters {
 
     pub fn refresh(&mut self) {
         for c in self.counters.iter_mut() {
-            if let Ok(value) = c.counter.read() {
-                let _ = c.group.set(self.cpu, value);
+            match c.counter.read() {
+                Ok(value) => {
+                    let _ = c.group.set(self.cpu, value);
+                }
+                Err(e) => {
+                    debug!("failed to read perf counter on CPU{}: {}", self.cpu, e);
+                }
             }
         }
     }
@@ -376,9 +381,11 @@ where
                 .collect();
 
             debug!(
-                "{} initializing perf counters for: {} events",
+                "{} initializing perf counters for: {} events across {} CPUs (0..{})",
                 self.name,
-                self.perf_events.len()
+                self.perf_events.len(),
+                cpus,
+                cpus - 1
             );
 
             let mut perf_counters = PerfCounters::new();
@@ -387,7 +394,9 @@ where
                 let map = skel.map(name);
 
                 for cpu in 0..cpus {
-                    if let Ok(mut counter) = event
+                    // Try with pinned first, fall back to non-pinned if that fails
+                    // (some systems reserve PMU counters on certain CPUs)
+                    let counter_result = event
                         .inner
                         .builder()
                         .one_cpu(cpu)
@@ -401,21 +410,55 @@ where
                                 | ReadFormat::GROUP,
                         )
                         .build()
-                    {
-                        let _ = counter.enable();
+                        .or_else(|_| {
+                            debug!(
+                                "{} pinned perf counter failed for {} on CPU{}, trying non-pinned",
+                                self.name, name, cpu
+                            );
+                            event
+                                .inner
+                                .builder()
+                                .one_cpu(cpu)
+                                .any_pid()
+                                .exclude_hv(false)
+                                .exclude_kernel(false)
+                                .read_format(
+                                    ReadFormat::TOTAL_TIME_ENABLED
+                                        | ReadFormat::TOTAL_TIME_RUNNING
+                                        | ReadFormat::GROUP,
+                                )
+                                .build()
+                        });
 
-                        let fd = counter.as_raw_fd();
+                    match counter_result {
+                        Ok(mut counter) => {
+                            let _ = counter.enable();
 
-                        let _ = map.update(
-                            &((cpu as u32).to_ne_bytes()),
-                            &(fd.to_ne_bytes()),
-                            MapFlags::ANY,
-                        );
+                            let fd = counter.as_raw_fd();
 
-                        perf_counters.push(cpu, counter, group);
+                            let _ = map.update(
+                                &((cpu as u32).to_ne_bytes()),
+                                &(fd.to_ne_bytes()),
+                                MapFlags::ANY,
+                            );
+
+                            perf_counters.push(cpu, counter, group);
+                        }
+                        Err(e) => {
+                            debug!(
+                                "{} failed to create perf counter for {} on CPU{}: {}",
+                                self.name, name, cpu, e
+                            );
+                        }
                     }
                 }
             }
+
+            debug!(
+                "{} created perf counters for {} CPUs",
+                self.name,
+                perf_counters.inner.len()
+            );
 
             perf_counters.spawn(perf_threads_tx.clone(), perf_sync_tx.clone());
 
