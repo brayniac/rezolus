@@ -1253,3 +1253,249 @@ main {
 .mono {
     font-family: var(--font-mono);
 }
+
+/* ==========================================================================
+   Hardware Topology
+   ========================================================================== */
+
+.hardware-section {
+    width: 100%;
+}
+
+.hw-topology {
+    margin-bottom: 2rem;
+}
+
+.hw-unavailable {
+    color: var(--fg-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    padding: 2rem;
+    text-align: center;
+}
+
+.hw-system-info {
+    background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg-void) 100%);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.75rem;
+}
+
+.hw-info-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.hw-info-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--fg-muted);
+}
+
+.hw-info-value {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    color: var(--fg);
+}
+
+.hw-controls {
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.hw-metric-selector {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    color: var(--fg-secondary);
+}
+
+.hw-metric-selector select {
+    background: var(--bg-tertiary);
+    color: var(--fg);
+    border: 1px solid var(--border-default);
+    border-radius: 4px;
+    padding: 0.4rem 0.75rem;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+}
+
+.hw-loading {
+    color: var(--fg-muted);
+    font-size: 10px;
+}
+
+.hw-color-legend {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.hw-color-legend .legend-bar {
+    display: block;
+}
+
+.hw-color-legend .legend-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--fg-secondary);
+}
+
+.hw-packages {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.hw-package {
+    background: var(--bg-card);
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    padding: 1rem;
+    flex: 1;
+    min-width: 300px;
+}
+
+.hw-package-header {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--fg);
+    margin-bottom: 0.75rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.hw-numa-badge {
+    font-size: 10px;
+    font-weight: 400;
+    background: rgba(88, 166, 255, 0.1);
+    color: var(--accent);
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.hw-die {
+    margin-bottom: 0.5rem;
+}
+
+.hw-l3-group {
+    border: 1px dashed var(--border-subtle);
+    border-radius: 6px;
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+    position: relative;
+}
+
+.hw-l3-group::before {
+    content: attr(data-label);
+    position: absolute;
+    top: -8px;
+    left: 8px;
+    background: var(--bg-card);
+    padding: 0 4px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--fg-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.hw-cores {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(36px, 1fr));
+    gap: 4px;
+}
+
+.hw-core {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    align-items: center;
+}
+
+.hw-core-label {
+    font-family: var(--font-mono);
+    font-size: 8px;
+    color: var(--fg-muted);
+    line-height: 1;
+}
+
+.hw-thread {
+    width: 24px;
+    height: 24px;
+    border-radius: 3px;
+    cursor: default;
+    transition: transform 0.1s ease;
+    position: relative;
+}
+
+.hw-thread:hover {
+    transform: scale(1.4);
+    z-index: 10;
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.2);
+}
+
+/* Device locality */
+.hw-devices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.hw-numa-group {
+    flex: 1;
+    min-width: 250px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 1rem;
+}
+
+.hw-numa-group-header {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--fg);
+    margin-bottom: 0.75rem;
+}
+
+.hw-device-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.hw-device-card:last-child {
+    margin-bottom: 0;
+}
+
+.hw-device-name {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--fg);
+}
+
+.hw-device-detail {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-secondary);
+    margin-top: 0.25rem;
+}

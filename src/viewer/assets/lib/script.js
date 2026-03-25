@@ -18,6 +18,16 @@ m.request({ method: 'GET', url: '/api/v1/mode', withCredentials: true })
     })
     .catch(() => { /* ignore - assume file mode */ });
 
+// System hardware info for topology visualization
+let systemInfo = null;
+m.request({ method: 'GET', url: '/api/v1/systeminfo', withCredentials: true })
+    .then((data) => {
+        if (data && data.cpu_topology) {
+            systemInfo = data;
+        }
+    })
+    .catch(() => { /* systeminfo not available */ });
+
 // Transport control actions
 const startRecording = async () => {
     try {
@@ -138,19 +148,26 @@ const Sidebar = {
             (s) => s.name === 'Query Explorer',
         );
 
-        // Find the first non-overview section to use as samplers header
+        // Separate top-level sections from sampler sections
         const overviewSection = regularSections.find((s) => s.name === 'Overview');
-        const samplerSections = regularSections.filter((s) => s.name !== 'Overview');
+        const hardwareSection = regularSections.find((s) => s.name === 'Hardware');
+        const samplerSections = regularSections.filter(
+            (s) => s.name !== 'Overview' && s.name !== 'Hardware',
+        );
+
+        const topSections = [overviewSection, hardwareSection].filter(Boolean);
 
         return m('div#sidebar', [
-            // Overview section first (if exists)
-            overviewSection && m(
-                m.route.Link,
-                {
-                    class: attrs.activeSection === overviewSection ? 'selected' : '',
-                    href: overviewSection.route,
-                },
-                overviewSection.name,
+            // Overview and Hardware sections first
+            topSections.map((section) =>
+                m(
+                    m.route.Link,
+                    {
+                        class: attrs.activeSection === section ? 'selected' : '',
+                        href: section.route,
+                    },
+                    section.name,
+                ),
             ),
 
             // Samplers label
@@ -786,6 +803,351 @@ const QueryExplorer = {
     },
 };
 
+// Inferno colormap stops for topology heatmapping
+const INFERNO_STOPS = [
+    [0, 0, 4], [27, 12, 65], [74, 12, 107], [120, 28, 109],
+    [165, 44, 96], [207, 68, 70], [237, 105, 37], [251, 155, 6],
+    [247, 209, 61], [252, 255, 164],
+];
+
+function infernoColor(t) {
+    t = Math.max(0, Math.min(1, t));
+    const idx = t * (INFERNO_STOPS.length - 1);
+    const i = Math.floor(idx);
+    const f = idx - i;
+    if (i >= INFERNO_STOPS.length - 1) {
+        const c = INFERNO_STOPS[INFERNO_STOPS.length - 1];
+        return `rgb(${c[0]},${c[1]},${c[2]})`;
+    }
+    const c0 = INFERNO_STOPS[i];
+    const c1 = INFERNO_STOPS[i + 1];
+    const r = Math.round(c0[0] + f * (c1[0] - c0[0]));
+    const g = Math.round(c0[1] + f * (c1[1] - c0[1]));
+    const b = Math.round(c0[2] + f * (c1[2] - c0[2]));
+    return `rgb(${r},${g},${b})`;
+}
+
+// Build topology hierarchy from flat cpu_topology array
+function buildTopologyHierarchy(cpuTopology) {
+    const packages = new Map();
+    for (const entry of cpuTopology) {
+        if (!packages.has(entry.package)) packages.set(entry.package, new Map());
+        const pkg = packages.get(entry.package);
+        if (!pkg.has(entry.die)) pkg.set(entry.die, new Map());
+        const die = pkg.get(entry.die);
+        if (!die.has(entry.core)) die.set(entry.core, []);
+        die.get(entry.core).push(entry);
+    }
+    return packages;
+}
+
+// Map CPU IDs to L3 cache groups
+function buildL3Groups(caches) {
+    const l3 = caches?.find((c) => c.level === 'L3');
+    if (!l3 || !l3.shared_cpus) return null;
+    // Build a map: cpuId -> group index
+    const cpuToGroup = new Map();
+    l3.shared_cpus.forEach((cpus, idx) => {
+        for (const cpu of cpus) {
+            cpuToGroup.set(cpu, idx);
+        }
+    });
+    return { groups: l3.shared_cpus, cpuToGroup, size: l3.size };
+}
+
+// Format bytes to human-readable
+function formatBytes(bytes) {
+    if (bytes == null) return null;
+    if (bytes >= 1024 * 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024 * 1024)).toFixed(1)} TB`;
+    if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+    if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${bytes} B`;
+}
+
+// Hardware topology visualization component
+const HardwareTopology = {
+    oninit(vnode) {
+        vnode.state.cpuValues = new Map();
+        vnode.state.selectedMetricIdx = 0;
+        vnode.state.loading = false;
+        vnode.state.minVal = 0;
+        vnode.state.maxVal = 1;
+    },
+
+    oncreate(vnode) {
+        this.fetchCpuValues(vnode);
+    },
+
+    async fetchCpuValues(vnode) {
+        const metrics = vnode.attrs.metadata?.topology_metrics;
+        if (!metrics || !metrics[vnode.state.selectedMetricIdx]) return;
+
+        const metric = metrics[vnode.state.selectedMetricIdx];
+        vnode.state.loading = true;
+        m.redraw();
+
+        try {
+            const meta = cachedMetadata || (await fetchMetadata());
+            const time = meta.maxTime;
+            const result = await m.request({
+                method: 'GET',
+                url: `/api/v1/query?query=${encodeURIComponent(metric.query)}&time=${time}`,
+                withCredentials: true,
+                background: true,
+            });
+
+            const cpuValues = new Map();
+            if (result?.status === 'success' && result.data?.result) {
+                for (const item of result.data.result) {
+                    const cpuId = parseInt(item.metric?.id);
+                    const value = parseFloat(item.value?.[1]);
+                    if (!isNaN(cpuId) && !isNaN(value)) {
+                        cpuValues.set(cpuId, value);
+                    }
+                }
+            }
+
+            vnode.state.cpuValues = cpuValues;
+
+            // Compute min/max for normalization
+            if (metric.max != null) {
+                vnode.state.minVal = 0;
+                vnode.state.maxVal = metric.max;
+            } else if (cpuValues.size > 0) {
+                const values = [...cpuValues.values()];
+                vnode.state.minVal = Math.min(...values);
+                vnode.state.maxVal = Math.max(...values);
+            }
+        } catch (e) {
+            // ignore fetch errors
+        }
+
+        vnode.state.loading = false;
+        m.redraw();
+    },
+
+    view(vnode) {
+        if (!systemInfo || !systemInfo.cpu_topology || systemInfo.cpu_topology.length === 0) {
+            return m('div.hw-topology.hw-unavailable', [
+                m('p', 'Hardware topology information is not available for this recording.'),
+            ]);
+        }
+
+        const metrics = vnode.attrs.metadata?.topology_metrics || [];
+        const selectedMetric = metrics[vnode.state.selectedMetricIdx];
+        const hierarchy = buildTopologyHierarchy(systemInfo.cpu_topology);
+        const l3Info = buildL3Groups(systemInfo.caches);
+        const { cpuValues, minVal, maxVal } = vnode.state;
+
+        const normalize = (val) => {
+            if (maxVal === minVal) return 0.5;
+            return (val - minVal) / (maxVal - minVal);
+        };
+
+        const formatValue = (val) => {
+            if (selectedMetric?.unit === 'percentage') return `${(val * 100).toFixed(1)}%`;
+            if (val >= 1000000) return `${(val / 1000000).toFixed(2)}M`;
+            if (val >= 1000) return `${(val / 1000).toFixed(2)}K`;
+            return val.toFixed(2);
+        };
+
+        // Render a single CPU thread cell
+        const renderThread = (entry) => {
+            const val = cpuValues.get(entry.cpu);
+            const color = val != null ? infernoColor(normalize(val)) : 'var(--bg-tertiary)';
+            const tooltip = val != null
+                ? `CPU ${entry.cpu} (Core ${entry.core}): ${formatValue(val)}`
+                : `CPU ${entry.cpu} (Core ${entry.core}): no data`;
+
+            return m('div.hw-thread', {
+                style: { backgroundColor: color },
+                title: tooltip,
+                'data-cpu': entry.cpu,
+            });
+        };
+
+        // Render cores, grouped by L3 cache if available
+        const renderDie = (dieId, cores) => {
+            const coreEntries = [...cores.entries()].sort((a, b) => a[0] - b[0]);
+
+            if (l3Info) {
+                // Group cores by L3 cache instance
+                const l3Groups = new Map();
+                for (const [coreId, threads] of coreEntries) {
+                    const firstCpu = threads[0]?.cpu;
+                    const groupIdx = firstCpu != null ? l3Info.cpuToGroup.get(firstCpu) : null;
+                    const key = groupIdx ?? 'unknown';
+                    if (!l3Groups.has(key)) l3Groups.set(key, []);
+                    l3Groups.get(key).push([coreId, threads]);
+                }
+
+                return m('div.hw-die', { 'data-die': dieId },
+                    [...l3Groups.entries()].map(([groupKey, groupCores]) =>
+                        m('div.hw-l3-group', { 'data-label': l3Info.size ? `L3 ${l3Info.size}` : 'L3' },
+                            m('div.hw-cores',
+                                groupCores.map(([coreId, threads]) =>
+                                    m('div.hw-core', { 'data-core': coreId }, [
+                                        m('span.hw-core-label', `C${coreId}`),
+                                        threads.sort((a, b) => a.cpu - b.cpu).map(renderThread),
+                                    ]),
+                                ),
+                            ),
+                        ),
+                    ),
+                );
+            }
+
+            // No L3 info — flat core grid
+            return m('div.hw-die', { 'data-die': dieId },
+                m('div.hw-cores',
+                    coreEntries.map(([coreId, threads]) =>
+                        m('div.hw-core', { 'data-core': coreId }, [
+                            m('span.hw-core-label', `C${coreId}`),
+                            threads.sort((a, b) => a.cpu - b.cpu).map(renderThread),
+                        ]),
+                    ),
+                ),
+            );
+        };
+
+        // Determine NUMA nodes for each package
+        const pkgNuma = (dies) => {
+            const nodes = new Set();
+            for (const [, cores] of dies) {
+                for (const [, threads] of cores) {
+                    for (const t of threads) {
+                        if (t.numa_node != null) nodes.add(t.numa_node);
+                    }
+                }
+            }
+            return [...nodes].sort((a, b) => a - b);
+        };
+
+        // System info cards
+        const infoItems = [
+            systemInfo.cpu_model && { label: 'CPU', value: systemInfo.cpu_model },
+            systemInfo.cpus && { label: 'Logical CPUs', value: String(systemInfo.cpus) },
+            systemInfo.cores && { label: 'Cores', value: String(systemInfo.cores) },
+            systemInfo.packages && { label: 'Sockets', value: String(systemInfo.packages) },
+            systemInfo.memory_total_bytes && { label: 'Memory', value: formatBytes(systemInfo.memory_total_bytes) },
+            systemInfo.numa_nodes && { label: 'NUMA Nodes', value: String(systemInfo.numa_nodes) },
+            systemInfo.kernel && { label: 'Kernel', value: systemInfo.kernel.split(' ').slice(0, 3).join(' ') },
+            systemInfo.hostname && { label: 'Hostname', value: systemInfo.hostname },
+        ].filter(Boolean);
+
+        // Device locality
+        const numaDevices = new Map();
+        for (const nic of (systemInfo.nics || [])) {
+            const node = nic.numa_node ?? 'none';
+            if (!numaDevices.has(node)) numaDevices.set(node, []);
+            numaDevices.get(node).push({ type: 'NIC', ...nic });
+        }
+        for (const gpu of (systemInfo.gpus || [])) {
+            const node = gpu.numa_node ?? 'none';
+            if (!numaDevices.has(node)) numaDevices.set(node, []);
+            numaDevices.get(node).push({ type: 'GPU', ...gpu });
+        }
+
+        return m('div.hw-topology', [
+            // System info summary
+            infoItems.length > 0 && m('div.hw-system-info',
+                infoItems.map((item) =>
+                    m('div.hw-info-item', [
+                        m('span.hw-info-label', item.label),
+                        m('span.hw-info-value', item.value),
+                    ]),
+                ),
+            ),
+
+            // Metric selector + color legend
+            m('div.hw-controls', [
+                metrics.length > 0 && m('div.hw-metric-selector', [
+                    m('label', 'Metric: '),
+                    m('select', {
+                        value: vnode.state.selectedMetricIdx,
+                        onchange: (e) => {
+                            vnode.state.selectedMetricIdx = parseInt(e.target.value);
+                            this.fetchCpuValues(vnode);
+                        },
+                    },
+                        metrics.map((metric, idx) =>
+                            m('option', { value: idx }, metric.label),
+                        ),
+                    ),
+                    vnode.state.loading && m('span.hw-loading', 'Loading...'),
+                ]),
+
+                // Color legend
+                cpuValues.size > 0 && m('div.hw-color-legend', [
+                    m('span.legend-label', formatValue(minVal)),
+                    m('svg.legend-bar', { width: 200, height: 12 }, [
+                        m('defs', m('linearGradient', { id: 'inferno-grad', x1: '0%', x2: '100%' },
+                            INFERNO_STOPS.map((c, i) =>
+                                m('stop', {
+                                    offset: `${(i / (INFERNO_STOPS.length - 1)) * 100}%`,
+                                    'stop-color': `rgb(${c[0]},${c[1]},${c[2]})`,
+                                }),
+                            ),
+                        )),
+                        m('rect', { width: 200, height: 12, rx: 2, fill: 'url(#inferno-grad)' }),
+                    ]),
+                    m('span.legend-label', formatValue(maxVal)),
+                ]),
+            ]),
+
+            // CPU topology diagram
+            m('div.hw-packages',
+                [...hierarchy.entries()]
+                    .sort((a, b) => a[0] - b[0])
+                    .map(([pkgId, dies]) => {
+                        const numaNodes = pkgNuma(dies);
+                        return m('div.hw-package', { 'data-pkg': pkgId }, [
+                            m('div.hw-package-header', [
+                                m('span', `Package ${pkgId}`),
+                                numaNodes.length > 0 && m('span.hw-numa-badge',
+                                    `NUMA ${numaNodes.join(', ')}`,
+                                ),
+                            ]),
+                            m('div.hw-dies',
+                                [...dies.entries()]
+                                    .sort((a, b) => a[0] - b[0])
+                                    .map(([dieId, cores]) => renderDie(dieId, cores)),
+                            ),
+                        ]);
+                    }),
+            ),
+
+            // Device locality
+            numaDevices.size > 0 && m('div.hw-devices',
+                [...numaDevices.entries()]
+                    .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+                    .map(([node, devices]) =>
+                        m('div.hw-numa-group', { 'data-numa': node }, [
+                            m('div.hw-numa-group-header',
+                                node === 'none' ? 'Devices' : `NUMA Node ${node}`,
+                            ),
+                            devices.map((dev) =>
+                                m('div.hw-device-card', [
+                                    m('div.hw-device-name',
+                                        dev.type === 'GPU'
+                                            ? `GPU: ${dev.name || 'Unknown'}`
+                                            : `NIC: ${dev.name}`,
+                                    ),
+                                    m('div.hw-device-detail', [
+                                        dev.vendor && `${dev.vendor}`,
+                                        dev.speed && ` | ${dev.speed} Mbps`,
+                                        dev.driver && ` | ${dev.driver}`,
+                                        dev.memory_bytes && ` | ${formatBytes(dev.memory_bytes)}`,
+                                    ].filter(Boolean).join('')),
+                                ]),
+                            ),
+                        ]),
+                    ),
+            ),
+        ]);
+    },
+};
+
 const SectionContent = {
     view({ attrs }) {
         const sectionRoute = attrs.section.route;
@@ -794,6 +1156,22 @@ const SectionContent = {
         if (attrs.section.name === 'Query Explorer') {
             return m('div#section-content', [
                 m(QueryExplorer),
+            ]);
+        }
+
+        // Special handling for hardware topology section
+        if (attrs.section.route === '/hardware') {
+            return m('div#section-content.hardware-section', [
+                m('h1.section-title', attrs.section.name),
+                m(HardwareTopology, {
+                    metadata: attrs.metadata || {},
+                }),
+                m(
+                    'div#groups',
+                    attrs.groups.map((group) =>
+                        m(Group, { ...group, sectionRoute }),
+                    ),
+                ),
             ]);
         }
 
