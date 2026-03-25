@@ -887,22 +887,25 @@ const HardwareTopology = {
         m.redraw();
 
         try {
-            const meta = cachedMetadata || (await fetchMetadata());
-            const time = meta.maxTime;
-            const result = await m.request({
-                method: 'GET',
-                url: `/api/v1/query?query=${encodeURIComponent(metric.query)}&time=${time}`,
-                withCredentials: true,
-                background: true,
-            });
+            // Use a range query and take the last value per CPU,
+            // since irate() needs multiple data points in the range window.
+            const result = await executePromQLRangeQuery(metric.query);
 
             const cpuValues = new Map();
             if (result?.status === 'success' && result.data?.result) {
-                for (const item of result.data.result) {
-                    const cpuId = parseInt(item.metric?.id);
-                    const value = parseFloat(item.value?.[1]);
-                    if (!isNaN(cpuId) && !isNaN(value)) {
-                        cpuValues.set(cpuId, value);
+                for (const series of result.data.result) {
+                    const cpuId = parseInt(series.metric?.id);
+                    if (isNaN(cpuId)) continue;
+                    // Take the last non-NaN value in the series
+                    const values = series.values;
+                    if (values && values.length > 0) {
+                        for (let i = values.length - 1; i >= 0; i--) {
+                            const val = parseFloat(values[i][1]);
+                            if (!isNaN(val)) {
+                                cpuValues.set(cpuId, val);
+                                break;
+                            }
+                        }
                     }
                 }
             }
