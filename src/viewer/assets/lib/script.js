@@ -233,7 +233,7 @@ const StatusBar = {
 // Main component
 const Main = {
     view({
-        attrs: { activeSection, groups, sections, source, version, filename, interval, filesize },
+        attrs: { activeSection, groups, sections, source, version, filename, interval, filesize, metadata },
     }) {
         return m(
             'div',
@@ -254,6 +254,7 @@ const Main = {
                 m(SectionContent, {
                     section: activeSection,
                     groups,
+                    metadata,
                 }),
             ]),
         );
