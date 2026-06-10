@@ -1,0 +1,27 @@
+mode=file  n=293
+  parse-validity   : 100.0%
+  exec-success     : 100.0%
+  semantic-equiv   : 100.0%   <- headline
+  metric-selection : 100.0%
+  NO_METRIC P/R    : 100.0% / 100.0%
+  per-intent semantic-equiv:
+    average   : 100.0%  (9/9)
+    by_index  : 100.0%  (24/24)
+    by_label  : 100.0%  (19/19)
+    efficiency: 100.0%  (9/9)
+    filter    : 100.0%  (19/19)
+    lookup    : 100.0%  (42/42)
+    no_metric : 100.0%  (44/44)
+    peak      : 100.0%  (17/17)
+    quantile  : 100.0%  (16/16)
+    ratio     : 100.0%  (45/45)
+    share     : 100.0%  (16/16)
+    total     : 100.0%  (33/33)
+mode=file  n=15
+  parse-validity   : 100.0%
+  exec-success     : 100.0%
+  semantic-equiv   :  40.0%   <- headline
+  metric-selection :  86.7%
+  NO_METRIC P/R    :   0.0% / 100.0%
+  per-intent semantic-equiv:
+    dashboard :  40.0%  (6/15)

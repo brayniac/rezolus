@@ -73,6 +73,9 @@ def main():
     ap.add_argument("--out", default="data")
     ap.add_argument("--paraphrases", type=int, default=6)
     ap.add_argument("--ratios", type=int, default=60)
+    ap.add_argument("--primary-heldout-frac", type=float, default=0.15,
+                    help="fraction of primary metrics held out to test (0 = ship: train on all, "
+                         "eval split becomes example-level)")
     args = ap.parse_args()
 
     pdir = Path(args.parquet_dir)
@@ -84,7 +87,8 @@ def main():
     prim_schema = str(out / "metrics.json")
     dump_schema(str(pdir / args.primary), prim_schema)
     gen(prim_schema, str(pdir / args.primary), str(out), args.paraphrases, args.ratios,
-        extra=["--heldout-out", heldout])
+        extra=["--heldout-out", heldout,
+               "--heldout-metric-frac", str(args.primary_heldout_frac)])
 
     train = load(out / "train.jsonl")
     val = load(out / "val.jsonl")

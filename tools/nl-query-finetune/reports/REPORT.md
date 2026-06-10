@@ -6,14 +6,19 @@ the viewer's Natural Query tab. Run on an RTX 4090 (24 GB).
 
 ## TL;DR
 
-- **Held-out *metric* generalization (test.jsonl, execution-based semantic-equiv): 98.7%** (v2).
-- Built via two iterations; the **judge-and-augment loop** (run v1 → judge failures
-  with the oracle → targeted augmentation → v2) lifted the weak intent
-  (`efficiency`) from 55.6% → 73.3% and added the heatmap query shape (`by_index`,
-  100% on unseen metrics).
-- Deliverable model: `checkpoints/nl-query-0.5b-v2` → `exports/nl-query-0.5b-onnx`
-  (fp32 + `onnx/model_q4.onnx`). Runtime prompt format unchanged from
-  `PROMPT_FORMAT.md`.
+- **Deliverable: the all-metrics ship model** `checkpoints/nl-query-0.5b-ship` →
+  `exports/nl-query-0.5b-onnx` (fp32 + `onnx/model_q4.onnx`). Trained on 100% of
+  known metrics; **in-vocab held-out test (unseen phrasings) = 100.0%** semantic-equiv
+  across every intent. Runtime prompt format unchanged from `PROMPT_FORMAT.md`.
+- **Generalization to *unseen future* metrics = 98.7%** (measured on a separate
+  metric-held-out run; this is the lower bound for metrics added in later Rezolus
+  versions, not production accuracy on known metrics).
+- Reached via a **judge-and-augment loop** (run model → judge failures with the
+  oracle → targeted augmentation): lifted the weak intent `efficiency` 55.6% →
+  73.3% on held-out metrics and added the heatmap query shape (`by_index`), then
+  training on the full vocabulary closed the rest (efficiency 100% in-vocab).
+- **Output grounding** (constrained-decoding analogue) snaps hallucinated metric
+  names to the nearest provided card — zero-regression robustness for the viewer.
 
 ## Pipeline integrity (unchanged guarantee)
 
@@ -63,9 +68,12 @@ Execution-based, never string match. Sanity on val:
 - `--mode corrupt` collapses semantic-equiv to **13.1%** (NO_METRIC recall → 0%) —
   the harness discriminates.
 
-## Results — v1 → v2 (judge-and-augment)
+## Results
 
-Held-out **test.jsonl** (metrics never seen in training), execution semantic-equiv:
+### Generalization to unseen metrics — v1 → v2 (judge-and-augment)
+
+Held-out **test.jsonl** (metrics *never seen in training*), execution semantic-equiv.
+This estimates performance on metrics added in *future* Rezolus versions.
 
 | intent | v1 (8808 train) | v2 (9767 train) |
 |---|---|---|
@@ -78,7 +86,23 @@ Held-out **test.jsonl** (metrics never seen in training), execution semantic-equ
 | filter | 96.4% | 94.3% |
 | exec-success / metric-selection | 98.1 / 96.9 | 99.4 / 98.9 |
 
-dashboard_eval (real dashboards): 46.7% semantic-equiv, **metric-selection ~100%**
+### Shipping model — trained on 100% of known metrics
+
+`checkpoints/nl-query-0.5b-ship` (train=10550; no metric hold-out). Evaluated on an
+**example-level** held-out test (293 *unseen phrasings* of in-vocab metrics,
+leakage-guarded):
+
+| metric | ship |
+|---|---|
+| **semantic-equiv (headline)** | **100.0%** |
+| parse / exec / metric-selection / NO_METRIC P/R | 100% / 100% / 100% / 100% |
+| per-intent (efficiency, by_index, ratio, share, peak, …) | all **100%** |
+
+Training on the full vocabulary closes the held-out efficiency gap (efficiency
+55.6%→73.3%→**100% in-vocab**). The 98.7% above remains the estimate for genuinely
+unseen future metrics. (Output grounding leaves this 100% unchanged — nothing to fix.)
+
+dashboard_eval (real dashboards): 40–47% semantic-equiv, **metric-selection ~87–100%**
 — directional only (terse labels are ambiguous: one NL → several filtered golds,
 e.g. "softirqs handled per second" maps to both `kind="sched"` and `kind="timer"`).
 Weigh the held-out test, not this number.
@@ -114,7 +138,9 @@ chart selection viewer-side from `(metric_type, resultType, #series, has-index-l
 
 ## Export & viewer integration
 
-- **Checkpoint:** `checkpoints/nl-query-0.5b-v2` (full FT of Qwen2.5-Coder-0.5B).
+- **Checkpoint:** `checkpoints/nl-query-0.5b-ship` (full FT of Qwen2.5-Coder-0.5B,
+  trained on all known metrics). The metric-held-out `…-v2` checkpoint is kept for
+  the generalization number above.
 - **ONNX:** `exports/nl-query-0.5b-onnx/` (optimum, task `text-generation-with-past`;
   ONNX-vs-torch max diff ~1e-5). q4: `onnx/model_q4.onnx` (weight-only int4 on the
   transformer MatMuls; the ~700 MB `.data` is the fp32 embedding/lm_head table —
@@ -126,18 +152,21 @@ chart selection viewer-side from `(metric_type, resultType, #series, has-index-l
   - `nq_prompt.js`: mirror `PROMPT_FORMAT.md` byte-for-byte (system string + card
     format `name (type; labels: a,b) — desc`). Unchanged this run.
 
-### Parity (ONNX vs torch, on held-out test.jsonl, n=466)
+### Parity (ONNX vs torch)
 
-| backend | semantic-equiv | exec-success | metric-selection |
-|---|---|---|---|
-| torch (bf16, GPU) | **98.7%** | 99.4% | 98.9% |
-| ONNX fp32 (CPU) | **98.7%** | 99.4% | 98.9% |
-| ONNX q4 (CPU) | **95.3%** | 97.4% | 97.2% |
+Shipping model, in-vocab test (n=293):
 
-ONNX fp32 is **bit-for-bit equivalent** to torch (same 98.7%). q4 costs ~3.4 pts
-(98.7→95.3) — the expected 4-bit trade-off; recover it with **q4f16** or ship fp32
-/ q8 if the browser budget allows. Reproduce:
-`eval/predict.py --backend onnx [--onnx-file onnx/model_q4.onnx]` → `eval/evaluate.py --mode file`.
+| backend | semantic-equiv | exec-success |
+|---|---|---|
+| torch (bf16, GPU) | **100.0%** | 100% |
+| ONNX fp32 (CPU) | **100.0%** | 100% |
+| ONNX q4 (CPU) | **98.6%** | 99.7% |
+
+ONNX fp32 is **bit-for-bit equivalent** to torch. q4 costs ~1.4 pts here (on the
+harder metric-held-out set the q4 gap was ~3.4 pts: 98.7→95.3) — the expected 4-bit
+trade-off; recover with **q4f16** or ship fp32/q8 if the browser budget allows.
+Reproduce: `eval/predict.py --backend onnx [--onnx-file onnx/model_q4.onnx]` →
+`eval/evaluate.py --mode file`.
 
 ## Name grounding (the efficiency residual)
 
@@ -164,13 +193,12 @@ the retrieved card names). The acronym→composition residual is the **1.5B** le
 
 ### Held-out metrics: eval-only, not for the shipping model
 
-Holding metrics out measures generalization to *future* metrics — keep it as a
-**benchmark**. But the **shipping** model should train on **100% of known
-metrics** (no hold-out); today's pipeline handicaps the artifact by holding them
-out. Recommended: ship an all-metrics model (`build_dataset.py` with
-`--heldout-metric-frac 0`), and keep the held-out split only to report the
-generalization lower bound (the 98.7% here). The cgroup-IPC misses are held-out
-artifacts; in-vocabulary they train fine (non-cgroup IPC already works).
+Holding metrics out measures generalization to *future* metrics — kept as a
+**benchmark** (the 98.7% above). But the **shipping** model trains on **100% of
+known metrics** (no hold-out): `build_dataset.py --primary-heldout-frac 0`, which
+switches the eval split to example-level (unseen phrasings) so the artifact still
+has a leakage-free test. This is the `…-ship` model above (100% in-vocab). The
+cgroup-IPC misses were held-out artifacts; in-vocabulary they train fine.
 
 ## Caveats / out of scope
 

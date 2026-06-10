@@ -125,8 +125,13 @@ def main():
     # appear anywhere — not as a gold, a composition operand, OR a distractor.
     cards_by_name = {n: cards_by_name[n] for n in names}
 
-    # Held-out metrics → test only (generalization to unseen metrics).
-    heldout = set(rng.sample(names, max(1, int(len(names) * args.heldout_metric_frac))))
+    # Held-out metrics → test only (generalization to unseen metrics). With
+    # --heldout-metric-frac 0 nothing is held out (train on every metric — the
+    # shipping setup); the eval split is then by example instead (see below).
+    if args.heldout_metric_frac > 0:
+        heldout = set(rng.sample(names, max(1, int(len(names) * args.heldout_metric_frac))))
+    else:
+        heldout = set()
     if args.heldout_out:
         json.dump(sorted(heldout), open(args.heldout_out, "w"))
 
@@ -197,10 +202,13 @@ def main():
     train, val, test = [], [], []
     for rec in records:
         held = rec.pop("_held")
-        if held:
+        if held:                              # held-out metric → test (generalization)
             test.append(rec)
-        else:
+        elif heldout:                         # metric-holdout mode: val/train split
             (val if rng.random() < 0.1 else train).append(rec)
+        else:                                 # no metric holdout: example-level 80/10/10
+            r = rng.random()
+            (test if r < 0.1 else val if r < 0.2 else train).append(rec)
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
