@@ -2657,45 +2657,75 @@ main {
 /* ── Natural Query ─────────────────────────────────────────────────── */
 
 .natural-query .query-input-section {
-    margin-bottom: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.natural-query .query-gpu-note {
+    margin: 0.25rem 0 0.75rem;
+    font-size: var(--font-size-sm);
+    color: var(--fg-muted);
 }
 
 .natural-query .query-input-wrapper {
     display: flex;
-    gap: 0.5rem;
-    align-items: flex-start;
+    gap: 0.75rem;
+    align-items: stretch;
 }
 
 .natural-query .natural-query-input {
     flex: 1;
-    padding: 0.5rem;
-    font-family: inherit;
-    font-size: 0.95rem;
-    border: 1px solid var(--border-color, #ddd);
-    border-radius: 4px;
-    background: var(--bg-secondary, #fff);
-    color: var(--text-primary, #111);
+    padding: 0.85rem 1rem;
+    font-family: var(--font-mono);
+    font-size: 1rem;
+    line-height: 1.4;
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    color: var(--fg);
+    transition: border-color var(--transition-base), box-shadow var(--transition-base);
+}
+
+.natural-query .natural-query-input::placeholder {
+    color: var(--fg-muted);
+}
+
+.natural-query .natural-query-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-subtle);
 }
 
 .natural-query .execute-btn {
-    padding: 0.5rem 1rem;
-    background: var(--accent, #2563eb);
-    color: white;
+    padding: 0.85rem 1.5rem;
+    background: linear-gradient(180deg, var(--accent) 0%, var(--accent-emphasis) 100%);
+    color: var(--bg-void);
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    font-weight: 700;
     white-space: nowrap;
+    box-shadow: 0 2px 8px var(--accent-muted);
+    transition: all var(--transition-base);
+}
+
+.natural-query .execute-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px var(--accent-muted), 0 0 24px var(--accent-glow);
 }
 
 .natural-query .execute-btn:disabled {
-    opacity: 0.5;
+    background: var(--bg-tertiary);
+    color: var(--fg-muted);
     cursor: not-allowed;
+    box-shadow: none;
 }
 
 .natural-query .query-status {
-    padding: 0.5rem;
-    font-size: 0.9rem;
-    color: var(--text-secondary, #666);
+    padding: 0.5rem 0;
+    font-size: var(--font-size-sm);
+    color: var(--fg-secondary);
 }
 
 .natural-query .status-spinner {
@@ -2712,27 +2742,38 @@ main {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.5rem;
-    background: var(--bg-secondary, #f8f8f8);
-    border-radius: 4px;
-    font-family: 'Fira Code', monospace;
+    padding: 0.75rem 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    font-family: var(--font-mono);
     font-size: 0.9rem;
 }
 
 .natural-query .promql-display code {
     flex: 1;
     overflow-x: auto;
+    color: var(--fg);
+    white-space: pre;
 }
 
 .natural-query .copy-btn,
 .natural-query .edit-btn {
-    padding: 0.25rem 0.5rem;
-    border: 1px solid var(--border-color, #ddd);
-    border-radius: 3px;
-    background: var(--bg-primary, #fff);
+    padding: 0.3rem 0.6rem;
+    border: 1px solid var(--border-default);
+    border-radius: 4px;
+    background: var(--bg-elevated);
+    color: var(--fg-secondary);
     cursor: pointer;
-    font-size: 0.8rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
     white-space: nowrap;
+}
+
+.natural-query .copy-btn:hover,
+.natural-query .edit-btn:hover {
+    color: var(--fg);
+    border-color: var(--border-emphasis);
 }
 
 .natural-query .promql-edit {
@@ -2741,30 +2782,40 @@ main {
 
 .natural-query .promql-edit-input {
     width: 100%;
-    padding: 0.5rem;
-    font-family: 'Fira Code', monospace;
+    box-sizing: border-box;
+    padding: 0.75rem 1rem;
+    font-family: var(--font-mono);
     font-size: 0.9rem;
-    border: 1px solid var(--border-color, #ddd);
-    border-radius: 4px;
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    color: var(--fg);
     resize: vertical;
+}
+
+.natural-query .promql-edit-input:focus {
+    outline: none;
+    border-color: var(--accent);
 }
 
 .natural-query .apply-edit-btn {
     margin-top: 0.5rem;
-    padding: 0.25rem 0.75rem;
-    background: var(--accent, #2563eb);
-    color: white;
+    padding: 0.4rem 0.9rem;
+    background: var(--accent);
+    color: var(--bg-void);
     border: none;
-    border-radius: 3px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-weight: 700;
     cursor: pointer;
 }
 
 .natural-query .chart-container {
-    margin-top: 1rem;
+    margin-top: 1.25rem;
 }
 
 .natural-query .model-loading {
     padding: 1rem;
     text-align: center;
-    color: var(--text-secondary, #666);
+    color: var(--fg-secondary);
 }

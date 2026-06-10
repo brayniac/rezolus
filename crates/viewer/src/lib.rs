@@ -338,9 +338,12 @@ impl Viewer {
         }
 
         let obj = serde_json::Map::from_iter([
-            ("metrics".into(), serde_json::Value::Array(
-                metrics.into_iter().map(serde_json::Value::String).collect(),
-            )),
+            (
+                "metrics".into(),
+                serde_json::Value::Array(
+                    metrics.into_iter().map(serde_json::Value::String).collect(),
+                ),
+            ),
             ("metric_types".into(), serde_json::Value::Object(types)),
         ]);
         serde_json::to_string(&obj).unwrap_or_default()
@@ -552,12 +555,12 @@ impl WasmCaptureRegistry {
             .map(|v| v.query_range(query, start, end, step))
     }
 
-   pub fn query(&self, capture: &str, query: &str, time: f64) -> Result<String, JsValue> {
+    pub fn query(&self, capture: &str, query: &str, time: f64) -> Result<String, JsValue> {
         self.require_slot(capture).map(|v| v.query(query, time))
     }
 
     pub fn metrics_json(&self, capture: &str) -> Option<String> {
-        self.slot(capture).and_then(|v| Some(v.metrics_json()))
+        self.slot(capture).map(|v| v.metrics_json())
     }
 
     /// Initialise ServiceExtension templates for the given capture.  Mirrors

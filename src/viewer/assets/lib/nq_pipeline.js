@@ -1,83 +1,71 @@
-// pipeline.js — orchestrates embed → search → generate → TSDB query
+// nq_pipeline.js — orchestrates embed → search → generate to turn a natural
+// language question into a PromQL string. Executing the PromQL (deriving the
+// time window, rendering a chart) is the caller's job, via the same
+// executePromQLRangeQuery path the Query Explorer uses.
 
 import { queryEmbed, buildIndex, reset as resetEngine } from './nq_engine.js';
 import { search, keywordSearch } from './nq_search.js';
 import { generate as llmGenerate, reset as resetLlm } from './nq_generate.js';
 import { buildPrompt, cleanOutput, looksLikePromQL } from './nq_prompt.js';
-import { getMetricNames, getMetricTypes, getSelectedNode } from './data.js';
-import { ViewerApi } from './viewer_api.js';
+import { getMetricNames, getMetricTypes } from './data.js';
 
 const MAX_RETRIES = 2;
+const TOP_K = 8;
 
 /**
- * Run the full NL→PromQL pipeline.
+ * Run the NL→PromQL pipeline.
  * @param {string} nlQuery - User's natural language question
  * @param {object} options
- * @param {function(string): void} options.onStatus - Callback for progress updates
- * @returns {{ promql: string, raw: string, error?: string, data?: object }}
+ * @param {number} [options.maxRetries] - Generation retries on invalid output
+ * @param {function(string): void} [options.onStatus] - Progress callback
+ * @returns {Promise<{ promql: string, raw: string }>}
  */
 export async function runPipeline(nlQuery, options = {}) {
     const { maxRetries = MAX_RETRIES, onStatus } = options;
     const emit = (msg) => { onStatus?.(msg); };
 
-    emit('Loading models…');
-
     const metricNames = getMetricNames();
     const metricTypes = getMetricTypes();
-    const nodeName = getSelectedNode();
 
-    // Build the embedding index (cached, idempotent)
+    if (!metricNames.length) {
+        throw new Error('No metrics available yet — load a recording first.');
+    }
+
+    // Build the embedding index (skipped when already built for this set).
+    emit('Loading models…');
     emit('Building metrics index…');
     await buildIndex(metricNames, metricTypes);
 
-    // Step 1: Embed the user query
+    // Embed the user query and find the most relevant metrics.
     const queryVector = await queryEmbed(nlQuery);
-
-    // Step 2: Similarity search
-    let topK = search(queryVector, 5);
-
-    // Fallback to keyword search if embeddings return nothing
+    let topK = search(queryVector, TOP_K);
     if (topK.length === 0) {
-        topK = keywordSearch(nlQuery, 5);
+        topK = keywordSearch(nlQuery, TOP_K);
     }
-
     if (topK.length === 0) {
         throw new Error('No matching metrics found. Try a different query.');
     }
 
-    // Step 3: Build prompt and generate PromQL
-    let rawOutput = '';
-    let promql = '';
-    let retries = 0;
-
+    // Generate PromQL, retrying (with a touch more temperature) if the output
+    // does not look like a valid query.
     emit('Generating query…');
-    while (retries <= maxRetries) {
-        const prompt = buildPrompt(topK, nlQuery, nodeName);
-        rawOutput = await llmGenerate(prompt, {
-            max_new_tokens: 256,
-            temperature: 0.1,
+    let raw = '';
+    let promql = '';
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        const messages = buildPrompt(topK, nlQuery);
+        raw = await llmGenerate(messages, {
+            maxNewTokens: 256,
+            temperature: attempt === 0 ? 0.1 : 0.4,
         });
-
-        promql = cleanOutput(rawOutput);
-
-        if (looksLikePromQL(promql)) {
-            break; // Valid PromQL
-        }
-
-        retries++;
+        promql = cleanOutput(raw);
+        if (looksLikePromQL(promql)) break;
     }
 
     if (!looksLikePromQL(promql)) {
-        throw new Error(`Failed to generate valid PromQL. Raw output: ${rawOutput}`);
+        throw new Error(`Could not generate valid PromQL. Model output: ${raw}`);
     }
 
-    // Step 4: Execute the PromQL via existing TSDB path
-    try {
-        const data = await ViewerApi.queryRange(promql, 0, 3600, 1);
-        return { promql, raw: rawOutput, data };
-    } catch (e) {
-        throw new Error(`Query error: ${e.message || 'unknown'}`);
-    }
+    return { promql, raw };
 }
 
 /**

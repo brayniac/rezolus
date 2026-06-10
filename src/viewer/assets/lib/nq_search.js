@@ -1,6 +1,6 @@
 // search.js — cosine similarity search over metric embedding index
 
-import { getIndex } from './engine.js';
+import { getIndex } from './nq_engine.js';
 
 /**
  * Compute cosine similarity between query vector and all indexed vectors.

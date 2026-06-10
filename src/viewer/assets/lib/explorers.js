@@ -100,7 +100,7 @@ const buildSingleSeriesData = (resultData) => {
 };
 
 /** Render a Chart component for a query result. */
-const renderQueryChart = (resultData, query, chartsState, format) => {
+export const renderQueryChart = (resultData, query, chartsState, format) => {
     if (!resultData || resultData.length === 0) return m('p', 'No data returned');
 
     const isMulti = resultData.length > 1;

@@ -122,6 +122,10 @@ export function configureMultiSeriesChart(chart) {
         grid: { ...baseOption.grid, top: String(CHART_GRID_TOP_WITH_LEGEND) },
         legend: {
             show: true,
+            // Paginate rather than wrap into the plot when there are many
+            // series (e.g. per-CPU query results); a wrapped 16-entry legend
+            // otherwise overlaps the chart.
+            type: series.length > 10 ? 'scroll' : 'plain',
             top: '42',
             right: '16',
             icon: 'roundRect',
