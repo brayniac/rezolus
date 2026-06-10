@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 
 
@@ -32,6 +33,61 @@ def prompt_messages(rec):
     if msgs and msgs[-1].get("role") == "assistant":
         return msgs[:-1]
     return msgs
+
+
+# PromQL functions / keywords that are NOT metric names (never snapped).
+_PROMQL_KW = {
+    "sum", "avg", "min", "max", "count", "count_values", "stddev", "stdvar",
+    "group", "topk", "bottomk", "quantile", "rate", "irate", "increase", "delta",
+    "idelta", "deriv", "predict_linear", "histogram_quantile", "abs", "ceil",
+    "floor", "round", "clamp", "clamp_min", "clamp_max", "exp", "ln", "log2",
+    "log10", "sqrt", "sgn", "vector", "scalar", "time", "timestamp", "by",
+    "without", "on", "ignoring", "group_left", "group_right", "offset", "and",
+    "or", "unless", "le", "inf", "nan", "bool",
+}
+_IDENT = re.compile(r"[A-Za-z_]\w*")
+_BRACES = re.compile(r"\{[^}]*\}")          # label filters — keys/values, not metrics
+
+
+def parse_allowed(messages):
+    """Metric names offered in the prompt's `Metrics:` block (the only legal names)."""
+    user = next((m["content"] for m in messages if m["role"] == "user"), "")
+    allowed = set()
+    for line in user.splitlines():
+        m = re.match(r"\s*([A-Za-z_]\w*)\s*\(", line)   # "  name (type; ...)"
+        if m:
+            allowed.add(m.group(1))
+    return allowed
+
+
+def ground_names(pred: str, allowed: set, cutoff: float = 0.8) -> str:
+    """Snap any metric identifier not in `allowed` to the nearest provided name.
+
+    This is the deployable form of constrained decoding: the model only sees a
+    fixed set of card names, so any identifier outside it (and outside the PromQL
+    keyword set, and not a label key/value) is a hallucination — replace it with
+    the closest legal name. Fixes copy-faithfulness errors like
+    cgroup_instructions -> cgroup_cpu_instructions. Conservative (cutoff 0.8) so
+    it never snaps a genuinely-different name.
+    """
+    import difflib
+    if not allowed or pred.strip() == "NO_METRIC":
+        return pred
+    masked = _BRACES.sub("{}", pred)            # ignore identifiers inside {label="v"}
+    spans = [(m.group(0), m.start(), m.end()) for m in _IDENT.finditer(masked)]
+    repl = {}
+    for tok, _s, e in spans:
+        if tok in _PROMQL_KW or tok in allowed or tok.isdigit():
+            continue
+        if e < len(masked) and masked[e] == "(":   # function call → not a metric
+            continue
+        near = difflib.get_close_matches(tok, allowed, n=1, cutoff=cutoff)
+        if near:
+            repl[tok] = near[0]
+    out = pred
+    for bad, good in repl.items():
+        out = re.sub(rf"\b{re.escape(bad)}\b", good, out)
+    return out
 
 
 def first_line(text: str) -> str:
@@ -54,6 +110,8 @@ def main():
                     help="ONNX backend: load this file (e.g. onnx/model_q4.onnx) for q4 parity")
     ap.add_argument("--max-new-tokens", type=int, default=64)
     ap.add_argument("--batch-size", type=int, default=16)
+    ap.add_argument("--ground-names", action="store_true",
+                    help="snap out-of-vocab metric identifiers to the nearest provided card name")
     args = ap.parse_args()
 
     import torch
@@ -113,8 +171,12 @@ def main():
                 eos_token_id=eos_ids,
             )
         gen = out[:, enc["input_ids"].shape[1]:]
-        for seq in tok.batch_decode(gen, skip_special_tokens=True):
-            preds.append(first_line(seq))
+        for r, seq in zip(records[i:i + args.batch_size],
+                          tok.batch_decode(gen, skip_special_tokens=True)):
+            p = first_line(seq)
+            if args.ground_names:
+                p = ground_names(p, parse_allowed(r["messages"]))
+            preds.append(p)
         print(f"  {min(i + args.batch_size, len(prompts))}/{len(prompts)}",
               file=sys.stderr)
 

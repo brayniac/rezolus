@@ -139,6 +139,39 @@ ONNX fp32 is **bit-for-bit equivalent** to torch (same 98.7%). q4 costs ~3.4 pts
 / q8 if the browser budget allows. Reproduce:
 `eval/predict.py --backend onnx [--onnx-file onnx/model_q4.onnx]` → `eval/evaluate.py --mode file`.
 
+## Name grounding (the efficiency residual)
+
+The v2 efficiency misses are on **held-out** metrics and split into two modes
+(probe: `eval/predict.py` failing cases):
+- **copy-faithfulness** — emits `cgroup_instructions` though `cgroup_cpu_instructions`
+  is in the prompt;
+- **acronym→composition** — "cgroup IPC"/"cpi" → wrong structure or `NO_METRIC`.
+
+A system-prompt nudge ("use names exactly; IPC = instructions/cycles"), with no
+retrain, recovered **0/4** (regressed 0): it changed the error mode (fewer
+`NO_METRIC`, better name copies) but didn't yield correct compositions →
+**capacity-bound, not promptable**. Moving the metric list into the system prompt
+would not help (the names are already in-prompt) and would break the stable system
+string + schema-agnostic design.
+
+**Deployable fix — output grounding** (`eval/predict.py: ground_names`,
+`--ground-names`): snap any emitted metric identifier not in the prompt's card set
+to the nearest provided name (difflib cutoff 0.8; PromQL keywords and `{...}` label
+keys excluded). On held-out test: 98.7% → **98.9%**, **1 fixed, 0 broken** — fixes
+the copy class with zero regressions. This is the practical form of constrained
+decoding and should be mirrored in `nq_generate.js` (a logit mask / post-snap over
+the retrieved card names). The acronym→composition residual is the **1.5B** lever.
+
+### Held-out metrics: eval-only, not for the shipping model
+
+Holding metrics out measures generalization to *future* metrics — keep it as a
+**benchmark**. But the **shipping** model should train on **100% of known
+metrics** (no hold-out); today's pipeline handicaps the artifact by holding them
+out. Recommended: ship an all-metrics model (`build_dataset.py` with
+`--heldout-metric-frac 0`), and keep the held-out split only to report the
+generalization lower bound (the 98.7% here). The cgroup-IPC misses are held-out
+artifacts; in-vocabulary they train fine (non-cgroup IPC already works).
+
 ## Caveats / out of scope
 
 - **Retrieval is viewer-side and NOT in this project.** For "A per B" / efficiency
