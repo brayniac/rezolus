@@ -90,6 +90,7 @@ def main():
         logging_steps=cfg.get("logging_steps", 20),
         load_best_model_at_end=cfg.get("load_best_model_at_end", True),
         metric_for_best_model=cfg.get("metric_for_best_model", "eval_loss"),
+        optim=cfg.get("optim", "adamw_torch"),  # e.g. adafactor to fit 1.5B full-FT in 24GB
         report_to=[],                        # no W&B/etc. on the training host
     )
 

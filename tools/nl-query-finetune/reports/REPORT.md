@@ -86,6 +86,29 @@ This estimates performance on metrics added in *future* Rezolus versions.
 | filter | 96.4% | 94.3% |
 | exec-success / metric-selection | 98.1 / 96.9 | 99.4 / 98.9 |
 
+### Capacity: 0.5B vs 1.5B (same metric-held-out split, n=466)
+
+| | 0.5B (v2) | 1.5B |
+|---|---|---|
+| **headline semantic-equiv** | 98.7% | **99.1%** |
+| **efficiency** | 73.3% (11/15) | **86.7%** (13/15) |
+| exec / metric-selection | 99.4 / 98.9 | 99.6 / 98.9 |
+| NO_METRIC P/R | 96.8 / 100 | 98.3 / 96.7 |
+| all other intents | 100% | 100% |
+| train time / params / size | 421 s / 0.5B / 1× | 1123 s / 1.5B / ~3× |
+
+The gain is **real but concentrated**: +0.4 on the headline, **+13 pts on the
+efficiency residual** (recovers 2 of 4 acronym→composition misses), at ~3× params,
+2.7× train time, ~2× browser size/latency, and a small NO_METRIC-recall trade. The
+1.5B's two remaining efficiency misses are "cgroup cpi" → `NO_METRIC` (one genuine
+acronym miss) and "numa miss rate" → miss/access vs our gold's miss/instruction (a
+gold-*definition* ambiguity, arguably not an error).
+
+**Recommendation: ship the 0.5B.** 98.7% generalization + 100% in-vocab at a
+fraction of the browser cost is the better trade; reserve the 1.5B
+(`train/config-1.5b.yaml`, adafactor to fit 24 GB) for the case where the
+efficiency-composition acronyms specifically matter.
+
 ### Shipping model — trained on 100% of known metrics
 
 `checkpoints/nl-query-0.5b-ship` (train=10550; no metric hold-out). Evaluated on an
