@@ -1,0 +1,20 @@
+# Phases 0–1 (schema dump, data generation) and the eval harness use the Python
+# standard library ONLY — they just shell out to the `rezolus` binary. No install
+# needed to run those locally.
+#
+# The deps below are for the TRAINING HOST (Phase 2 SFT + Phase 4 ONNX export),
+# i.e. the CUDA box. Pin as appropriate for your CUDA/toolchain.
+
+# --- training (Phase 2) ---
+torch>=2.3
+transformers>=4.44
+trl>=0.9
+datasets>=2.20
+accelerate>=0.33
+# flash-attn   # optional; install per your CUDA; speeds up training
+
+# --- export for transformers.js (Phase 4) ---
+optimum[onnxruntime]>=1.21
+onnx>=1.16
+onnxruntime>=1.18
+sentencepiece

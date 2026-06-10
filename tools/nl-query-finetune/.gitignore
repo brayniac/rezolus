@@ -1,0 +1,13 @@
+# Generated artifacts — never committed (regenerate from the scripts).
+data/
+checkpoints/
+exports/
+runs/
+wandb/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/

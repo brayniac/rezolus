@@ -1,0 +1,38 @@
+# SFT config (Phase 2) — runs on the CUDA host (RTX 4090 24GB).
+# Full fine-tuning of a ~0.5B code model. See README.md.
+
+base_model: Qwen/Qwen2.5-Coder-0.5B      # fallback: Qwen/Qwen2.5-Coder-1.5B
+output_dir: checkpoints/nl-query-0.5b
+
+# data (produced by datagen/generate.py)
+train_file: data/train.jsonl
+eval_file: data/val.jsonl
+
+# full fine-tune (not LoRA)
+lora: false
+
+# optimization
+learning_rate: 2.0e-5
+lr_scheduler_type: cosine
+warmup_ratio: 0.03
+num_train_epochs: 3
+per_device_train_batch_size: 8
+gradient_accumulation_steps: 8           # effective batch ~64
+weight_decay: 0.1
+max_grad_norm: 1.0
+bf16: true
+packing: true                            # pack short sequences
+max_seq_length: 1024
+gradient_checkpointing: true
+
+# eval / logging
+eval_strategy: steps
+eval_steps: 100
+save_steps: 100
+save_total_limit: 3
+logging_steps: 20
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+
+# attention impl ("flash_attention_2" if installed, else "sdpa")
+attn_implementation: sdpa
