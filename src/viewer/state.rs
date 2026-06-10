@@ -350,29 +350,63 @@ pub struct MetricsResponse {
 pub struct MetricsData {
     pub metrics: Vec<String>,
     pub metric_types: HashMap<String, String>,
+    /// metric name -> sorted distinct semantic label keys (for NL-query cards).
+    pub labels: HashMap<String, Vec<String>>,
 }
 
-/// Collect all metric names from the TSDB and map each to its type.
+// Non-semantic label keys excluded from NL-query metric cards (H2 histogram
+// config + recording/topology provenance) — mirrors the fine-tune's schema
+// dump (tools/nl-query-finetune/rezolus_oracle.py: EXCLUDE_LABELS).
+const NQ_EXCLUDE_LABELS: &[&str] = &[
+    "grouping_power",
+    "max_value_power",
+    "instance",
+    "endpoint",
+    "source",
+    "node",
+];
+
+/// Distinct semantic label keys across a metric's series.
+fn semantic_label_keys(series: Option<Vec<super::tsdb::Labels>>) -> Vec<String> {
+    let mut keys = std::collections::BTreeSet::new();
+    if let Some(series) = series {
+        for labels in series {
+            for k in labels.inner.keys() {
+                if !NQ_EXCLUDE_LABELS.contains(&k.as_str()) {
+                    keys.insert(k.clone());
+                }
+            }
+        }
+    }
+    keys.into_iter().collect()
+}
+
+/// Collect all metric names from the TSDB and map each to its type + labels.
 pub fn list_metrics(tsdb: &Tsdb) -> MetricsData {
     let mut metrics = Vec::new();
     let mut metric_types = HashMap::new();
+    let mut labels = HashMap::new();
 
     for name in tsdb.counter_names() {
         metrics.push(name.to_string());
         metric_types.insert(name.to_string(), "counter".to_string());
+        labels.insert(name.to_string(), semantic_label_keys(tsdb.counter_labels(name)));
     }
     for name in tsdb.gauge_names() {
         metrics.push(name.to_string());
         metric_types.insert(name.to_string(), "gauge".to_string());
+        labels.insert(name.to_string(), semantic_label_keys(tsdb.gauge_labels(name)));
     }
     for name in tsdb.histogram_names() {
         metrics.push(name.to_string());
         metric_types.insert(name.to_string(), "histogram".to_string());
+        labels.insert(name.to_string(), semantic_label_keys(tsdb.histogram_labels(name)));
     }
 
     MetricsData {
         metrics,
         metric_types,
+        labels,
     }
 }
 

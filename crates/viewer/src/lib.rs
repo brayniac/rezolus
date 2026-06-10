@@ -318,23 +318,56 @@ impl Viewer {
         }
     }
 
-    /// Return all metric names with their types as JSON string.
-    /// Format: {"metrics": ["m1", ...], "metric_types": {"m1": "counter", ...}}
+    /// Return all metric names with their types + semantic label keys as JSON.
+    /// Format: {"metrics": [...], "metric_types": {m: type}, "labels": {m: [keys]}}
+    /// The labels feed the NL-query metric cards so the model can build
+    /// {label="value"} filters / breakouts (see nq_prompt.js).
     pub fn metrics_json(&self) -> String {
+        // Non-semantic label keys excluded from NL-query cards (mirrors the
+        // server viewer + the fine-tune schema dump).
+        const NQ_EXCLUDE: &[&str] = &[
+            "grouping_power",
+            "max_value_power",
+            "instance",
+            "endpoint",
+            "source",
+            "node",
+        ];
+        let keys = |series: Option<Vec<metriken_query::tsdb::Labels>>| {
+            let mut set = std::collections::BTreeSet::new();
+            if let Some(series) = series {
+                for labels in series {
+                    for k in labels.inner.keys() {
+                        if !NQ_EXCLUDE.contains(&k.as_str()) {
+                            set.insert(k.clone());
+                        }
+                    }
+                }
+            }
+            serde_json::Value::Array(
+                set.into_iter().map(serde_json::Value::String).collect(),
+            )
+        };
+
         let mut metrics = Vec::new();
         let mut types = serde_json::Map::new();
+        let mut labels = serde_json::Map::new();
+        let tsdb = self.engine.tsdb();
 
-        for name in self.engine.tsdb().counter_names() {
+        for name in tsdb.counter_names() {
             metrics.push(name.to_string());
             types.insert(name.to_string(), "counter".into());
+            labels.insert(name.to_string(), keys(tsdb.counter_labels(name)));
         }
-        for name in self.engine.tsdb().gauge_names() {
+        for name in tsdb.gauge_names() {
             metrics.push(name.to_string());
             types.insert(name.to_string(), "gauge".into());
+            labels.insert(name.to_string(), keys(tsdb.gauge_labels(name)));
         }
-        for name in self.engine.tsdb().histogram_names() {
+        for name in tsdb.histogram_names() {
             metrics.push(name.to_string());
             types.insert(name.to_string(), "histogram".into());
+            labels.insert(name.to_string(), keys(tsdb.histogram_labels(name)));
         }
 
         let obj = serde_json::Map::from_iter([
@@ -345,6 +378,7 @@ impl Viewer {
                 ),
             ),
             ("metric_types".into(), serde_json::Value::Object(types)),
+            ("labels".into(), serde_json::Value::Object(labels)),
         ]);
         serde_json::to_string(&obj).unwrap_or_default()
     }

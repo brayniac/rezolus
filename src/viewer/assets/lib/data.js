@@ -14,11 +14,18 @@ const getStepOverride = () => _stepOverride;
 // Metric names cache for NL query embedding index
 let _metricNames = null;
 let _metricTypes = null;
+let _metricLabels = null;   // { metricName: [labelKey, …] } — for NL-query cards
 let _metricNamesLoaded = false;
-const setMetricNames = (names, types) => { _metricNames = names; _metricTypes = types; _metricNamesLoaded = true; };
+const setMetricNames = (names, types, labels) => {
+    _metricNames = names;
+    _metricTypes = types;
+    _metricLabels = labels || {};
+    _metricNamesLoaded = true;
+};
 export { setMetricNames };
 export const getMetricNames = () => _metricNames || [];
 export const getMetricTypes = () => _metricTypes || {};
+export const getMetricLabels = () => _metricLabels || {};
 export const isMetricNamesLoaded = () => _metricNamesLoaded;
 
 // ---------------------------------------------------------------------------

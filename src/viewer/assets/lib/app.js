@@ -683,7 +683,7 @@ const initDashboard = (config = {}) => {
     if (fileMetadata) {
         ViewerApi.getMetricNames().then((resp) => {
             if (resp?.status === 'success') {
-                setMetricNames(resp.data.metrics, resp.data.metric_types);
+                setMetricNames(resp.data.metrics, resp.data.metric_types, resp.data.labels);
             }
         }).catch(() => {});
     }

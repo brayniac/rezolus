@@ -7,7 +7,7 @@ import { queryEmbed, buildIndex, reset as resetEngine } from './nq_engine.js';
 import { search, keywordSearch } from './nq_search.js';
 import { generate as llmGenerate, reset as resetLlm } from './nq_generate.js';
 import { buildPrompt, cleanOutput, looksLikePromQL, isNoMetric } from './nq_prompt.js';
-import { getMetricNames, getMetricTypes } from './data.js';
+import { getMetricNames, getMetricTypes, getMetricLabels } from './data.js';
 
 const MAX_RETRIES = 2;
 const TOP_K = 8;
@@ -45,6 +45,13 @@ export async function runPipeline(nlQuery, options = {}) {
     if (topK.length === 0) {
         throw new Error('No matching metrics found. Try a different query.');
     }
+
+    // Attach each retrieved metric's label keys so the model can build
+    // {label="value"} filters / `sum by (label)` breakouts / part-of-whole
+    // shares (e.g. "system cpu usage" → cpu_usage{state="system"}). Without
+    // labels in the card the model has nothing to filter on.
+    const labelsByMetric = getMetricLabels();
+    topK = topK.map(m => ({ ...m, labels: labelsByMetric[m.name] || [] }));
 
     // Generate PromQL. The specialist decodes greedily (deterministic), so a
     // first failure won't change on retry — sample a little on retries to escape
