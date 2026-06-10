@@ -27,6 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from rezolus_oracle import Oracle  # noqa: E402
 from datagen.templates import examples_for_metric, ratio_example  # noqa: E402
+from datagen.efficiency import efficiency_examples  # noqa: E402
 from datagen.paraphrase import paraphrase  # noqa: E402
 
 SYSTEM = (
@@ -100,6 +101,11 @@ def main():
     ap.add_argument("--no-metric-rate", type=float, default=0.12, help="fraction of records turned into NO_METRIC negatives")
     ap.add_argument("--heldout-metric-frac", type=float, default=0.15)
     ap.add_argument("--max-metrics", type=int, default=0, help="cap metrics processed (0 = all); for quick local runs")
+    ap.add_argument("--exclude-metrics", default=None,
+                    help="JSON list of metric names to drop entirely (e.g. the primary run's "
+                         "held-out set, so supplementary parquets never train on them)")
+    ap.add_argument("--heldout-out", default=None,
+                    help="write the chosen held-out metric names to this JSON file")
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--binary", default=None)
     args = ap.parse_args()
@@ -109,11 +115,20 @@ def main():
     cards = json.load(open(args.schema))
     cards_by_name = {c["name"]: c for c in cards}
     names = sorted(cards_by_name)
+    if args.exclude_metrics:
+        drop = set(json.load(open(args.exclude_metrics)))
+        names = [n for n in names if n not in drop]
+        print(f"excluded          : {len(drop)} metric names (kept {len(names)})")
     if args.max_metrics:
         names = names[: args.max_metrics]
+    # Restrict the working card set to the kept names so excluded metrics never
+    # appear anywhere — not as a gold, a composition operand, OR a distractor.
+    cards_by_name = {n: cards_by_name[n] for n in names}
 
     # Held-out metrics → test only (generalization to unseen metrics).
     heldout = set(rng.sample(names, max(1, int(len(names) * args.heldout_metric_frac))))
+    if args.heldout_out:
+        json.dump(sorted(heldout), open(args.heldout_out, "w"))
 
     valid_cache: dict = {}
 
@@ -143,12 +158,30 @@ def main():
             examples.append(ex)
             made += 1
 
+    # 2b) Curated derived-efficiency KPIs (IPC, cache hit rate, branch-miss rate,
+    #     average IO size, frequency scaling, …) — meaningful compositions the
+    #     random pairs and the dashboards under-cover. Only those whose metrics
+    #     are present here are emitted; each gold is still execution-validated.
+    eff_made = 0
+    for ex in efficiency_examples({n: cards_by_name[n] for n in names}):
+        if is_valid(ex.promql):
+            examples.append(ex)
+            eff_made += 1
+
     # 3) Expand to records: paraphrase NL, attach context, add NO_METRIC negatives.
     records = []
     for ex in examples:
         gold_metrics = set(ex.metrics)
         held = bool(gold_metrics & heldout)
-        for i, nl in enumerate(paraphrase(ex.nl, args.paraphrases, seed=args.seed)):
+        # NL pool: authored intent-aware variants (from templates) first, then
+        # top up with the paraphraser (offline augmenter or, if REZOLUS_TEACHER
+        # is set, the teacher model). Use every authored phrasing.
+        pool = list(ex.variants)
+        for p in paraphrase(ex.nl, args.paraphrases, seed=args.seed):
+            if p not in pool:
+                pool.append(p)
+        target = max(args.paraphrases, len(ex.variants))
+        for i, nl in enumerate(pool[:target]):
             distract = pick_distractors(gold_metrics, cards_by_name, rng, args.distractors)
             # NO_METRIC negative: drop the gold metric(s) from context.
             if rng.random() < args.no_metric_rate:
@@ -179,7 +212,7 @@ def main():
     from collections import Counter
     intents = Counter(r["intent"] for r in records)
     print(f"metrics processed : {len(names)} ({len(heldout)} held out → test)")
-    print(f"valid examples    : {len(examples)}  (dropped {n_dropped} invalid golds; {made} ratios)")
+    print(f"valid examples    : {len(examples)}  (dropped {n_dropped} invalid golds; {made} ratios; {eff_made} efficiency)")
     print(f"records           : {len(records)}  train={len(train)} val={len(val)} test={len(test)}")
     print(f"intent mix        : {dict(intents)}")
     print(f"wrote             : {out}/train.jsonl, val.jsonl, test.jsonl")

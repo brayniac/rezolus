@@ -17,6 +17,7 @@ Stdlib only (no third-party deps) so Phases 0–1 and eval run anywhere.
 
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import re
@@ -96,9 +97,129 @@ class QueryResult:
         return self.ok and (not self.series or all(s.points == 0 for s in self.series))
 
 
+class _McpSession:
+    """Persistent `rezolus mcp` stdio server (newline-delimited JSON-RPC).
+
+    The server caches each parquet's TSDB + QueryEngine, so the first query for a
+    file loads it and every later query is warm — vs. the one-shot `mcp query`
+    CLI, which reloads the whole parquet per call. One session per Oracle/process.
+    Any failure flips `dead` and the Oracle falls back to the subprocess path.
+    """
+
+    def __init__(self, binary: str):
+        self.binary = binary
+        self.proc: Optional[subprocess.Popen] = None
+        self.dead = False
+        self._id = 0
+
+    def _ensure(self) -> bool:
+        if self.proc is not None:
+            return True
+        if self.dead:
+            return False
+        try:
+            self.proc = subprocess.Popen(
+                [self.binary, "mcp"],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL, text=True, bufsize=1,
+            )
+            atexit.register(self.close)
+            self._rpc("initialize", {})  # handshake; raises on failure
+            return True
+        except Exception:
+            self.dead = True
+            self.close()
+            return False
+
+    def _rpc(self, method: str, params: dict) -> dict:
+        self._id += 1
+        self.proc.stdin.write(json.dumps(
+            {"jsonrpc": "2.0", "id": self._id, "method": method, "params": params}) + "\n")
+        self.proc.stdin.flush()
+        line = self.proc.stdout.readline()
+        if not line:
+            raise RuntimeError("mcp server closed the connection")
+        return json.loads(line)
+
+    def query(self, parquet: str, promql: str) -> "QueryResult":
+        """Run a query via the server. Returns None if the session is unusable."""
+        if not self._ensure():
+            return None
+        try:
+            resp = self._rpc("tools/call", {
+                "name": "query",
+                "arguments": {"parquet_file": str(parquet), "query": promql},
+            })
+        except Exception:
+            self.dead = True
+            self.close()
+            return None
+        if "error" in resp:
+            msg = resp["error"].get("message", "")
+            # Align with the subprocess path: strip the "Query error: " wrapper so
+            # parse errors still read "Parse error: ..." for parses().
+            msg = re.sub(r"^Query error:\s*", "", msg).strip()
+            return QueryResult(ok=False, error=msg)
+        try:
+            text = resp["result"]["content"][0]["text"]
+            return _parse_query_json(json.loads(text))
+        except Exception:
+            self.dead = True
+            self.close()
+            return None
+
+    def close(self):
+        if self.proc is not None:
+            try:
+                self.proc.stdin.close()
+            except Exception:
+                pass
+            try:
+                self.proc.terminate()
+            except Exception:
+                pass
+            self.proc = None
+
+
+def _parse_query_json(obj: dict) -> "QueryResult":
+    """Parse a serialized QueryResult (matrix/vector/scalar) into Series.
+
+    Stats mirror src/mcp/mod.rs::format_query_result exactly: points = len(values),
+    min/max via fold, mean = sum/len — so server and subprocess paths agree.
+    """
+    rtype = obj.get("resultType")
+    series = []
+    if rtype == "matrix":
+        for s in obj.get("result", []):
+            vals = [v for _, v in s.get("values", [])]
+            series.append(_series_from(s.get("metric", {}), vals))
+    elif rtype == "vector":
+        for s in obj.get("result", []):
+            v = s.get("value")
+            series.append(_series_from(s.get("metric", {}), [v[1]] if v else []))
+    elif rtype == "scalar":
+        r = obj.get("result")
+        series.append(_series_from({}, [r[1]] if r else []))
+    # histogram heatmap / unknown → no comparable series (treated as empty)
+    return QueryResult(ok=True, series=series)
+
+
+def _series_from(metric: dict, vals: list) -> "Series":
+    labels = {str(k): str(v) for k, v in metric.items()}
+    if not vals:
+        return Series(labels=labels, points=0, vmin=None, vmax=None, mean=None)
+    fvals = [float(v) for v in vals]
+    return Series(labels=labels, points=len(fvals), vmin=min(fvals),
+                  vmax=max(fvals), mean=sum(fvals) / len(fvals))
+
+
 class Oracle:
     def __init__(self, binary: Optional[str] = None):
         self.binary = binary or _default_binary()
+        # Persistent MCP server keeps parquets warm; disabled with
+        # REZOLUS_ORACLE_SERVER=0 (then every query reloads via the CLI).
+        self._session = (_McpSession(self.binary)
+                         if os.environ.get("REZOLUS_ORACLE_SERVER", "1") != "0" else None)
 
     # ── schema ────────────────────────────────────────────────────────────
     def dump_schema(self, parquets) -> dict:
@@ -158,6 +279,15 @@ class Oracle:
 
     # ── query / validation ────────────────────────────────────────────────
     def query(self, parquet: str, promql: str) -> QueryResult:
+        # Fast path: persistent MCP server (parquet stays loaded across queries).
+        if self._session is not None:
+            r = self._session.query(parquet, promql)
+            if r is not None:
+                return r
+            self._session = None  # session died → fall back for the rest of the run
+        return self._query_subprocess(parquet, promql)
+
+    def _query_subprocess(self, parquet: str, promql: str) -> QueryResult:
         out = subprocess.run(
             [self.binary, "mcp", "query", str(parquet), promql],
             capture_output=True, text=True,

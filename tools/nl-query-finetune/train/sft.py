@@ -36,15 +36,17 @@ def main():
     import torch
     from datasets import load_dataset
     from transformers import AutoModelForCausalLM, AutoTokenizer
-    from trl import SFTConfig, SFTTrainer
+    from trl import SFTConfig, SFTTrainer, DataCollatorForCompletionOnlyLM
 
     tok = AutoTokenizer.from_pretrained(cfg["base_model"])
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
 
-    # Records are {"messages": [...]} → render with the chat template. trl's
-    # SFTTrainer masks the prompt and trains only on the assistant turn when
-    # given chat-format data + a chat template.
+    # Records are {"messages": [...]} → render with the chat template into a
+    # single "text" field. The DataCollatorForCompletionOnlyLM below masks every
+    # token before the assistant header, so loss is computed ONLY on the assistant
+    # completion (PROMPT_FORMAT.md). add_generation_prompt MUST be False here so
+    # the gold completion is included in the rendered text.
     ds = load_dataset("json", data_files={
         "train": cfg["train_file"], "eval": cfg["eval_file"]})
 
@@ -59,6 +61,14 @@ def main():
         attn_implementation=cfg.get("attn_implementation", "sdpa"),
     )
 
+    # Completion-only loss is incompatible with packing — force packing off.
+    if cfg.get("packing"):
+        print("[sft] completion_only_loss → forcing packing=False")
+    collator = DataCollatorForCompletionOnlyLM(
+        response_template=cfg.get("response_template", "<|im_start|>assistant\n"),
+        tokenizer=tok,
+    )
+
     sft = SFTConfig(
         output_dir=cfg["output_dir"],
         learning_rate=cfg["learning_rate"],
@@ -70,7 +80,7 @@ def main():
         weight_decay=cfg["weight_decay"],
         max_grad_norm=cfg["max_grad_norm"],
         bf16=cfg.get("bf16", True),
-        packing=cfg.get("packing", True),
+        packing=False,                       # completion-only collator needs unpacked rows
         max_seq_length=cfg.get("max_seq_length", 1024),
         gradient_checkpointing=cfg.get("gradient_checkpointing", True),
         eval_strategy=cfg.get("eval_strategy", "steps"),
@@ -80,11 +90,13 @@ def main():
         logging_steps=cfg.get("logging_steps", 20),
         load_best_model_at_end=cfg.get("load_best_model_at_end", True),
         metric_for_best_model=cfg.get("metric_for_best_model", "eval_loss"),
+        report_to=[],                        # no W&B/etc. on the training host
     )
 
     trainer = SFTTrainer(
         model=model, args=sft, processing_class=tok,
         train_dataset=ds["train"], eval_dataset=ds["eval"],
+        data_collator=collator,
     )
     trainer.train()
     trainer.save_model(cfg["output_dir"])

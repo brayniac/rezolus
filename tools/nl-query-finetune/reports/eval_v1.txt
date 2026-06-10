@@ -1,0 +1,28 @@
+## v1 (8808 train; shapes: +share/peak/efficiency/traffic-cost) ===
+### test.jsonl (held-out metrics)
+mode=file  n=421
+  parse-validity   : 100.0%
+  exec-success     :  98.1%
+  semantic-equiv   :  97.1%   <- headline
+  metric-selection :  96.9%
+  NO_METRIC P/R    :  96.2% / 100.0%
+  per-intent semantic-equiv:
+    average   : 100.0%  (15/15)
+    by_label  : 100.0%  (29/29)
+    efficiency:  55.6%  (10/18)
+    filter    :  96.4%  (27/28)
+    lookup    :  96.1%  (49/51)
+    no_metric : 100.0%  (50/50)
+    peak      : 100.0%  (32/32)
+    quantile  :  97.4%  (37/38)
+    ratio     : 100.0%  (115/115)
+    total     : 100.0%  (45/45)
+### dashboard_eval.jsonl
+mode=file  n=15
+  parse-validity   : 100.0%
+  exec-success     :  93.3%
+  semantic-equiv   :  46.7%   <- headline
+  metric-selection : 100.0%
+  NO_METRIC P/R    : 100.0% / 100.0%
+  per-intent semantic-equiv:
+    dashboard :  46.7%  (7/15)

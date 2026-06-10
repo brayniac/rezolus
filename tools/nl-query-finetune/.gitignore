@@ -11,3 +11,8 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+
+# eval / prediction scratch (regenerate from eval/predict.py)
+preds_*.jsonl
+reports/preds_*.jsonl
+*.log

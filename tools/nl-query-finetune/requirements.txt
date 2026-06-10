@@ -17,4 +17,5 @@ accelerate>=0.33
 optimum[onnxruntime]>=1.21
 onnx>=1.16
 onnxruntime>=1.18
+onnx_ir          # required by onnxruntime's MatMulNBitsQuantizer (q4 export)
 sentencepiece
