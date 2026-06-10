@@ -186,9 +186,11 @@ chart selection viewer-side from `(metric_type, resultType, #series, has-index-l
   - `nq_prompt.js`: must mirror `PROMPT_FORMAT.md` byte-for-byte (system string + card
     format `name (type; labels: a,b) — desc`) — align it before switching DEFAULT_MODEL,
     or accuracy collapses.
-  - **Verify in-browser:** the q4 weights use an external-data file
-    (`onnx/model_q4.onnx.data`); confirm transformers.js fetches it (if not, rename to
-    the `.onnx_data` convention and re-point the model's external-data `location`).
+  - **External data:** q4 is shipped as a SINGLE self-contained `onnx/model_q4.onnx`
+    (~733 MB, inline weights). An earlier external-data build failed in the browser
+    with `onnxruntime-web: Module.MountedFiles is not available` — onnxruntime-web
+    can't mount an external `.data` sibling. Inlining (safe under the 2 GB protobuf
+    limit at 0.5B) fixes it; `to_onnx.py` now always inlines q4.
 
 ### Parity (ONNX vs torch)
 

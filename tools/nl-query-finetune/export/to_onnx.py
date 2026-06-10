@@ -36,6 +36,12 @@ def quantize_q4(fp32_onnx: Path, out_onnx: Path, block_size: int = 32):
     transformers.js loads this with dtype:'q4'. We keep activations/embeddings in
     fp32 and 4-bit only the big MatMul weights — the standard q4 recipe and the
     one that preserves accuracy best at 0.5B.
+
+    Saved as a SINGLE self-contained .onnx (no external .data file): onnxruntime-web
+    can't mount an external-data sibling in the browser ("Module.MountedFiles is not
+    available"). A 0.5B q4 model (~733 MB) is well under the 2 GB protobuf limit, so
+    inlining is safe; for models that would exceed 2 GB you must use external data and
+    a runtime that mounts it.
     """
     import onnx
     from onnxruntime.quantization.matmul_nbits_quantizer import MatMulNBitsQuantizer
@@ -44,7 +50,13 @@ def quantize_q4(fp32_onnx: Path, out_onnx: Path, block_size: int = 32):
     quant = MatMulNBitsQuantizer(model, bits=4, block_size=block_size, is_symmetric=True)
     quant.process()
     out_onnx.parent.mkdir(parents=True, exist_ok=True)
+    # save_model_to_file may force external data; re-load and save inline to be sure.
     quant.model.save_model_to_file(str(out_onnx), use_external_data_format=True)
+    inlined = onnx.load(str(out_onnx), load_external_data=True)
+    onnx.save_model(inlined, str(out_onnx), save_as_external_data=False)
+    for sib in (out_onnx.with_suffix(out_onnx.suffix + ".data"),
+                out_onnx.with_suffix(out_onnx.suffix + "_data")):
+        sib.unlink(missing_ok=True)
 
 
 def quantize_q4f16(q4_onnx: Path, out_onnx: Path):
