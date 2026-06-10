@@ -18,4 +18,6 @@ optimum[onnxruntime]>=1.21
 onnx>=1.16
 onnxruntime>=1.18
 onnx_ir          # required by onnxruntime's MatMulNBitsQuantizer (q4 export)
+onnxconverter-common   # fp16 conversion for the q4f16 export path
+onnxslim               # graph simplification before fp16 conversion
 sentencepiece

@@ -165,9 +165,16 @@ chart selection viewer-side from `(metric_type, resultType, #series, has-index-l
   trained on all known metrics). The metric-held-out `…-v2` checkpoint is kept for
   the generalization number above.
 - **ONNX:** `exports/nl-query-0.5b-onnx/` (optimum, task `text-generation-with-past`;
-  ONNX-vs-torch max diff ~1e-5). q4: `onnx/model_q4.onnx` (weight-only int4 on the
-  transformer MatMuls; the ~700 MB `.data` is the fp32 embedding/lm_head table —
-  use **q4f16** to roughly halve it for the browser).
+  ONNX-vs-torch max diff ~1e-5). **Shipping artifact: `onnx/model_q4.onnx`** —
+  weight-only int4 on the transformer MatMuls, **733 MB** (`.data`), validated 98.6%.
+- **q4f16 (smaller, but blocked by tooling):** the dominant cost is the fp32
+  embedding/lm_head table; storing it fp16 gives **~452 MB** (int4 MatMuls + fp16
+  embeddings), confirmed by size. But `onnxconverter_common`'s fp16 pass mis-types
+  pass-through nodes on Qwen's attention graph (Cast/Unsqueeze) → onnxruntime
+  rejects the model (`to_onnx.py --q4f16` self-validates and removes it on failure).
+  Produce q4f16 with the **transformers.js conversion script** / **onnxruntime-genai**
+  (they handle this op-set) at publish time. q4 (733 MB) is the validated default;
+  browser Cache API makes it a one-time download.
 - **Wire-in (`src/viewer/assets/lib/`):**
   - `nq_generate.js`: model id = the hosted `nl-query-0.5b-onnx` repo, `dtype: 'q4'`,
     `device: 'webgpu'`. Greedy decode; stop on `<|im_end|>` AND `<|endoftext|>`
