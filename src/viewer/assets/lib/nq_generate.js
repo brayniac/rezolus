@@ -1,12 +1,14 @@
-// nq_generate.js — small instruction-tuned LLM for NL → PromQL generation.
+// nq_generate.js — fine-tuned NL → PromQL specialist (0.5B) for the browser.
 //
-// Runs onnx-community/Qwen2.5-0.5B-Instruct in the browser via transformers.js
-// (WebGPU when available, WASM otherwise). Input is a chat-message array; the
-// model's chat template is applied automatically by the text-generation
-// pipeline.
+// Runs brayniac/promql-0.5b-onnx (a full fine-tune of Qwen2.5-Coder-0.5B,
+// execution-validated training data) in the browser via transformers.js (WebGPU
+// when available, WASM otherwise). Input is a chat-message array in the exact
+// format of nq_prompt.js / PROMPT_FORMAT.md; the model's chat template is applied
+// automatically by the text-generation pipeline. Decoding is greedy — the model
+// emits one PromQL line (or NO_METRIC).
 
 const TRANSFORMERS_CDN = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0';
-const DEFAULT_MODEL = 'onnx-community/Qwen2.5-0.5B-Instruct';
+const DEFAULT_MODEL = 'brayniac/promql-0.5b-onnx';
 
 let generator = null;
 let loadPromise = null;
@@ -61,7 +63,9 @@ async function load() {
 export async function generate(messages, options = {}) {
     await load();
 
-    const { maxNewTokens = 256, temperature = 0.1 } = options;
+    // Greedy by default: the specialist is trained for a single deterministic
+    // PromQL line, so sampling only adds noise. 64 tokens is ample for one query.
+    const { maxNewTokens = 64, temperature = 0 } = options;
     const chat = Array.isArray(messages)
         ? messages
         : [{ role: 'user', content: String(messages) }];
@@ -70,7 +74,6 @@ export async function generate(messages, options = {}) {
         max_new_tokens: maxNewTokens,
         temperature,
         do_sample: temperature > 0,
-        repetition_penalty: 1.1,
     });
 
     // With chat-message input, transformers.js returns the full conversation

@@ -6,7 +6,7 @@
 import { queryEmbed, buildIndex, reset as resetEngine } from './nq_engine.js';
 import { search, keywordSearch } from './nq_search.js';
 import { generate as llmGenerate, reset as resetLlm } from './nq_generate.js';
-import { buildPrompt, cleanOutput, looksLikePromQL } from './nq_prompt.js';
+import { buildPrompt, cleanOutput, looksLikePromQL, isNoMetric } from './nq_prompt.js';
 import { getMetricNames, getMetricTypes } from './data.js';
 
 const MAX_RETRIES = 2;
@@ -46,21 +46,25 @@ export async function runPipeline(nlQuery, options = {}) {
         throw new Error('No matching metrics found. Try a different query.');
     }
 
-    // Generate PromQL, retrying (with a touch more temperature) if the output
-    // does not look like a valid query.
+    // Generate PromQL. The specialist decodes greedily (deterministic), so a
+    // first failure won't change on retry — sample a little on retries to escape
+    // a bad greedy path.
     emit('Generating query…');
+    const messages = buildPrompt(topK, nlQuery);
     let raw = '';
     let promql = '';
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        const messages = buildPrompt(topK, nlQuery);
         raw = await llmGenerate(messages, {
-            maxNewTokens: 256,
-            temperature: attempt === 0 ? 0.1 : 0.4,
+            maxNewTokens: 64,
+            temperature: attempt === 0 ? 0 : 0.4,
         });
         promql = cleanOutput(raw);
-        if (looksLikePromQL(promql)) break;
+        if (isNoMetric(promql) || looksLikePromQL(promql)) break;
     }
 
+    if (isNoMetric(promql)) {
+        throw new Error('No listed metric answers that request (NO_METRIC). Try rephrasing or naming a specific metric.');
+    }
     if (!looksLikePromQL(promql)) {
         throw new Error(`Could not generate valid PromQL. Model output: ${raw}`);
     }

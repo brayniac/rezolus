@@ -1,87 +1,76 @@
-// nq_prompt.js — prompt construction and output validation for NL → PromQL.
+// nq_prompt.js — prompt construction and output handling for NL → PromQL.
 //
-// The model is small (0.5B), so the system prompt is explicit and grounded in
-// worked examples. Node scoping is NOT requested here — the caller injects the
-// {node="…"} label deterministically after generation.
+// MUST stay byte-for-byte in sync with the fine-tune's training/runtime format,
+// documented in tools/nl-query-finetune/PROMPT_FORMAT.md (the SYSTEM string and
+// the metric-card format are the single source of truth). If these drift from the
+// model (brayniac/promql-0.5b-onnx), accuracy collapses silently.
+//
+// Node scoping is NOT requested here — the caller injects {node="…"} after
+// generation. Retrieval supplies the metric cards; for "A per B"/ratio requests
+// the retriever must include BOTH metrics or even a perfect model can't answer.
 
-const SYSTEM_PROMPT = `You translate a user's request into a single PromQL query over a metrics database.
+const SYSTEM_PROMPT = `Convert the request into ONE PromQL query using ONLY the listed metrics.
+counter -> irate(x[1s]); gauge -> x; histogram -> histogram_quantile(q, x); aggregate with sum()/avg(); filter with {label="value"}; ratio "A per B" -> sum(A_expr)/sum(B_expr).
+If no listed metric answers the request, output exactly: NO_METRIC. Output only PromQL, nothing else.`;
 
-Output rules:
-- Output ONLY the PromQL query. No explanation, no markdown, no code fences.
-- The query MUST begin with a metric name or a function call — it must NEVER begin with "{".
-- Pick the single most relevant metric from the provided list and use its EXACT name.
-- counter  → wrap in a rate over a window:      rate(metric_name[5m])
-- gauge    → use the metric name directly:      metric_name
-- histogram→ take a quantile:                   histogram_quantile(0.99, metric_name)
-- To combine across series, wrap with sum(...) or avg(...).
-
-Examples:
-Metrics: cpu_usage (counter), cpu_frequency (gauge)
-Request: show cpu usage over time
-Query: rate(cpu_usage[5m])
-
-Metrics: memory_used (gauge), memory_free (gauge)
-Request: how much memory is in use
-Query: memory_used
-
-Metrics: scheduler_runqueue_latency (histogram), cpu_usage (counter)
-Request: p99 run queue latency
-Query: histogram_quantile(0.99, scheduler_runqueue_latency)
-
-Metrics: network_bytes (counter), network_packets (counter)
-Request: total network throughput
-Query: sum(rate(network_bytes[5m]))`;
+const NO_METRIC = 'NO_METRIC';
 
 /**
- * Build the chat messages for LLM generation.
- * Returns an array of { role, content } turns; the text-generation pipeline
- * applies the model's chat template automatically.
+ * Format one metric card: `  name (type; labels: a,b) — description`.
+ * Omits `; labels: …` when there are none and ` — description` when absent,
+ * exactly as datagen/generate.py:format_card does.
+ */
+function formatCard(m) {
+    const labelKeys = Array.isArray(m.labels)
+        ? m.labels
+        : (m.labels && typeof m.labels === 'object' ? Object.keys(m.labels) : []);
+    let head = `${m.name} (${m.type}`;
+    head += labelKeys.length ? `; labels: ${labelKeys.join(',')})` : ')';
+    const desc = (m.description || m.help || '').trim();
+    return desc ? `  ${head} — ${desc}` : `  ${head}`;
+}
+
+/**
+ * Build the chat messages for LLM generation. Returns [{role, content}]; the
+ * text-generation pipeline applies the model's chat template automatically.
  */
 export function buildPrompt(topKMetrics, userQuery) {
-    const metricList = topKMetrics
-        .map(m => `${m.name} (${m.type})`)
-        .join(', ');
-
-    // Mirror the example format so the model continues it naturally.
-    const user = `Metrics: ${metricList}\nRequest: ${userQuery}\nQuery:`;
-
+    const lines = ['Metrics:', ...topKMetrics.map(formatCard), `Request: ${userQuery}`];
     return [
         { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: user },
+        { role: 'user', content: lines.join('\n') },
     ];
 }
 
-/**
- * Clean the raw LLM output to extract just the PromQL query.
- */
-export function cleanOutput(raw) {
-    let result = raw.trim();
-
-    // Strip markdown code fences if present.
-    result = result.replace(/^```(?:promql|text)?\s*/i, '').replace(/\s*```$/i, '');
-
-    // Strip any leading "PromQL:" / "Query:" prefix the model might echo.
-    result = result.replace(/^(?:promql|query):\s*/i, '');
-
-    // Keep only the first line — the model occasionally adds commentary after.
-    result = result.split('\n')[0];
-
-    return result.trim();
+/** True when the model refused (no listed metric fits the request). */
+export function isNoMetric(query) {
+    return (query || '').trim() === NO_METRIC;
 }
 
 /**
- * Validate that the output looks like a usable PromQL query.
+ * Clean the raw LLM output to the single PromQL line (or NO_METRIC). The model is
+ * trained to emit one line, but we strip stray fences and take the first line.
+ */
+export function cleanOutput(raw) {
+    let r = String(raw || '').trim();
+    r = r.replace(/```[a-z]*\n?/gi, '');                 // drop code fences
+    for (const line of r.split('\n')) {
+        const s = line.trim().replace(/^(?:promql|query):\s*/i, '').trim();
+        if (s) return s;
+    }
+    return r.trim();
+}
+
+/**
+ * Validate that the output looks like a usable PromQL query. NO_METRIC is a valid
+ * model output but not an executable query, so it returns false here (the caller
+ * checks isNoMetric separately to message the user).
  */
 export function looksLikePromQL(query) {
     const q = (query || '').trim();
-    if (q.length < 2) return false;
-    // A bare label selector ({...}) is the model's most common failure mode and
-    // almost never what the user wants — require a metric name or function first.
-    if (/^\{/.test(q)) return false;
-    // Must start with a metric/function identifier.
-    if (!/^[a-z_]/i.test(q)) return false;
-    // Accept either a structured query (function call / range / selector) or a
-    // bare metric name (a valid gauge query, e.g. "memory_used").
+    if (q.length < 2 || isNoMetric(q)) return false;
+    if (/^\{/.test(q)) return false;            // bare label selector — never wanted
+    if (!/^[a-z_]/i.test(q)) return false;       // must start with metric/function ident
     const hasStructure = /[[(]/.test(q) || /\{[^}]*\}/.test(q);
     const isBareMetric = /^[a-z_]\w*(\s*\{[^}]*\})?$/i.test(q);
     return hasStructure || isBareMetric;
