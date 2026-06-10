@@ -175,12 +175,20 @@ chart selection viewer-side from `(metric_type, resultType, #series, has-index-l
   Produce q4f16 with the **transformers.js conversion script** / **onnxruntime-genai**
   (they handle this op-set) at publish time. q4 (733 MB) is the validated default;
   browser Cache API makes it a one-time download.
+- **Published:** https://huggingface.co/brayniac/promql-0.5b-onnx (public; q4 only +
+  tokenizer/config + card). Loads + generates correctly from the Hub (verified via
+  `eval/predict.py --backend onnx` on a full snapshot). Publish with `publish/publish_hf.sh`.
 - **Wire-in (`src/viewer/assets/lib/`):**
-  - `nq_generate.js`: model id = the hosted `nl-query-0.5b-onnx` repo, `dtype: 'q4'`,
+  - `nq_generate.js`: `DEFAULT_MODEL = 'brayniac/promql-0.5b-onnx'`, `dtype: 'q4'`,
     `device: 'webgpu'`. Greedy decode; stop on `<|im_end|>` AND `<|endoftext|>`
     (the base eos differs from the chat-template terminator — see `eval/predict.py`).
-  - `nq_prompt.js`: mirror `PROMPT_FORMAT.md` byte-for-byte (system string + card
-    format `name (type; labels: a,b) — desc`). Unchanged this run.
+    Apply output grounding (`ground_names`) over the retrieved card names.
+  - `nq_prompt.js`: must mirror `PROMPT_FORMAT.md` byte-for-byte (system string + card
+    format `name (type; labels: a,b) — desc`) — align it before switching DEFAULT_MODEL,
+    or accuracy collapses.
+  - **Verify in-browser:** the q4 weights use an external-data file
+    (`onnx/model_q4.onnx.data`); confirm transformers.js fetches it (if not, rename to
+    the `.onnx_data` convention and re-point the model's external-data `location`).
 
 ### Parity (ONNX vs torch)
 

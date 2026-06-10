@@ -5,18 +5,17 @@ library_name: transformers.js
 pipeline_tag: text-generation
 tags:
   - promql
-  - rezolus
   - onnx
   - webgpu
   - text-generation
 ---
 
-# nl-query-promql-0.5b-onnx
+# promql-0.5b-onnx
 
 A specialist fine-tune of **Qwen2.5-Coder-0.5B** that turns natural-language
-questions into **PromQL** over the [Rezolus](https://github.com/iopsystems/rezolus)
-metrics schema, for **in-browser** inference (transformers.js + WebGPU, ONNX/q4)
-in the Rezolus viewer's Natural Query tab.
+questions into **PromQL** over a systems-performance metrics schema (CPU,
+scheduler, block IO, network, syscalls, …), for **in-browser** inference
+(transformers.js + WebGPU, ONNX/q4) — a natural-language query box for metrics.
 
 It is **schema-agnostic**: the prompt supplies candidate metric "cards", and the
 model answers using only those names — so it generalizes to metrics it never saw
@@ -27,7 +26,7 @@ hand-written**.
 
 ```js
 import { pipeline } from '@huggingface/transformers';
-const gen = await pipeline('text-generation', 'iopsystems/nl-query-promql-0.5b-onnx',
+const gen = await pipeline('text-generation', 'brayniac/promql-0.5b-onnx',
                            { device: 'webgpu', dtype: 'q4' });
 ```
 

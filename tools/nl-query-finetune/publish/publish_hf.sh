@@ -22,14 +22,21 @@ fi
 cp "$HERE/MODEL_CARD.md" "$EXPORT_DIR/README.md"
 
 echo "Creating repo $REPO (no-op if it exists)…"
-huggingface-cli repo create "$REPO" --type model -y || true
+hf repo create "$REPO" --repo-type model 2>/dev/null || true
 
-echo "Uploading $EXPORT_DIR → $REPO …"
-# Uploads tokenizer/config + onnx/. The fp32 model.onnx(.data) is large and
-# optional for the browser (dtype:'q4' uses onnx/model_q4.onnx); exclude it to
-# keep the repo lean, or drop --exclude to ship fp32 too.
-huggingface-cli upload "$REPO" "$EXPORT_DIR" . \
-  --exclude "model.onnx" --exclude "model.onnx_data"
+# Upload only the browser-needed files (dtype:'q4' uses onnx/model_q4.onnx). The
+# CLI's --exclude proved unreliable, so stage exactly what we want and upload that.
+STAGE="$(mktemp -d)"
+mkdir -p "$STAGE/onnx"
+cp "$EXPORT_DIR"/*.json "$EXPORT_DIR"/*.txt "$STAGE"/ 2>/dev/null || true
+cp "$EXPORT_DIR/README.md" "$STAGE"/ 2>/dev/null || true
+cp "$EXPORT_DIR"/onnx/model_q4.onnx "$EXPORT_DIR"/onnx/model_q4.onnx.data "$STAGE/onnx/"
+# include q4f16 if it was produced and validated
+[ -f "$EXPORT_DIR/onnx/model_q4f16.onnx" ] && cp "$EXPORT_DIR"/onnx/model_q4f16.onnx* "$STAGE/onnx/"
+
+echo "Uploading staged files → $REPO …"
+hf upload "$REPO" "$STAGE" . --repo-type model
+rm -rf "$STAGE"
 
 cat <<EOF
 
