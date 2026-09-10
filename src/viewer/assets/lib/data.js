@@ -545,7 +545,14 @@ export const promqlResultToHeatmapTriples = (results) => {
 // and drop malformed pairs to null. Returns null when nothing is usable
 // so callers can treat "has a band" as a simple truthiness check.
 export const parseIntervals = (sample) => {
-    const iv = sample && sample.intervals;
+    // `bands` is the lossless form: present when ANY value has a band, with a
+    // null entry where one does not (a point interpolated across a stretch the
+    // producer never read). `intervals` is all-or-nothing and goes absent for
+    // the whole series as soon as one point lacks a band, so prefer `bands`
+    // where the producer offers it and fall back for older responses. Per-entry
+    // nulls need no special handling — the loop below already maps a malformed
+    // or missing pair to null, and `buildBandSeries` already draws a gap there.
+    const iv = (sample && (sample.bands || sample.intervals)) || null;
     if (!Array.isArray(iv) || iv.length === 0) return null;
     const out = iv.map((pair) => {
         if (!Array.isArray(pair) || pair.length < 2) return null;
@@ -555,6 +562,22 @@ export const parseIntervals = (sample) => {
         return lo <= hi ? [lo, hi] : [hi, lo];
     });
     return out.some((p) => p !== null) ? out : null;
+};
+
+// Parse a series' optional `interpolated` field into a boolean array parallel
+// to `values`, or `null` when absent.
+//
+// A true entry marks a value the producer did not observe the interval of: the
+// series was null across a stretch, and rate() spanned it because the total is
+// known even though its distribution inside is not. Such a point carries no
+// band — an uncertainty interval answers "how precisely do we know the average
+// over THIS interval", and for an interval nobody watched that is not a number
+// — so this is the only thing distinguishing it from a measured point. Charts
+// render it differently rather than letting it pass as observed.
+export const parseInterpolated = (sample) => {
+    const flags = sample && sample.interpolated;
+    if (!Array.isArray(flags) || flags.length === 0) return null;
+    return flags.some(Boolean) ? flags.map(Boolean) : null;
 };
 
 // Convert the first series in a PromQL range-query result into a pair
@@ -691,8 +714,12 @@ const applyResultToPlot = (plot, result) => {
                 plot.data = [timestamps, values];
                 // Optional rate() uncertainty band, parallel to values.
                 plot.intervals = parseIntervals(sample);
+                // Which of those values the producer never observed the
+                // interval of; see parseInterpolated.
+                plot.interpolated = parseInterpolated(sample);
             } else {
                 plot.data = [];
+                plot.interpolated = null;
             }
             // Line-style plots have no series legend; clear any stale entries
             // from a prior multi-series render so legends don't "ghost".

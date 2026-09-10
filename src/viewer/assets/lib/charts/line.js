@@ -56,6 +56,9 @@ export function configureLineChart(chart) {
                 // Optional rate() uncertainty band, parallel to valueData.
                 // Absent (undefined) for non-rate queries → no band drawn.
                 intervals: chart.spec.intervals,
+                // Which values span a stretch the producer never read; see
+                // buildInterpolatedSeries.
+                interpolated: chart.spec.interpolated,
             }]
             : []);
 
@@ -106,7 +109,19 @@ export function configureLineChart(chart) {
             });
         }
 
+        // Interpolated points are cut OUT of the nominal and left to the dashed
+        // overlay, rather than drawn by both. Drawing them twice made the
+        // overlay invisible — same colour, same path, and a 0.35-opacity dash
+        // over a solid line of the same hue reads as the solid line. Removing
+        // them means the only thing rendered across a hole is the dashed
+        // segment, which is the point: the chart should not show an unobserved
+        // stretch in the same ink as a measured one.
+        const interp = Array.isArray(s.interpolated)
+            && s.interpolated.length === s.timeData.length
+            ? s.interpolated
+            : null;
         const zippedRaw = s.timeData.map((t, i) => {
+            if (interp && interp[i]) return [t * 1000, null, null];
             const [v, raw] = clampToRange(s.valueData[i], range);
             return [t * 1000, v, raw];
         });
@@ -174,7 +189,13 @@ export function configureLineChart(chart) {
         // series carries rate() acquisition-window bounds. Implemented as a
         // two-series stack: an invisible `lo` baseline plus a `hi-lo` delta
         // whose filled area spans lo→hi. z:1 keeps it under the line (z:2).
-        return [...buildBandSeries(s, idx, range, chart.interval), base];
+        // The interpolated overlay goes on top (z:3) so a drained, dashed
+        // segment reads over the solid nominal rather than under it.
+        return [
+            ...buildBandSeries(s, idx, range, chart.interval),
+            base,
+            ...buildInterpolatedSeries(s, range),
+        ];
     });
 
     // Compare-mode line overlays want relative-time labels (+Xs) on
@@ -252,6 +273,65 @@ export function configureLineChart(chart) {
     }
 
     ensureTotalToggle(chart);
+}
+
+// Build the echarts series that redraws the interpolated stretches of `s` in a
+// desaturated colour, or `[]` when the series has none.
+//
+// A point flagged `interpolated` was not observed: the series was null across
+// that stretch and rate() spanned it, because the total across a hole is known
+// even though its distribution inside is not. It carries no uncertainty band,
+// because an unobserved interval's honest bound is not a number — so without
+// this the point is indistinguishable from a measured one.
+//
+// Drawn as an overlay rather than by restyling the main line: echarts has no
+// per-segment lineStyle, and the alternatives are worse. Splitting the nominal
+// into observed/interpolated series doubles the legend and the tooltip
+// handling; a shaded time region cannot say WHICH series has the hole, which
+// matters in compare mode where captures have holes at different times. The
+// overlay keeps the series' identity and colour, just drained.
+//
+// The run is extended one point either side so the desaturated segment joins
+// the solid line rather than floating detached.
+export function buildInterpolatedSeries(s, range) {
+    const flags = s.interpolated;
+    if (!Array.isArray(flags) || flags.length !== s.timeData.length) return [];
+    if (!flags.some(Boolean)) return [];
+
+    const pts = [];
+    let any = false;
+    for (let i = 0; i < s.timeData.length; i++) {
+        // Include a point when it is interpolated, or when it neighbours one —
+        // the neighbour is what anchors the segment to the measured line.
+        const near = flags[i] || flags[i - 1] || flags[i + 1];
+        if (!near) {
+            pts.push([s.timeData[i] * 1000, null]);
+            continue;
+        }
+        const [v] = clampToRange(s.valueData[i], range);
+        pts.push([s.timeData[i] * 1000, v]);
+        if (flags[i]) any = true;
+    }
+    if (!any) return [];
+
+    return [{
+        type: 'line',
+        name: s.name,
+        data: pts,
+        showSymbol: false,
+        symbol: 'none',
+        silent: true,
+        z: 3,
+        connectNulls: false,
+        tooltip: { show: false },
+        lineStyle: {
+            color: s.color || COLORS.accent,
+            width: 2,
+            opacity: 0.35,
+            type: 'dashed',
+        },
+        areaStyle: undefined,
+    }];
 }
 
 // Build the echarts series pair that renders a series' uncertainty band,
