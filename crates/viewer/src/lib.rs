@@ -1341,6 +1341,7 @@ fn enrich_with_multi_node_info(map: &mut serde_json::Map<String, serde_json::Val
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rez::rez_v3_writer::single_archive;
 
     #[test]
     fn strip_sections_from_generated_section_body() {
@@ -1379,7 +1380,7 @@ mod tests {
         // Embed into the anchor recording's manifest (id order is stable).
         {
             let db = rez::rez_sqlite::RezDb::open(&path).unwrap();
-            let recs = db.read_recordings().unwrap();
+            let recs = db.read_sources().unwrap();
             let mut md = recs[0].meta.metadata.clone();
             md.insert(
                 "selection".to_string(),
@@ -1389,7 +1390,7 @@ mod tests {
                 "events".to_string(),
                 r#"{"events":[{"timestamp":1000000000,"description":"rollout"}]}"#.to_string(),
             );
-            db.update_recording_metadata(recs[0].id, &md).unwrap();
+            db.update_source_metadata(recs[0].id, &md).unwrap();
         }
         let bytes = std::fs::read(&path).unwrap();
 
@@ -1498,7 +1499,7 @@ mod tests {
     #[test]
     fn an_unfinalized_archive_says_it_is_unfinalized() {
         use rez::rez::recorder_tests_support::{counter, snap};
-        use rez::rez_v3_writer::{ManifestSeed, RezArchive, StreamRecorderV3};
+        use rez::rez_v3_writer::{ManifestSeed, StreamRecorderV3};
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("live.rez");
@@ -1509,7 +1510,7 @@ mod tests {
             metadata: Default::default(),
             clock_anchor_wall_ns: 1_000_000_000,
         };
-        let (archive, writer) = RezArchive::single(&path, seed).unwrap();
+        let (archive, writer) = single_archive(&path, seed).unwrap();
         let mut rec = StreamRecorderV3::new(writer);
         rec.ingest(
             &snap(
@@ -1675,8 +1676,8 @@ mod tests {
                 .unwrap();
         // Pull the single table's segment bytes back out of the archive.
         let db = rez::rez_sqlite::RezDb::open(&path).unwrap();
-        let rec = db.read_recordings().unwrap().remove(0);
-        let sampler = db.all_samplers(rec.id).unwrap().remove(0);
+        let rec = db.read_sources().unwrap().remove(0);
+        let sampler = db.all_streams(rec.id).unwrap().remove(0);
         drop(readers);
         let metas = db.read_segment_meta(rec.id, &sampler).unwrap();
         db.read_segment_bytes(rec.id, &sampler, metas[0].0)
@@ -1712,7 +1713,7 @@ mod tests {
             .save_with_selection(r#"{"entries":[],"trim_columns":false}"#)
             .unwrap();
         let db = rez::rez_sqlite::RezDb::open_bytes(out).unwrap();
-        let recs = db.read_recordings().unwrap();
+        let recs = db.read_sources().unwrap();
         assert_eq!(recs.len(), 2, "the report keeps both recordings");
         assert!(
             recs[0].meta.metadata.contains_key("selection"),

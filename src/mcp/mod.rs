@@ -1563,8 +1563,8 @@ mod tests {
         arms: &[Option<&str>],
         with_rows: &[bool],
     ) {
-        use crate::recorder::rez_v3_writer::{ManifestSeed, RezArchive, StreamRecorderV3};
-        let mut archive = RezArchive::create(path).unwrap();
+        use crate::recorder::rez_v3_writer::{create_archive, ManifestSeed, StreamRecorderV3};
+        let mut archive = create_archive(path).unwrap();
         let mut recs: Vec<StreamRecorderV3> = Vec::new();
         for (i, source) in sources.iter().enumerate() {
             let mut labels: std::collections::BTreeMap<String, String> = [
@@ -1593,7 +1593,7 @@ mod tests {
                     .collect(),
                 clock_anchor_wall_ns: 1_000_000_000,
             };
-            recs.push(StreamRecorderV3::new(archive.add_recording(seed).unwrap()));
+            recs.push(StreamRecorderV3::new(archive.add_source(seed).unwrap()));
         }
         for (i, rec) in recs.iter_mut().enumerate() {
             if !with_rows.get(i).copied().unwrap_or(true) {
@@ -1627,8 +1627,8 @@ mod tests {
         path: &std::path::Path,
         recordings: &[std::collections::BTreeMap<String, String>],
     ) {
-        use crate::recorder::rez_v3_writer::{ManifestSeed, RezArchive, StreamRecorderV3};
-        let mut archive = RezArchive::create(path).unwrap();
+        use crate::recorder::rez_v3_writer::{create_archive, ManifestSeed, StreamRecorderV3};
+        let mut archive = create_archive(path).unwrap();
         let mut recs: Vec<StreamRecorderV3> = Vec::new();
         for labels in recordings {
             let metadata = labels
@@ -1640,7 +1640,7 @@ mod tests {
                 metadata,
                 clock_anchor_wall_ns: 1_000_000_000,
             };
-            recs.push(StreamRecorderV3::new(archive.add_recording(seed).unwrap()));
+            recs.push(StreamRecorderV3::new(archive.add_source(seed).unwrap()));
         }
         for rec in recs.iter_mut() {
             for t in 0..3u64 {

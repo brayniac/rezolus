@@ -192,7 +192,7 @@ File-level metadata keys are defined in `src/parquet_metadata.rs`:
 The `.rez` format (`crates/rez/`: `src/rez.rs`, `src/reader.rs`) is a container holding many parquet tables plus a `manifest.json`, rather than a single parquet file. Two container shapes exist and both are readable:
 
 - **v2 (tar)** — a tar archive with `manifest.json` and one table per sampler (`<recording>/<sampler>.parquet`).
-- **v3 (SQLite)** — a SQLite container (`crates/rez/src/rez_sqlite.rs`, `crates/rez/src/rez_v3_writer.rs`) with a real WAL: rows land in the WAL and are periodically sealed into parquet segments. This is what `hindsight` maintains as its rolling buffer, and it is readable live while a writer is still appending.
+- **v3 (SQLite)** — a [`dendro`](https://github.com/iopsystems/dendro) archive: a SQLite container with a real WAL, where rows land in the WAL and are periodically sealed into parquet segments. This is what `hindsight` maintains as its rolling buffer, and it is readable live while a writer is still appending. Note `dendro` calls this schema **v4**, a table a **stream**, and a recording a **source**; a `.rez` written before the extraction is dendro's `LEGACY_SCHEMA_VERSION` and opens read-only, through compatibility views that alias `recordings`/`recording_id`/`sampler` onto `sources`/`source_id`/`stream`.
 
 Each sampler records at its own cadence. Table granularity depends on the snapshot format the agent produced:
 
@@ -205,24 +205,78 @@ Because each sampler records at its own cadence, a query spanning *two samplers 
 
 A `.rez` takes any number of endpoints, rezolus or Prometheus. A Prometheus target is converted on the way in: one scrape is one request and one response, so it becomes a single V3 acquisition group named `prometheus/scrape`, windowed by the real HTTP round trip (`src/recorder/prometheus.rs`). That is why it is a group rather than a flat V2 snapshot — a V2 table carries `<name>:window_begin`/`<name>:window_width` per value column, which would triple the schema width of every Prometheus table. The manifest carries per-recording label sets (`source`/`host` auto-populated, plus any `record --label k=v`, which applies to every recording in the run); a multi-recording `.rez` — built live by `record --endpoint a --endpoint b -o out.rez`, or offline by `parquet combine` — drives the viewer's A/B comparison, aliasing baseline/experiment from each recording's `arm`/`host` labels. The seal stagger keys on sampler + the recording's canonical label set (`seal_policy::recording_stagger_key`), so two recordings of the same agent do not seal in lockstep; identical label sets warn at startup.
 
-### `.rez` lives in its own crate
+### The container is `dendro`; `crates/rez` is the metrics layer on top
 
-`crates/rez` holds the whole format — container (v2 tar, v3 SQLite), writers,
-and the `RezReader` that presents an archive as a `metriken_query::MetricsSource`.
-It is a workspace crate rather than a module of the binary because `rezolus` is
-**binary-only** (no `lib` target), so nothing can depend on it: a reader living
-there was reachable by the server viewer and by nothing else, which is why the
-static-site WASM viewer has never opened a `.rez`.
+The **container** — segmented parquet plus a WAL in one SQLite file — is
+[`iopsystems/dendro`](https://github.com/iopsystems/dendro), a standalone crate
+pinned by git rev in the workspace `Cargo.toml`. It owns storage, the catalog,
+retention, checkpointing, the seal *policy*, the writer thread, and rewriting
+(combine/filter/range-copy). It knows nothing about metrics: a row is a
+timestamp and opaque bytes.
+
+`crates/rez` is everything that knows what a row MEANS — the `.rez` manifest and
+its recording/label model, `<sampler>/<group>` table keying, snapshot ingest,
+the v1/v2 tar container, and the `RezReader` that presents an archive as a
+`metriken_query::MetricsSource`. `metriken` and `metriken-query` stop here;
+neither reaches dendro.
+
+**The boundary is one trait.** `dendro::segment::SegmentEncoder` turns a
+stream's WAL rows into a parquet segment, and `rez::wal::RezEncoder` is `.rez`'s
+implementation of it. Two rules fall out, and both are load-bearing:
+
+- **An encoder works from the rows alone.** Both the writer thread (sealing) and
+  an unrelated reader process (materializing a live tail) call it, and the
+  reader has none of the writer's schema cache. This is why `WalCell`/
+  `WalGroupRow` re-anchor metadata once per segment.
+- **An encoder may drop a leading run** it cannot decode, so a `Segment` reports
+  its own row count and start rather than the input's.
+
+Because dendro takes the encoder as a constructor argument and a `.rez` has
+exactly one, `rez::rez_v3_writer::{create_archive, single_archive}` install it —
+prefer those over `dendro::writer::Archive::create` directly.
+
+**Vocabulary differs across the line on purpose.** dendro nests four things —
+**archive → stream → segment → row** — plus *source* (the namespace a stream
+belongs to: one producer, one clock domain, one label set), *WAL*, *seal*,
+*tail*, *catalog*, *encoder*. `.rez` says *recording*, *sampler*, *metric*,
+*acquisition group*.
+
+The mapping is:
+
+| `.rez` | dendro |
+|---|---|
+| the file — "a recording", what `rezolus record` produces | **archive** |
+| a source: one endpoint on one host, its `source`/`host`/`arm` labels, its clock anchor | **source** |
+| a sampler | one or more **streams** — one under V2, one per acquisition group (`<sampler>/<group>`) under V3 |
+| a segment | **segment** |
+
+**`RezRecording` is misnamed.** Its fields are `labels`, `metadata`, `complete`,
+`clock_anchor_wall_ns`, `clock_offsets` — that is a source, field for field, and
+`rezolus record --endpoint a --endpoint b` produces one recording holding two
+*sources*, not two recordings. The word "recording" means the whole capture,
+i.e. the archive; that is how the `rezolus recording <op>` subcommands already
+use it. The `--recording key=value` selector is the same slip on the CLI: it
+picks a source. Renaming both is a follow-up, not done here.
+
+Everything that calls into dendro uses dendro's names (`add_source`,
+`read_sources`, `SourceMeta`, `source_id`). A rezolus word appearing inside
+dendro is a bug — see its README's vocabulary table.
+
+`crates/rez` is a workspace crate rather than a module of the binary because
+`rezolus` is **binary-only** (no `lib` target), so nothing can depend on it: a
+reader living there was reachable by the server viewer and by nothing else,
+which is why the static-site WASM viewer has never opened a `.rez`.
 
 The binary re-exports the modules under the paths call sites already use
 (`crate::recorder::rez`, `crate::rez_reader`, …), so `.rez` code reads the same
-from inside `rezolus`.
+from inside `rezolus`. `rez::rez_sqlite` and `rez::seal_policy` are now thin
+re-exports of `dendro::db` and `dendro::seal` under the old names.
 
 Fixture builders (`rez::rez::recorder_tests_support`, and the tar writer
 `rez_stream`) sit behind the crate's `test-support` feature rather than
 `#[cfg(test)]` — a `#[cfg(test)]` module in `rez` is invisible to the binary
-crate's tests, which build most `.rez` fixtures in this repo. The binary enables
-that feature as a dev-dependency.
+crate's tests, which build most `.rez` fixtures in this repo. dendro has a
+`test-support` feature for the same reason, and `rez/test-support` enables it.
 
 **The `write` feature (default on) is what separates the two halves.** With it
 off, `crates/rez` is a *reader*: container, catalog, WAL-tail materialization,
@@ -242,13 +296,15 @@ archive owns:
   an agent snapshot *and* from this archive's own WAL, and only the first has
   snapshot values to borrow.
 
+dendro's own `write` feature gates its writer *thread* for a different reason:
+`std::thread::spawn` compiles for wasm32 and then panics at runtime.
+
 `cargo check -p rez --no-default-features --target wasm32-unknown-unknown` is a
-CI step for exactly this reason; nothing else catches a metriken type creeping
-back onto the read path.
+CI step for exactly this reason, and it covers dendro transitively; nothing else
+catches a metriken type creeping back onto the read path.
 
-### Service Extensions
-
-Service-level KPI dashboards are defined in `src/viewer/service_extension.rs` (`ServiceExtension`/`Kpi` structs). They allow the viewer to generate custom dashboard sections from PromQL queries embedded in parquet metadata. The `parquet annotate` command validates and embeds these. Templates live in `src/parquet_tools/templates/`.
+**Working on both at once:** uncomment the `[patch."https://github.com/iopsystems/dendro"]`
+block at the bottom of the workspace `Cargo.toml`. Leave it commented on `main`.
 
 ### Static Site Viewer (WASM)
 

@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 arrow = "58.2.0"
+dendro = { workspace = true }
 bytes = "1"
 histogram.workspace = true
 metriken = { workspace = true, optional = true }
@@ -22,7 +23,6 @@ parquet = { version = "58.2.0", default-features = false, features = [
     # in `lz4_flex` (pure Rust, no C). See `rez::segment_writer_props`.
     "lz4",
 ] }
-rusqlite = { version = "0.40", features = ["bundled", "blob", "serialize"] }
 rmp-serde = "1.3.1"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
@@ -41,11 +41,12 @@ write = [
     "dep:metriken",
     "dep:metriken-exposition",
     "metriken-query/ingest",
+    "dendro/write",
 ]
 # Fixture builders used by the binary crate's tests. Not `#[cfg(test)]`,
 # because a `#[cfg(test)]` module in THIS crate is invisible to the crate
 # under test next door.
-test-support = ["write"]
+test-support = ["write", "dendro/test-support"]
 
 # Builds only with `test-support`, which is what supplies the fixture builders
 # it calls. Declared rather than left implicit because `--all-targets` compiles
@@ -57,4 +58,7 @@ name = "write_rez_fixture"
 required-features = ["test-support"]
 
 [dev-dependencies]
+# Tests that poke the container's SQLite catalog directly. Not a dependency of
+# the crate itself any more — `dendro` owns every statement that touches SQL.
+rusqlite = { version = "0.40", features = ["bundled"] }
 tempfile = "3"

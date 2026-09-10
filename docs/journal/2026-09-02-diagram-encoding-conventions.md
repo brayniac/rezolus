@@ -72,10 +72,40 @@ with `dot -Tsvg docs/architecture.dot -o docs/architecture.svg`;
 
 ## Deferred or reopen items
 
-- The repo has exactly one diagram today, so the convention has a sample size
+- ~~The repo has exactly one diagram today, so the convention has a sample size
   of one. *Reopen* when a second is added — that is when it will be clear
   whether the rule needs a shared palette or legend, and whether dashes should
-  be reserved for external-ness alone.
+  be reserved for external-ness alone.~~ **Answered 2026-09-10**, by a set of
+  three in `iopsystems/dendro` (see
+  [the dendro extraction](2026-09-10-dendro-container-extraction.md)). Both
+  questions came back yes, and the second came back the hard way.
+
+  **A shared palette and a per-chart legend are both needed.** Three charts of
+  one system have to read as one system, which means one module owning the
+  palette and the glyph primitives. The legend has to be drawn by that same
+  generator: a key assembled from text or table cells can approximate a fill
+  but not a silhouette, and an approximated shape teaches a glyph the chart
+  never uses.
+
+  **Dashes should be reserved for external-ness alone.** The first draft spent
+  the channel three ways — "outside dendro", "in memory", and "has no catalog
+  row" — and the result was that dashes meant nothing at all, which was only
+  visible on looking at the three charts side by side. The fix was not a better
+  legend; it was giving two of those claims other homes: one moved into the
+  node's own label, and one turned out to be the wrong claim anyway (the file
+  had been drawn as a node beside its own contents, and became the enclosing
+  cluster instead).
+
+  That is the convention's own rule biting one level up. "Encode category in a
+  style channel, not only in a label" is necessary but not sufficient — the
+  channel also has to carry **exactly one** category, and across the whole set
+  rather than per chart. A channel with two meanings is worse than a label,
+  because a label at least admits it needs reading.
+
+  One addition worth carrying forward: the convention says to state the
+  encoding in the caption, and that survived contact, but a *generated* set
+  wants the encoding in a generated key as well. The caption says what the
+  chart is about; the key says what the marks mean, in the marks themselves.
 
 ## Appendix: Skills Invoked
 

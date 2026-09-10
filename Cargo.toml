@@ -22,6 +22,13 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 thiserror = "2.0.18"
 dashboard = { path = "crates/dashboard" }
+# The `.rez` container: segmented parquet + a WAL, in one SQLite file.
+# Pinned to a rev while the API settles; it will move to a crates.io version
+# once dendro's other consumers have exercised the encoder boundary.
+#
+# To work on dendro and rezolus side by side, uncomment the `[patch]` entry at
+# the bottom of this file rather than editing this line.
+dendro = { default-features = true, git = "https://github.com/iopsystems/dendro", rev = "47ce93b8ef44fe33f5779ceb593ab2e32371ecee" }
 rez = { path = "crates/rez" }
 report-save = { path = "crates/report-save" }
 include_dir = "0.7.4"
@@ -91,6 +98,7 @@ reqwest = { version = "0.13.3", default-features = false, features = [
 ] }
 # `bundled` compiles SQLite from source: slower builds, but no runtime system
 # dependency, which is what the `.deb` in [package.metadata.deb] needs.
+dendro.workspace = true
 rez.workspace = true
 rusqlite = { version = "0.40", features = ["bundled", "blob"] }
 rustls = { version = "0.23", default-features = false, features = [
@@ -229,3 +237,10 @@ assets = [
     ],
 ]
 
+# Local dendro development. Point this at your checkout and cargo will use it
+# in place of the pinned rev above, for this workspace and everything it builds.
+# Leave it commented on `main` — an uncommented path here builds from whatever
+# happens to be on your disk, which is not what CI or a fresh clone gets.
+#
+# [patch."https://github.com/iopsystems/dendro"]
+# dendro = { path = "../../iopsystems/dendro" }

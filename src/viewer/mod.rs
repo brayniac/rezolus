@@ -1315,7 +1315,7 @@ mod tests {
         // manifest metadata (the shape `annotate`/report-save produce).
         {
             let db = RezDb::open(&rez_path).unwrap();
-            let recs = db.read_recordings().unwrap();
+            let recs = db.read_sources().unwrap();
             let mut md = recs[0].meta.metadata.clone();
             md.insert(
                 crate::parquet_metadata::KEY_SELECTION.to_string(),
@@ -1329,7 +1329,7 @@ mod tests {
                 crate::parquet_metadata::KEY_REPORT.to_string(),
                 crate::parquet_metadata::REPORT_VALUE_TRIMMED.to_string(),
             );
-            db.update_recording_metadata(recs[0].id, &md).unwrap();
+            db.update_source_metadata(recs[0].id, &md).unwrap();
         }
 
         let matches = super::command().get_matches_from(["view", rez_path.to_str().unwrap()]);

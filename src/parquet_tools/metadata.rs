@@ -389,18 +389,19 @@ struct V3Recording {
 fn read_v3_summary(path: &Path) -> Result<Vec<V3Recording>, String> {
     let db = RezDb::open(path)?;
     let mut out = Vec::new();
-    for rec in db.read_recordings()? {
+    for rec in db.read_sources()? {
         let mut tables = Vec::new();
         // `all_samplers`, NOT `samplers`: the latter sees only `segments`, so a
         // table still inside its first seal period — 16 of 26 in the fleet
         // measurement this container exists for — would be missing from the
         // listing entirely, which is precisely the data v3 keeps.
-        for sampler in db.all_samplers(rec.id)? {
+        for sampler in db.all_streams(rec.id)? {
             let (segments, sealed) = db.segment_span(rec.id, &sampler)?;
             let live = db.live_wal_span(rec.id, &sampler)?;
             let rows = sealed.rows + live.rows;
-            let first = min_opt(sealed.first_ts, live.first_ts);
-            let last = max_opt(sealed.last_ts, live.last_ts);
+            let to_u64 = |v: Option<i64>| v.map(|v| v as u64);
+            let first = min_opt(to_u64(sealed.first_ts), to_u64(live.first_ts));
+            let last = max_opt(to_u64(sealed.last_ts), to_u64(live.last_ts));
             tables.push(V3Table {
                 sampler,
                 rows,
@@ -421,8 +422,12 @@ fn read_v3_summary(path: &Path) -> Result<Vec<V3Recording>, String> {
             labels: rec.meta.labels,
             metadata: rec.meta.metadata,
             complete: rec.complete,
-            clock_anchor_wall_ns: rec.meta.clock_anchor_wall_ns,
-            clock_offsets: db.read_clock_offsets(rec.id)?,
+            clock_anchor_wall_ns: rec.meta.clock_anchor_wall_ns as u64,
+            clock_offsets: db
+                .read_clock_offsets(rec.id)?
+                .into_iter()
+                .map(|(ts, off)| (ts as u64, off))
+                .collect(),
             tables,
         })
     }
@@ -767,14 +772,14 @@ mod rez_tests {
 #[cfg(test)]
 mod rez_v3_tests {
     use super::*;
-    use crate::recorder::rez_sqlite::{RecordingMeta, RezDb, SegmentMeta, WalRow};
+    use crate::recorder::rez_sqlite::{RezDb, SegmentMeta, SourceMeta, WalRow};
 
     const ANCHOR: u64 = 1_700_000_000_000_000_000;
     const SECOND: u64 = 1_000_000_000;
     const NOT_PARQUET: &[u8] = b"if this were ever decoded, these tests would fail";
 
-    fn meta(labels: &[(&str, &str)]) -> RecordingMeta {
-        RecordingMeta {
+    fn meta(labels: &[(&str, &str)]) -> SourceMeta {
+        SourceMeta {
             labels: labels
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -782,7 +787,7 @@ mod rez_v3_tests {
             metadata: [("sampling_interval_ms".to_string(), "1000".to_string())]
                 .into_iter()
                 .collect(),
-            clock_anchor_wall_ns: ANCHOR,
+            clock_anchor_wall_ns: ANCHOR as i64,
         }
     }
 
@@ -790,15 +795,15 @@ mod rez_v3_tests {
     fn seg(from: u64, rows: u64) -> SegmentMeta {
         SegmentMeta {
             rows,
-            first_ts: ANCHOR + from * SECOND,
-            last_ts: ANCHOR + (from + rows - 1) * SECOND,
+            first_ts: (ANCHOR + from * SECOND) as i64,
+            last_ts: (ANCHOR + (from + rows - 1) * SECOND) as i64,
         }
     }
 
     fn wal_row(sampler: &str, tick: u64) -> WalRow {
         WalRow {
-            sampler: sampler.to_string(),
-            ts: ANCHOR + tick * SECOND,
+            stream: sampler.to_string(),
+            ts: (ANCHOR + tick * SECOND) as i64,
             wall_offset: 0,
             row: b"opaque".to_vec(),
         }
@@ -813,7 +818,7 @@ mod rez_v3_tests {
         let path = dir.path().join("out.rez");
         let mut db = RezDb::create(&path).unwrap();
         let rid = db
-            .insert_recording(&meta(&[("source", "rezolus"), ("arm", "baseline")]))
+            .insert_source(&meta(&[("source", "rezolus"), ("arm", "baseline")]))
             .unwrap();
         db.insert_segment(rid, "cpu_usage", 0, &seg(0, 3), NOT_PARQUET)
             .unwrap();
@@ -853,9 +858,7 @@ mod rez_v3_tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("out.rez");
         let mut db = RezDb::create(&path).unwrap();
-        let rid = db
-            .insert_recording(&meta(&[("source", "rezolus")]))
-            .unwrap();
+        let rid = db.insert_source(&meta(&[("source", "rezolus")])).unwrap();
         db.insert_segment(rid, "cpu_usage", 0, &seg(0, 3), NOT_PARQUET)
             .unwrap();
         // Ticks 3 and 4 are committed to the WAL but never sealed; tick 2 is
@@ -901,9 +904,7 @@ mod rez_v3_tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("out.rez");
         let mut db = RezDb::create(&path).unwrap();
-        let rid = db
-            .insert_recording(&meta(&[("source", "rezolus")]))
-            .unwrap();
+        let rid = db.insert_source(&meta(&[("source", "rezolus")])).unwrap();
         db.insert_segment(rid, "cpu_usage", 0, &seg(0, 3), NOT_PARQUET)
             .unwrap();
         db.insert_wal_rows(
@@ -943,9 +944,7 @@ mod rez_v3_tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("out.rez");
         let mut db = RezDb::create(&path).unwrap();
-        let rid = db
-            .insert_recording(&meta(&[("source", "rezolus")]))
-            .unwrap();
+        let rid = db.insert_source(&meta(&[("source", "rezolus")])).unwrap();
         db.insert_segment(rid, "cpu_usage", 0, &seg(0, 3), NOT_PARQUET)
             .unwrap();
         // Deliberately out of order: the series is a per-batch maximum, so an
@@ -953,9 +952,9 @@ mod rez_v3_tests {
         // fast-sampler batch already contributed. The reported offset is the
         // newest observation, not the last row.
         db.transaction(|tx| {
-            tx.insert_clock_offset(rid, ANCHOR + 3 * SECOND, 1_500_000)?;
-            tx.insert_clock_offset(rid, ANCHOR + 5 * SECOND, -2_250_000)?;
-            tx.insert_clock_offset(rid, ANCHOR + 4 * SECOND, 9)
+            tx.insert_clock_offset(rid, (ANCHOR + 3 * SECOND) as i64, 1_500_000)?;
+            tx.insert_clock_offset(rid, (ANCHOR + 5 * SECOND) as i64, -2_250_000)?;
+            tx.insert_clock_offset(rid, (ANCHOR + 4 * SECOND) as i64, 9)
         })
         .unwrap();
         drop(db);
@@ -972,7 +971,7 @@ mod rez_v3_tests {
         let path = dir.path().join("out.rez");
         let mut db = RezDb::create(&path).unwrap();
         let rid = db
-            .insert_recording(&meta(&[("source", "rezolus"), ("arm", "baseline")]))
+            .insert_source(&meta(&[("source", "rezolus"), ("arm", "baseline")]))
             .unwrap();
         db.insert_segment(rid, "cpu_usage", 0, &seg(0, 3), NOT_PARQUET)
             .unwrap();

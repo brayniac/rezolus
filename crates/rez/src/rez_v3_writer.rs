@@ -1,935 +1,76 @@
-//! The `.rez` v3 writer thread. See docs/journal/2026-08-12-rez-sqlite-container.md.
+//! The scrape-side half of the v3 writer: the ingest that turns an agent
+//! snapshot into archive rows, and the seal decision over them.
 //!
-//! Same shape as the v2 writer (`rez_stream.rs`): a dedicated thread behind a
-//! bounded channel, so encoding a large segment cannot skew the scrape cadence
-//! and a disk that cannot keep up backpressures the loop instead of growing
-//! memory — with one bounded exception, unlike v2: a seal batch is encoded
-//! whole before its transaction opens, so its segments' bytes are all resident
-//! at once (see `seal_batch`). Everything the tar container needed to fake
-//! transactions is gone —
-//! no `.partial`, no rename, no rename-aside, no checkpoint manifests, no
-//! two-sync ordering protocol. **A seal batch is one transaction**, and the
-//! file at `path` is a valid, openable `.rez` from the moment `create` returns.
-//!
-//! Contract: PANIC-FREE — every fallible op returns `Err`. The global panic
-//! hook (`src/main.rs`) prints and calls `process::exit(101)` BEFORE
-//! unwinding, so a panic here never reaches the send-error path, skips
-//! finalize, and in wrapped mode orphans the child.
+//! The container underneath — the archive, its writer thread, the catalog and
+//! the seal transaction — is `dendro`. What lives here is everything that
+//! knows what a row MEANS: `Snapshot` -> `WalCell`/`WalGroupRow`, the schema
+//! cache, and `SealPolicy` accounting per sampler.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::path::{Path, PathBuf};
-use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender};
-use std::sync::{Arc, Mutex};
-use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::path::Path;
+use std::sync::Arc;
+use std::time::Instant;
 
 use metriken_exposition::{GroupSchema, GroupSnapshot, Snapshot};
 use tracing::warn;
 
-use super::rez::{dedup_key, entries_approx_bytes, group_approx_bytes, group_by_sampler};
-use super::rez_sqlite::{RecordingMeta, RezDb, SegmentMeta, WalRow};
-use super::seal_policy::{SealPolicy, SegmentAccount};
-use super::wal::{
-    encode_wal_group_row, encode_wal_row, materialize_wal_tail, WalCell, WalGroupRow, WalValue,
+use dendro::db::{SourceMeta, WalRow};
+// Test-only: these reach the container's catalog directly to assert what the
+// ingest above actually landed.
+#[cfg(test)]
+use dendro::db::{Db as RezDb, SegmentMeta};
+use dendro::seal::{SealPolicy, SegmentAccount};
+use dendro::writer::SourceWriter;
+#[cfg(test)]
+use dendro::writer::{
+    reclaim_if_fragmented, should_reclaim, RECLAIM_FREELIST_DIVISOR, RECLAIM_PAGES_PER_PASS,
 };
 
-/// Everything known when the recording starts. v3 has no manifest and no
-/// per-recording tar directory — a recording IS a row in `recordings` — so the
-/// v2 writer's `ManifestSeed` is exactly `RecordingMeta` here, minus `dir`.
-/// The name is kept so the two writers read alike at their call sites.
+pub use dendro::writer::{
+    Archive as RezArchive, SourceWriter as RezRecordingWriter, CHECKPOINT_INTERVAL,
+};
+
+/// Create a `.rez` archive with this crate's encoder installed.
 ///
-/// **`dir` was also a display name, and v3 owes its consumers a substitute.**
-/// Besides naming the tar directory it was the user-visible recording name in
-/// two places: `parquet metadata`'s `recording {dir} [labels]` line
-/// (`src/parquet_tools/metadata.rs`) and the viewer's per-capture display
-/// filename (`src/rez_reader.rs` → `capture_registry.rs`). Both should derive
-/// one from what v3 stores instead — `rez::recording_dir_slug(&labels)`, which
-/// is what produced `dir` in the first place, or `recording {id}` — rather
-/// than reintroduce the field. A/B aliasing is NOT affected: both viewer paths
-/// alias baseline/experiment on `arm`/`host` labels only, and `labels` survives
-/// verbatim in the `recordings` row.
-pub type ManifestSeed = RecordingMeta;
-
-enum Msg {
-    /// Insert a `recordings` row and hand its id back.
-    ///
-    /// Goes through the channel rather than being done by the caller because
-    /// the writer thread OWNS the connection — the whole design rests on there
-    /// being exactly one writing connection, since a second stalls on SQLite's
-    /// write lock for `busy_timeout` before failing, which against a tick reads
-    /// as a hang. The reply channel is the same shape `Sync` already uses.
-    AddRecording {
-        seed: Box<ManifestSeed>,
-        reply: SyncSender<Result<i64, String>>,
-    },
-    /// One tick's WAL rows for EVERY recording in the archive, across all
-    /// their samplers — one transaction, and therefore one fsync at
-    /// `synchronous=FULL`.
-    ///
-    /// Per tick rather than per recording, because the cost is paid on the
-    /// scrape loop: `wal`/`wal_tick` is a blocking send on a bound-1 channel
-    /// from inside the tick, and a commit per recording made that cost scale
-    /// linearly with endpoint count. `seal_batch` already refused the same
-    /// trade ("12 implicit commits would be 12 fsyncs at `synchronous=FULL`
-    /// against a ~46 ms tick"); this carries the argument across recordings.
-    Wal { ticks: Vec<(i64, Vec<WalRow>)> },
-    /// One seal batch for one recording = one transaction.
-    Seal {
-        recording_id: i64,
-        batch: Vec<String>,
-    },
-    /// Retention: drop everything wholly older than `cutoff_ts`, then trickle
-    /// freed pages back if the free list has grown. Only hindsight sends this.
-    Evict { recording_id: i64, cutoff_ts: u64 },
-    /// One recording's last clock observation; marks *that* recording complete.
-    ///
-    /// Does NOT stop the writer: an archive may hold several recordings and the
-    /// others may still be running. The thread exits when every handle has been
-    /// dropped and the channel closes — see `writer_thread`.
-    Finalize {
-        recording_id: i64,
-        clock_offset: (u64, i64),
-    },
-    /// Stop the writer, whatever else is still holding a sender.
-    ///
-    /// The exit signal is explicit rather than "the channel closed" because a
-    /// handle outliving its archive would otherwise deadlock the join: the
-    /// archive drops its own sender and waits, while the handle's clone keeps
-    /// the channel open forever. With this, a leaked handle merely finds the
-    /// receiver gone on its next send — the failure path it already has.
-    Shutdown,
-    /// Reply once everything queued ahead of this has been committed. Carries
-    /// no data and changes nothing — see [`RecordingWriter::sync`].
-    #[cfg(any(test, feature = "test-support"))]
-    Sync(SyncSender<()>),
-    /// Answer with how many transactions the writer's connection has
-    /// committed. A barrier as well as a question, exactly as `Sync` is: the
-    /// reply means everything queued ahead of it has been handled, so a caller
-    /// can count a tick's commits without racing the writer.
-    #[cfg(any(test, feature = "test-support"))]
-    Commits(SyncSender<u64>),
+/// `dendro` takes the encoder because it does not know what a row is; a `.rez`
+/// has exactly one, so no caller here should have to name it. These are the
+/// two constructors the tree uses — the rest of `dendro::writer::Archive` is
+/// reached on the value.
+pub fn create_archive(path: &Path) -> Result<RezArchive, String> {
+    RezArchive::create(path, Box::new(crate::wal::RezEncoder)).map_err(String::from)
 }
 
-/// Where the writer thread leaves its failure so a *handle* can report it.
+/// Finalize a single-recording archive held by a [`StreamRecorderV3`].
 ///
-/// With one recording per archive the handle owned the thread, so a send
-/// failure could join and surface the real error. An archive with several
-/// recordings has one thread and many handles, and a handle cannot join what it
-/// does not own — so the thread stores its error here on the way out and every
-/// handle reads it, keeping per-tick errors as specific as they were.
-type ErrorSlot = Arc<Mutex<Option<String>>>;
-
-/// Reclaim at most this many pages per retention pass — sized to fit inside a
-/// tick. The point of a cap at all is that a shrunken working set drains back
-/// to the filesystem gradually; a full `VACUUM` would return the same space in
-/// one step and stall the recording for seconds doing it.
-const RECLAIM_PAGES_PER_PASS: u32 = 100;
-
-/// Reclaim only once the free list exceeds this fraction of the file, as a
-/// divisor: `freelist_count * RECLAIM_FREELIST_DIVISOR > page_count`.
-///
-/// Steady-state eviction reuses freed pages, so the free list stays a rounding
-/// error on a healthy rolling buffer and never pays for a reclaim it does not
-/// need. This fires only when the working set genuinely shrank and left the
-/// file many times larger than its contents, which is the one situation where
-/// handing pages back is worth anything.
-const RECLAIM_FREELIST_DIVISOR: u32 = 10;
-
-/// Handle to the writer thread. Every fallible hand-off reports the writer's
-/// stored error, in the required order: send-failure → join → report.
-pub struct RezArchive {
-    /// The master sender. Kept only to clone per-recording handles from, and
-    /// dropped by `join` so the writer's channel can actually close.
-    tx: Option<SyncSender<Msg>>,
-    thread: Option<JoinHandle<Result<(), String>>>,
-    path: PathBuf,
-    err: ErrorSlot,
-}
-
-impl RezArchive {
-    /// Create the `.rez` at `path` and spawn its writer thread.
-    ///
-    /// The file is a valid, openable `.rez` from the moment this returns:
-    /// there is no `.partial`, no rename at the end, and nothing to move
-    /// aside at the start (`RezDb::create` refuses an existing file
-    /// atomically). That property is what retires the whole staging dance —
-    /// an early-killed recording is just a recording whose `complete` is 0.
-    ///
-    /// The archive holds no recordings yet; add each with `add_recording`.
-    pub fn create(path: &Path) -> Result<Self, String> {
-        Self::create_checkpointing_every(path, CHECKPOINT_INTERVAL)
-    }
-
-    /// [`create`](Self::create) with the WAL checkpoint cadence chosen by the
-    /// caller.
-    ///
-    /// Exists so the staleness bound is testable: asserting it through
-    /// `create` would mean a test that sleeps [`CHECKPOINT_INTERVAL`].
-    /// Production takes the constant.
-    pub fn create_checkpointing_every(
-        path: &Path,
-        checkpoint_every: Duration,
-    ) -> Result<Self, String> {
-        let db = RezDb::create(path)?;
-
-        // Bound 1, as in v2: the hand-off blocks while the writer is busy,
-        // which is the intended backpressure signal. One slot for the archive
-        // rather than per recording, deliberately — the writer is a single
-        // thread against a single write lock, so a deeper queue would only
-        // move the wait, and one recording falling behind SHOULD apply
-        // backpressure to the shared scrape loop rather than growing a buffer.
-        let (tx, rx) = sync_channel(1);
-        let err: ErrorSlot = Arc::new(Mutex::new(None));
-        let thread_err = Arc::clone(&err);
-        // A spawn failure removes the file, sidecars included. It leaves a
-        // VALID empty recording at the caller's chosen path — which used to be
-        // the argument for keeping it — but valid is not the same as useful:
-        // it holds nothing, and the writer refuses to overwrite an existing
-        // `.rez`, so leaving it turns the operator's retry into "the file
-        // already exists". That reads as a bug in the retry rather than
-        // fallout from the spawn failure that actually happened.
-        let thread = match std::thread::Builder::new()
-            .name("rez-v3-writer".to_string())
-            .spawn(move || writer_thread(rx, db, thread_err, checkpoint_every))
-        {
-            Ok(thread) => thread,
-            Err(e) => {
-                // The closure was dropped with the failed spawn, and the
-                // connection with it, so the file is closed and ours to remove.
-                RezDb::remove_archive(path);
-                return Err(format!("failed to spawn the .rez writer thread: {e}"));
-            }
-        };
-
-        Ok(Self {
-            tx: Some(tx),
-            thread: Some(thread),
-            path: path.to_path_buf(),
-            err,
-        })
-    }
-
-    /// Open one recording in this archive and return its writer handle.
-    ///
-    /// Several may be open at once — that is the point of the container's
-    /// label-tagged `recordings` list — and they are independent: each has its
-    /// own segment sequences, its own clock-offset series, and its own
-    /// `complete` flag.
-    pub fn add_recording(&mut self, seed: ManifestSeed) -> Result<RecordingWriter, String> {
-        // Derived before the seed is sent, since the seed moves.
-        let stagger_key = crate::seal_policy::recording_stagger_key(&seed.labels);
-        let Some(tx) = self.tx.as_ref() else {
-            return Err("the .rez writer thread has already been joined".to_string());
-        };
-        let (reply_tx, reply_rx) = sync_channel(0);
-        if tx
-            .send(Msg::AddRecording {
-                seed: Box::new(seed),
-                reply: reply_tx,
-            })
-            .is_err()
-        {
-            return Err(self.take_error());
-        }
-        let recording_id = match reply_rx.recv() {
-            Ok(inserted) => inserted?,
-            // The writer died between accepting the message and replying.
-            Err(_) => return Err(self.take_error()),
-        };
-        Ok(RecordingWriter {
-            tx: tx.clone(),
-            recording_id,
-            stagger_key,
-            err: Arc::clone(&self.err),
-            path: self.path.clone(),
-        })
-    }
-
-    /// The archive being written — valid and readable while it is written.
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
-    /// Close the channel and join the writer, returning its stored result.
-    /// Idempotent: a second call is a no-op `Ok`.
-    ///
-    /// Handles should be dropped first — but not because this would otherwise
-    /// block. `Shutdown` is sent below *before* our own sender is released, and
-    /// the writer honours it whoever else still holds a clone, so a wrong order
-    /// is an error (work queued after the stop is dropped), not a hang. That
-    /// distinction is load-bearing: the guarantee lives in `Msg::Shutdown`, not
-    /// in the drop order, and removing it would turn every "must drop first"
-    /// note in this file into a real deadlock.
-    pub fn join(&mut self) -> Result<(), String> {
-        // Tell the writer to stop before releasing our own sender. A handle
-        // that outlived its archive still holds a clone, so waiting for the
-        // channel to close on its own could wait forever; `Shutdown` ends the
-        // loop regardless of who is still holding one. A failed send just
-        // means the writer already exited.
-        if let Some(tx) = self.tx.as_ref() {
-            let _ = tx.send(Msg::Shutdown);
-        }
-        self.tx = None;
-        match self.thread.take() {
-            // The panic arm is unreachable by contract (the global hook exits
-            // the process before unwinding); it exists so this path cannot
-            // itself panic.
-            Some(handle) => handle
-                .join()
-                .unwrap_or_else(|_| Err("the .rez writer thread panicked".to_string())),
-            None => Ok(()),
-        }
-    }
-
-    fn take_error(&mut self) -> String {
-        take_writer_error(&self.err)
-    }
-
-    /// Commit one tick's staged rows for EVERY recording, as one transaction.
-    ///
-    /// The multi-recording counterpart to [`RecordingWriter::wal`]. Each
-    /// recording's rows come from [`StreamRecorderV3::stage`]; this hands them
-    /// over together so the archive pays one commit — one fsync at
-    /// `synchronous=FULL` — per tick rather than one per endpoint.
-    ///
-    /// **Why the cost is worth naming:** the hand-off is a blocking send on a
-    /// bound-1 channel from inside the scrape tick, so a per-recording commit
-    /// put a linear-in-endpoint-count fsync bill on the loop that has to keep
-    /// up with the sampling interval. `seal_batch` already refused exactly this
-    /// trade within one recording; this is the same argument across them.
-    ///
-    /// An empty batch does not send: it still checks the writer is alive, so a
-    /// tick where nothing advanced cannot mask a dead writer.
-    pub fn wal_tick(&mut self, ticks: Vec<(i64, Vec<WalRow>)>) -> Result<(), String> {
-        let ticks: Vec<(i64, Vec<WalRow>)> = ticks
-            .into_iter()
-            .filter(|(_, rows)| !rows.is_empty())
-            .collect();
-        if ticks.is_empty() {
-            return self.check_alive();
-        }
-        let Some(tx) = self.tx.as_ref() else {
-            return Err("the .rez writer thread has already been joined".to_string());
-        };
-        if tx.send(Msg::Wal { ticks }).is_ok() {
-            return Ok(());
-        }
-        Err(take_writer_error(&self.err))
-    }
-
-    /// How many transactions the writer has committed, as a barrier: the
-    /// answer arrives only after everything queued ahead of it is handled.
-    ///
-    /// Exists so "one commit per tick, whatever the endpoint count" is a
-    /// property a test asserts rather than a comment claims — an fsync is not
-    /// observable from inside the process, but the commit that causes it is.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn commits_for_test(&mut self) -> u64 {
-        let (tx, rx) = sync_channel(0);
-        let Some(sender) = self.tx.as_ref() else {
-            return 0;
-        };
-        if sender.send(Msg::Commits(tx)).is_err() {
-            return 0;
-        }
-        rx.recv().unwrap_or(0)
-    }
-
-    /// Whether the writer thread is still alive, without writing anything.
-    ///
-    /// Mirrors `RecordingWriter::check_alive`: the shared error slot is the
-    /// only signal available, since the archive cannot ask a thread it owns
-    /// whether it has finished without joining it.
-    fn check_alive(&mut self) -> Result<(), String> {
-        match self.err.lock() {
-            Ok(guard) if guard.is_some() => Err(guard.clone().unwrap_or_default()),
-            _ => Ok(()),
-        }
-    }
-
-    /// Create an archive holding exactly one recording.
-    ///
-    /// The shape every caller had before archives could hold several, and
-    /// still what hindsight and a single-endpoint `record` run want. Returns
-    /// both halves because the archive owns the writer thread and must outlive
-    /// the handle — `Shutdown` means a wrong order is an error rather than a
-    /// hang, but the right order is still: finish with the handle, then join.
-    /// Finalize the one recording and join the writer, so the file is fully
-    /// committed when this returns.
-    ///
-    /// The synchronous shape callers had before `finalize` was split: the
-    /// handle can only *queue* completion now, since the archive owns the
-    /// thread, so anything that reads the file straight afterwards has to join
-    /// too. Mirrors `RezStream::finalize` in the recorder.
-    #[cfg(test)]
-    pub fn finalize_single(
-        mut self,
-        writer: RecordingWriter,
-        clock_offset: (u64, i64),
-    ) -> Result<(), String> {
-        let queued = writer.finalize(clock_offset);
-        let joined = self.join();
-        queued.and(joined)
-    }
-
-    /// As `finalize_single`, but for a caller holding the `StreamRecorderV3`
-    /// (which owns the handle) rather than a bare `RecordingWriter`.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn finalize_single_rec(
-        mut self,
-        rec: StreamRecorderV3,
-        clock_offset: (u64, i64),
-    ) -> Result<(), String> {
-        let queued = rec.finalize(clock_offset);
-        let joined = self.join();
-        queued.and(joined)
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn single(path: &Path, seed: ManifestSeed) -> Result<(Self, RecordingWriter), String> {
-        let mut archive = Self::create(path)?;
-        let writer = archive.add_recording(seed)?;
-        Ok((archive, writer))
-    }
-}
-
-impl Drop for RezArchive {
-    /// The writer must be joined on every path out — including the ones that
-    /// skip an explicit join — so a dropped archive never leaves a detached
-    /// thread still writing to the database.
-    fn drop(&mut self) {
-        if let Err(e) = self.join() {
-            warn!("the .rez writer failed: {e}");
-        }
-    }
-}
-
-/// One recording's handle onto a shared archive writer.
-///
-/// Cheap and cloneable-in-spirit: it is a sender plus an id. Dropping it
-/// releases this recording's claim on the writer; the thread exits once every
-/// handle *and* the archive's master sender are gone.
-pub struct RecordingWriter {
-    tx: SyncSender<Msg>,
-    recording_id: i64,
-    /// This recording's stagger identity — its canonical label set. Held here
-    /// so the seal policy can desync tables ACROSS recordings as well as
-    /// within one; see `stagger_bucket`.
-    stagger_key: String,
-    err: ErrorSlot,
-    /// The archive this recording lives in. Carried per handle so a caller
-    /// holding only a recording can still name its file — one `PathBuf` per
-    /// recording, against an archive that holds at most a handful.
-    path: PathBuf,
-}
-
-impl RecordingWriter {
-    /// The archive being written — valid and readable while it is written.
-    ///
-    /// Reachable only through `StreamRecorderV3::path`, which no live caller
-    /// uses: the recorder asks the archive directly. Kept because a recorder
-    /// naming its own output is the obvious thing to want.
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
-    /// The `recordings` row this handle appends to.
-    pub fn recording_id(&self) -> i64 {
-        self.recording_id
-    }
-
-    #[cfg_attr(not(test), allow(dead_code))]
-    /// This recording's stagger identity — see `stagger_bucket`.
-    pub fn stagger_key(&self) -> &str {
-        &self.stagger_key
-    }
-
-    /// Hand one tick's WAL rows to the writer, for THIS recording alone.
-    ///
-    /// The single-recording spelling — hindsight, and a one-endpoint `record`.
-    /// An archive with several recordings should stage each one and commit the
-    /// tick once, through [`RezArchive::wal_tick`]: one transaction instead of
-    /// one per recording.
-    pub fn wal(&mut self, rows: Vec<WalRow>) -> Result<(), String> {
-        if rows.is_empty() {
-            return self.check_alive();
-        }
-        self.send(Msg::Wal {
-            ticks: vec![(self.recording_id, rows)],
-        })
-    }
-
-    /// Hand one seal batch (= one transaction) to the writer, as the samplers
-    /// to seal. Blocks while the channel is full: that is the intended
-    /// backpressure signal.
-    pub fn seal(&mut self, batch: Vec<String>) -> Result<(), String> {
-        if batch.is_empty() {
-            return self.check_alive();
-        }
-        self.send(Msg::Seal {
-            recording_id: self.recording_id,
-            batch,
-        })
-    }
-
-    /// Ask the writer to apply retention at `cutoff_ts`.
-    ///
-    /// It goes through the writer thread rather than a second connection for
-    /// the same reason everything else does: the writer OWNS this file, and a
-    /// second writing connection would stall on the write lock for up to
-    /// `busy_timeout` (5 s, rusqlite's default) before failing — which against
-    /// a tick reads as a hang. Readers are unaffected either way; WAL mode
-    /// lets them proceed while this commits.
-    ///
-    /// Fire-and-forget, like `wal` and `seal`: a failure surfaces on the next
-    /// hand-off, which is the convention the whole writer follows.
-    pub fn evict_before(&mut self, cutoff_ts: u64) -> Result<(), String> {
-        self.send(Msg::Evict {
-            recording_id: self.recording_id,
-            cutoff_ts,
-        })
-    }
-
-    /// Block until everything handed off so far has been committed.
-    ///
-    /// **The one place the writer is not fire-and-forget, and it exists because
-    /// the file lags the caller.** Every other hand-off queues work and returns
-    /// immediately, so a caller that hands off an ingest or an eviction and
-    /// then opens a SECOND connection to look at the file — `summarize`, a
-    /// dump, `/status` — can legitimately observe the state from before its own
-    /// last call. That is fine for a status reading and fatal for an assertion.
-    ///
-    /// Ordering is what makes this work rather than any locking: the channel is
-    /// FIFO and the writer is single-threaded, so the reply cannot be sent
-    /// until every earlier message has been fully handled. With several
-    /// recordings sharing one writer that is *stronger* than it was, not
-    /// weaker: the barrier covers the other recordings' queued work too.
-    ///
-    /// A dropped reply channel is treated as success — it means the writer
-    /// exited, and its error surfaces through the usual hand-off path rather
-    /// than here.
-    ///
-    /// **Test-only, and that is a statement about the callers rather than the
-    /// mechanism.** Nothing in production asserts on the file immediately after
-    /// handing off a tick: `/status` reporting retention a tick behind is
-    /// inherent to an asynchronous writer and harmless. Tests do assert it, and
-    /// without a barrier they race the writer. Give this a `cfg`-free home the
-    /// moment a real caller needs to see its own last tick.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn sync(&mut self) -> Result<(), String> {
-        let (tx, rx) = sync_channel(0);
-        self.send(Msg::Sync(tx))?;
-        let _ = rx.recv();
-        Ok(())
-    }
-
-    /// Record this recording's final clock offset and mark it complete.
-    ///
-    /// Consumes the handle, which is what releases its sender: the writer
-    /// thread ends when the last handle and the archive's master sender are
-    /// gone, so a handle kept alive past its finalize would stall the join.
-    pub fn finalize(mut self, clock_offset: (u64, i64)) -> Result<(), String> {
-        self.send(Msg::Finalize {
-            recording_id: self.recording_id,
-            clock_offset,
-        })
-    }
-
-    /// Report a writer that has already failed, on a hand-off that sends
-    /// nothing. Without it, writer health would only be polled when there is
-    /// something to write, and a recording whose writer died would go on
-    /// reporting success for every empty tick in between.
-    fn check_alive(&mut self) -> Result<(), String> {
-        // The shared error slot is the only signal available here: the thread
-        // belongs to the archive, so this cannot ask whether it has finished,
-        // and it deliberately does not send — a probe message would be a write
-        // on a path whose whole point is that it has nothing to write. A
-        // writer that exited *cleanly* while this handle is live is therefore
-        // invisible here, which cannot happen today because the only clean
-        // exit is `Shutdown`, sent last.
-        match self.err.lock() {
-            Ok(guard) if guard.is_some() => Err(guard.clone().unwrap_or_default()),
-            _ => Ok(()),
-        }
-    }
-
-    fn send(&mut self, msg: Msg) -> Result<(), String> {
-        if self.tx.send(msg).is_ok() {
-            return Ok(());
-        }
-        // The receiver is gone, so the writer has exited (it exits its receive
-        // loop on the first error). The thread stored its error on the way out
-        // — see `ErrorSlot` — so report that rather than logging per-tick
-        // against a broken recording.
-        Err(take_writer_error(&self.err))
-    }
-}
-
-/// Read the writer thread's stored failure, or a generic one if it exited
-/// without recording anything (a clean exit that a handle nonetheless outlived).
-fn take_writer_error(slot: &ErrorSlot) -> String {
-    slot.lock()
-        .ok()
-        .and_then(|guard| guard.clone())
-        .unwrap_or_else(|| {
-            "the .rez writer thread exited before the recording finished".to_string()
-        })
-}
-
-/// An encoded segment waiting to be inserted.
-struct Encoded {
-    sampler: String,
-    seq: u64,
-    meta: SegmentMeta,
-    bytes: Vec<u8>,
-}
-
-/// The writer thread body. Every fallible operation returns `Err`; the loop
-/// exits on the first error so the failure surfaces on the next hand-off
-/// instead of accumulating against a broken recording.
-fn writer_thread(
-    rx: Receiver<Msg>,
-    mut db: RezDb,
-    err_slot: ErrorSlot,
-    checkpoint_every: Duration,
+/// `dendro` cannot offer this: the recorder that owns the handle is this
+/// crate's type, not the container's.
+#[cfg(any(test, feature = "test-support"))]
+pub fn finalize_single_rec(
+    mut archive: RezArchive,
+    rec: StreamRecorderV3,
+    clock_offset: (u64, i64),
 ) -> Result<(), String> {
-    // `rx` is BORROWED by the loop, not moved into it, so the receiver outlives
-    // the error store below. That ordering is the whole point: a handle's send
-    // fails the instant the receiver drops, and if the slot were still empty at
-    // that moment the handle would report a generic "writer exited" instead of
-    // the writer's own error. Holding `rx` here means the channel is still open
-    // while the slot is written, so any send that fails afterwards finds it.
-    let result = writer_loop(&rx, &mut db, checkpoint_every);
-    if let Err(ref e) = result {
-        *err_slot.lock().unwrap_or_else(|e| e.into_inner()) = Some(e.clone());
-    }
-    result
+    let queued = rec.finalize(clock_offset);
+    let joined = archive.join().map_err(String::from);
+    queued.and(joined)
 }
 
-/// How stale a plain copy of a live archive is allowed to be.
-///
-/// SQLite commits into a `<file>-wal` sidecar and folds it into the archive at
-/// a checkpoint, so a copy of the archive ALONE — which is what anyone who
-/// `cp`s one, or uploads one to a browser, ends up with — is a consistent view
-/// as of the last checkpoint and nothing after it. That copy is not corrupt; it
-/// simply ends early, and nothing about it says so.
-///
-/// [`crate::rez_sqlite`]'s autocheckpoint bounds how many BYTES can accumulate
-/// (4 MiB). It cannot bound how much TIME they represent: a busy recording
-/// crosses 4 MiB in seconds, a quiet one in hours, and the quiet one is the
-/// case where a copy is silently useless. Measured before this existed: 123
-/// ticks — about two minutes at a 1s interval — missing from a plain copy of a
-/// 2000-tick recording.
-///
-/// 10s is chosen to be short against the window anyone reasons about (an
-/// incident, a benchmark run) and long against the work: a passive checkpoint
-/// of one interval's frames is a few tens of KiB at a typical fleet cadence,
-/// and it runs on the writer THREAD rather than the scrape loop. It does not
-/// make a copy exact — `rezolus recording snapshot` does that — it makes what a
-/// copy loses bounded and small.
-pub const CHECKPOINT_INTERVAL: Duration = Duration::from_secs(10);
-
-fn writer_loop(
-    rx: &Receiver<Msg>,
-    db: &mut RezDb,
-    checkpoint_every: Duration,
-) -> Result<(), String> {
-    // Next segment sequence number, per (recording, sampler). Keyed by both
-    // because `seq` is scoped to a recording's sampler in the `segments` table:
-    // two recordings of the same host have the same sampler names and each
-    // needs its own sequence.
-    let mut next_seq: BTreeMap<(i64, String), u64> = BTreeMap::new();
-    // Timestamps each recording's `clock_offsets` series already carries. Only
-    // finalize reads it, but it has to be maintained as batches seal.
-    let mut observed: BTreeMap<i64, BTreeSet<u64>> = BTreeMap::new();
-    // How many recordings were opened, and how many closed cleanly. Reclaim at
-    // exit only when they match: an unclean exit is the recovery artifact and
-    // must not pay for a vacuum on the way down.
-    let mut added: usize = 0;
-    let mut finalized: usize = 0;
-    // When the sidecar was last folded into the archive. Advanced on every
-    // checkpoint, including ones taken while idle — the guarantee is about
-    // elapsed time, not about arriving messages.
-    let mut last_checkpoint = Instant::now();
-
-    loop {
-        // `recv_timeout`, not `recv`: a writer with nothing to do still has to
-        // wake and checkpoint. A recording that has gone quiet is exactly when
-        // someone copies it.
-        let waited = rx.recv_timeout(checkpoint_every.saturating_sub(last_checkpoint.elapsed()));
-        if last_checkpoint.elapsed() >= checkpoint_every {
-            // Best-effort: a checkpoint that cannot proceed (a reader is
-            // holding an older snapshot) is not an error, and failing the
-            // writer over one would trade every subsequent tick for a copy's
-            // freshness.
-            if let Err(e) = db.checkpoint_passive() {
-                warn!("failed to checkpoint the WAL: {e}");
-            }
-            last_checkpoint = Instant::now();
-        }
-        let received = match waited {
-            Ok(msg) => Ok(msg),
-            // Nothing arrived within the checkpoint window: go round again.
-            Err(RecvTimeoutError::Timeout) => continue,
-            // Every handle is gone. Falls into the same arm the blocking
-            // `recv` used to reach.
-            Err(RecvTimeoutError::Disconnected) => Err(()),
-        };
-        match received {
-            // Nothing to do but answer: arriving here at all means every
-            // message queued before it has already been handled.
-            #[cfg(any(test, feature = "test-support"))]
-            Ok(Msg::Sync(reply)) => {
-                let _ = reply.send(());
-            }
-            Ok(Msg::AddRecording { seed, reply }) => {
-                let inserted = db.insert_recording(&seed);
-                // A failed insert is reported to the caller and does NOT kill
-                // the writer: an archive's other recordings are still valid,
-                // and the caller decides whether to give up.
-                if inserted.is_ok() {
-                    added += 1;
-                }
-                let _ = reply.send(inserted);
-            }
-            Ok(Msg::Wal { ticks }) => db.insert_wal_rows_batch(&ticks)?,
-            #[cfg(any(test, feature = "test-support"))]
-            Ok(Msg::Commits(reply)) => {
-                let _ = reply.send(db.commits());
-            }
-            Ok(Msg::Seal {
-                recording_id,
-                batch,
-            }) => {
-                if let Some(ts) = seal_batch(db, recording_id, &mut next_seq, batch)? {
-                    observed.entry(recording_id).or_default().insert(ts);
-                }
-            }
-            Ok(Msg::Evict {
-                recording_id,
-                cutoff_ts,
-            }) => {
-                db.evict_before(recording_id, cutoff_ts)?;
-                reclaim_if_fragmented(db)?;
-            }
-            Ok(Msg::Finalize {
-                recording_id,
-                clock_offset,
-            }) => {
-                // The loop's final tick observation joins the series only when
-                // it adds a timestamp no sealed row already covers — otherwise
-                // the series would carry two conflicting offsets at one
-                // timestamp and consumers could not read it uniformly. The
-                // row-derived value wins because it is a projection of the
-                // `:wall_offset` column the segment itself carries. Same rule,
-                // and same reason, as the v2 writer.
-                let novel = !observed
-                    .get(&recording_id)
-                    .is_some_and(|o| o.contains(&clock_offset.0));
-                db.transaction(|tx| {
-                    if novel {
-                        tx.insert_clock_offset(recording_id, clock_offset.0, clock_offset.1)?;
-                    }
-                    tx.mark_complete(recording_id)
-                })?;
-                finalized += 1;
-                // Deliberately NOT returning here, and not reclaiming yet. An
-                // archive may hold several recordings; this one is complete,
-                // the others may still be writing. The reclaim is a
-                // whole-file operation and belongs at the end, once — see the
-                // loop's exit below.
-            }
-            // Asked to stop. Same accounting as the channel-close arm below:
-            // reclaim only if every recording opened was also finalized.
-            Ok(Msg::Shutdown) => {
-                if added > 0 && finalized == added {
-                    reclaim_all(db)?;
-                }
-                return Ok(());
-            }
-            // Every handle has been dropped, so no further work can arrive.
-            //
-            // If all the recordings that were opened also finalized, this is a
-            // clean close and the free list is drained once, here — the place
-            // the single-recording writer did it inside its `Finalize` arm.
-            // AFTER every `mark_complete`, deliberately: reclaiming space is an
-            // optimization, and a crash partway through it must leave complete
-            // recordings that are merely larger than they needed to be, never
-            // incomplete ones that happen to be compact.
-            //
-            // Otherwise a handle was dropped without finalizing. Nothing to
-            // clean up and nothing to reclaim: the file is already a valid
-            // `.rez` holding every committed tick, with `complete` still 0 —
-            // that is the recovery artifact, and a shutdown that may be a kill
-            // must not pay for a vacuum on the way down.
-            Err(_) => {
-                if added > 0 && finalized == added {
-                    reclaim_all(db)?;
-                }
-                return Ok(());
-            }
-        }
-    }
+/// [`create_archive`] holding exactly one recording, opened and ready to write.
+#[cfg(any(test, feature = "test-support"))]
+pub fn single_archive(
+    path: &Path,
+    seed: ManifestSeed,
+) -> Result<(RezArchive, SourceWriter), String> {
+    RezArchive::single(path, Box::new(crate::wal::RezEncoder), seed).map_err(String::from)
 }
 
-/// Hand freed pages back to the filesystem, but only once the free list is a
-/// noticeable fraction of the file. See the two constants for why the guard is
-/// there: without it this would run every pass for no gain, and without the
-/// reclaim a buffer that shrank would keep its high-water size forever.
-fn reclaim_if_fragmented(db: &RezDb) -> Result<(), String> {
-    if should_reclaim(
-        db.pragma_u32("freelist_count")?,
-        db.pragma_u32("page_count")?,
-    ) {
-        db.incremental_vacuum(RECLAIM_PAGES_PER_PASS)?;
-    }
-    Ok(())
-}
+use super::rez::{dedup_key, entries_approx_bytes, group_approx_bytes, group_by_sampler};
+#[cfg(test)]
+use super::wal::materialize_wal_tail;
+use super::wal::{encode_wal_group_row, encode_wal_row, WalCell, WalGroupRow, WalValue};
 
-/// The guard, as a decision rather than a branch — because it is a decision
-/// about COST, not about outcome: reclaiming an unfragmented file is a no-op
-/// either way, so the only way to test the threshold is to ask it directly.
-fn should_reclaim(free_pages: u32, pages: u32) -> bool {
-    free_pages.saturating_mul(RECLAIM_FREELIST_DIVISOR) > pages
-}
-
-/// Drain the whole free list back to the filesystem, in one go. Finalize only.
-///
-/// **Without this a finished recording keeps every page its WAL pruning freed.**
-/// Pruning deletes rows continuously — that is how the WAL stays a tail rather
-/// than a second copy of the recording — and each deleted row's page lands on
-/// SQLite's free list, available for reuse but never returned to the
-/// filesystem. `reclaim_if_fragmented` is the trickle that returns them, but
-/// only the retention path calls it, so a `record` run reclaims nothing. The
-/// sparser the recording, the larger the share of the file that is dead.
-///
-/// Unguarded, unlike the retention path. `should_reclaim` exists to keep a
-/// *recurring* per-tick cost off a file that would not benefit; this runs once,
-/// at the end, on a file nobody is waiting to write to again, and on an already
-/// compact file it is a no-op costing one `freelist_count` lookup.
-///
-/// Uncapped, also unlike the retention path: `RECLAIM_PAGES_PER_PASS` bounds a
-/// pass so a reclaim cannot overrun a tick, and there is no next tick here.
-/// `u32::MAX` is "as many as the free list holds" — `incremental_vacuum` stops
-/// when it runs out.
-fn reclaim_all(db: &RezDb) -> Result<(), String> {
-    db.incremental_vacuum(u32::MAX)
-}
-
-/// Encode one batch's segments, insert them — with the batch's clock
-/// observation — in ONE transaction, then prune the sealed samplers' WAL
-/// outside it. Returns the timestamp of the observation recorded, if any.
-fn seal_batch(
-    db: &mut RezDb,
-    recording_id: i64,
-    next_seq: &mut BTreeMap<(i64, String), u64>,
-    batch: Vec<String>,
-) -> Result<Option<u64>, String> {
-    // Read and encode BEFORE the transaction opens. Both are proportional to
-    // segment size and would hold the write lock for their whole duration.
-    //
-    // `live_wal` is what defines the segment: its watermark returns exactly the
-    // rows past this sampler's newest sealed segment, and because the ingest
-    // side hands rows and seal requests down one FIFO channel, those are
-    // exactly the rows the seal decision was made about. Nothing has to be
-    // snapshotted or passed along for that to hold.
-    let mut encoded = Vec::with_capacity(batch.len());
-    // The batch's clock observation: the NEWEST sealed row's
-    // `(timestamp, wall_offset)`, paired with that same table's offset — never
-    // one table's timestamp against another's. Derived from the rows just
-    // sealed, so every entry in the series is a projection of the
-    // `:wall_offset` column it summarizes, exactly as in v2.
-    let mut observation: Option<(u64, i64)> = None;
-    for sampler in batch {
-        let rows = db.live_wal(recording_id, &sampler)?;
-        let Some(last) = rows.last() else {
-            // No live rows: nothing to catalog and nothing to prune. The ingest
-            // side never seals an empty segment, and a sampler whose rows were
-            // already sealed is not an error worth failing the recording over.
-            continue;
-        };
-        // `last_ts`/`wall_offset`: always the raw WAL span's own last row,
-        // for BOTH containers — a V3 group's un-anchored skip (see
-        // `materialize_group_wal_tail`) is always a LEADING run (retention
-        // removes a prefix, never punches a hole), so the last row is never
-        // itself skipped. `first_ts`/`rows` are NOT this simple — see below.
-        let (last_ts, wall_offset) = (last.ts, last.wall_offset);
-        let Some(tail) = materialize_wal_tail(&sampler, &rows)
-            .map_err(|e| format!("failed to encode a {sampler} segment: {e}"))?
-        else {
-            continue;
-        };
-        // `>=`, so a later sampler wins a tie — same rule as v2's
-        // `seal_segments`.
-        if observation.is_none_or(|(seen, _)| last_ts >= seen) {
-            observation = Some((last_ts, wall_offset));
-        }
-        // Bumped before the commit, which is safe only because the writer
-        // exits on its first error: no later batch ever reuses this map.
-        // Keyed by recording as well as sampler: `segments.seq` is scoped to
-        // `(recording_id, sampler)`, so two recordings of the same host must
-        // not share a counter.
-        let seq = next_seq.entry((recording_id, sampler.clone())).or_insert(0);
-        encoded.push(Encoded {
-            sampler,
-            seq: *seq,
-            meta: SegmentMeta {
-                // From `tail`, NOT `rows.len()`/`rows.first().ts`: a V3
-                // group table's leading un-anchored rows (skipped, see
-                // `materialize_group_wal_tail`) are real WAL rows but never
-                // reach the segment, so the raw WAL span would catalog a row
-                // count and start the catalog does not agree with the bytes
-                // being inserted — display-only (`parquet metadata`,
-                // hindsight `/status`, `cadence_ns`), but still wrong data.
-                // `materialize_sampler_wal_tail` never skips, so for a V1/V2
-                // table `tail.rows`/`tail.first_ts` are simply `rows.len()`/
-                // `rows.first().ts` again — this is a no-op there.
-                rows: tail.rows,
-                first_ts: tail.first_ts,
-                last_ts,
-            },
-            bytes: tail.bytes,
-        });
-        *seq += 1;
-    }
-
-    // ONE transaction for the whole batch. The fleet seals 12 tables in
-    // lockstep, and 12 implicit commits would be 12 fsyncs at
-    // `synchronous=FULL` against a ~46 ms tick.
-    //
-    // The batch's clock observation rides along inside it, for free: no extra
-    // commit, no extra fsync, and it lands iff the segments it was derived
-    // from do. It is a `clock_offsets` ROW rather than something a reader has
-    // to dig out of a segment, which is what keeps drift readable from the
-    // catalog alone — including on a recording that is killed before it ever
-    // finalizes, where these are the only observations there will be.
-    db.transaction(|tx| {
-        for e in &encoded {
-            tx.insert_segment(recording_id, &e.sampler, e.seq, &e.meta, &e.bytes)?;
-        }
-        if let Some((ts, offset)) = observation {
-            tx.insert_clock_offset(recording_id, ts, offset)?;
-        }
-        Ok(())
-    })?;
-
-    // OUTSIDE the transaction, deliberately: a quiet sampler accumulates
-    // thousands of rows before it seals, so pruning inside the seal commit puts
-    // a large delete on the tick path. `live_wal`'s watermark filter makes a
-    // crash between the commit above and the delete below harmless — a
-    // straddling row is simply not live — which leaves the prune a pure
-    // background optimisation. `RezTx` does not expose `prune_wal`, so this
-    // ordering is enforced by the type, not by this comment.
-    //
-    // Each sampler is pruned only up to its OWN segment's `last_ts`: rows a
-    // sampler ingested after the sealed span, and every other sampler's rows,
-    // stay live.
-    for e in &encoded {
-        db.prune_wal(recording_id, &e.sampler, e.meta.last_ts)?;
-    }
-    Ok(observation.map(|(ts, _)| ts))
-}
+/// Everything known when the recording starts.
+pub type ManifestSeed = SourceMeta;
 
 /// The scrape-side half of the v3 writer: per-sampler open segments, the seal
 /// decision, and — new in v3 — a WAL row per sampler per tick.
@@ -999,7 +140,7 @@ pub struct StreamRecorderV3 {
     warned: HashSet<String>,
     /// Schema-hash cache hit/miss counts, exposed for tests.
     schema_stats: SchemaCacheStats,
-    handle: RecordingWriter,
+    handle: SourceWriter,
     policy: SealPolicy,
 }
 
@@ -1029,11 +170,11 @@ const SCHEMA_RING_LEN: usize = 3;
 type SchemaRing = std::collections::VecDeque<((u64, u64), Arc<GroupSchema>)>;
 
 impl StreamRecorderV3 {
-    pub fn new(handle: RecordingWriter) -> Self {
+    pub fn new(handle: SourceWriter) -> Self {
         Self::with_policy(handle, SealPolicy::default())
     }
 
-    pub fn with_policy(handle: RecordingWriter, policy: SealPolicy) -> Self {
+    pub fn with_policy(handle: SourceWriter, policy: SealPolicy) -> Self {
         Self {
             accounts: BTreeMap::new(),
             last_keys: BTreeMap::new(),
@@ -1076,7 +217,7 @@ impl StreamRecorderV3 {
     ///
     /// **Fallible, unlike v2's `ingest`**, because unlike v2's it writes. The
     /// alternative — stash the error and report it from the next `maybe_seal` —
-    /// can swallow it outright: `RecordingWriter::send` reports the writer error on a send
+    /// can swallow it outright: `SourceWriter::send` reports the writer error on a send
     /// failure, so the subsequent `Drop` finds nothing to join, logs nothing,
     /// and a caller that never calls `maybe_seal` or `finalize` again loses the
     /// failure entirely. The caller already handles `maybe_seal`'s error; this
@@ -1093,7 +234,7 @@ impl StreamRecorderV3 {
         wall_offset_ns: i64,
     ) -> Result<(), String> {
         let rows = self.stage(snapshot, anchored_ts, wall_offset_ns)?;
-        self.handle.wal(rows)
+        self.handle.wal(rows).map_err(String::from)
     }
 
     /// Build this tick's WAL rows for THIS recording without committing them.
@@ -1110,8 +251,8 @@ impl StreamRecorderV3 {
     /// state moved.
     /// The `recordings` row this recorder appends to — the key a batched tick
     /// commit is addressed by.
-    pub fn recording_id(&self) -> i64 {
-        self.handle.recording_id()
+    pub fn source_id(&self) -> i64 {
+        self.handle.source_id()
     }
 
     pub fn stage(
@@ -1130,10 +271,10 @@ impl StreamRecorderV3 {
         if let Snapshot::V3(v3) = snapshot {
             return self.ingest_v3(&v3.groups, anchored_ts, wall_offset_ns);
         }
-        // One `Vec` for the whole tick: `RecordingWriter::wal` commits it as a
+        // One `Vec` for the whole tick: `SourceWriter::wal` commits it as a
         // single transaction, so a tick is atomic across samplers.
         //
-        // `wal`'s primary key is `(recording_id, sampler, ts)`, so re-using an
+        // `wal`'s primary key is `(source_id, sampler, ts)`, so re-using an
         // `anchored_ts` for one sampler is a UNIQUE violation that kills the
         // recording — stricter than the segment path, which would merely write
         // two rows at one timestamp. Unreachable from the recorder loop, whose
@@ -1197,8 +338,8 @@ impl StreamRecorderV3 {
                 })
                 .collect();
             wal_rows.push(WalRow {
-                sampler: sampler.to_string(),
-                ts: anchored_ts,
+                stream: sampler.to_string(),
+                ts: crate::wal::dendro_ts(anchored_ts)?,
                 wall_offset: wall_offset_ns,
                 row: encode_wal_row(&cells)?,
             });
@@ -1440,8 +581,8 @@ impl StreamRecorderV3 {
                     .collect(),
             };
             wal_rows.push(WalRow {
-                sampler: g.name.clone(),
-                ts: anchored_ts,
+                stream: g.name.clone(),
+                ts: crate::wal::dendro_ts(anchored_ts)?,
                 wall_offset: wall_offset_ns,
                 row: encode_wal_group_row(&row)?,
             });
@@ -1497,7 +638,7 @@ impl StreamRecorderV3 {
             self.segment_schema.remove(sampler);
             batch.push(sampler.clone());
         }
-        self.handle.seal(batch)
+        self.handle.seal(batch).map_err(String::from)
     }
 
     /// Apply retention: everything wholly older than `cutoff_ts` goes.
@@ -1507,15 +648,20 @@ impl StreamRecorderV3 {
     /// is the configuration. Call it AFTER `maybe_seal`, so a segment closed
     /// this tick is catalogued before the cutoff is applied to it.
     pub fn evict_before(&mut self, cutoff_ts: u64) -> Result<(), String> {
-        self.handle.evict_before(cutoff_ts)
+        // The count is dropped here rather than plumbed: no rezolus caller
+        // reads it yet. `dendro::db::Evicted` is what it returns.
+        self.handle
+            .evict_before(crate::wal::dendro_ts_bound(cutoff_ts))
+            .map(|_| ())
+            .map_err(String::from)
     }
 
     /// Block until the writer has committed everything handed off so far; see
-    /// [`RecordingWriter::sync`]. Needed before reading the file through a second
+    /// [`SourceWriter::sync`]. Needed before reading the file through a second
     /// connection, which otherwise sees the state from before the last tick.
     #[cfg(any(test, feature = "test-support"))]
     pub fn sync(&mut self) -> Result<(), String> {
-        self.handle.sync()
+        self.handle.sync().map_err(String::from)
     }
 
     /// Seal the remaining partial segments (small by construction) and mark the
@@ -1531,8 +677,10 @@ impl StreamRecorderV3 {
             .filter(|(_, account)| account.rows() > 0)
             .map(|(sampler, _)| sampler)
             .collect();
-        self.handle.seal(tails)?;
-        self.handle.finalize(clock_offset)
+        self.handle.seal(tails).map_err(String::from)?;
+        self.handle
+            .finalize((crate::wal::dendro_ts(clock_offset.0)?, clock_offset.1))
+            .map_err(String::from)
     }
 
     /// Rows in a sampler's open (unsealed) segment.
@@ -1570,7 +718,7 @@ mod tests {
             metadata: [("sampling_interval_ms".to_string(), "100".to_string())]
                 .into_iter()
                 .collect(),
-            clock_anchor_wall_ns: ANCHOR,
+            clock_anchor_wall_ns: ANCHOR as i64,
         }
     }
 
@@ -1581,13 +729,13 @@ mod tests {
     /// back rather than being handed a table, so a test that wants a sealable
     /// segment writes the rows a tick would have written and then names the
     /// sampler. Metadata rides the first row only, as `ingest` anchors it.
-    fn commit_wal(writer: &mut RecordingWriter, sampler: &str, ts: &[u64], wall_offset: i64) {
+    fn commit_wal(writer: &mut SourceWriter, sampler: &str, ts: &[u64], wall_offset: i64) {
         let rows: Vec<WalRow> = ts
             .iter()
             .enumerate()
             .map(|(i, &t)| WalRow {
-                sampler: sampler.to_string(),
-                ts: t,
+                stream: sampler.to_string(),
+                ts: t as i64,
                 wall_offset,
                 row: encode_wal_row(&[WalCell {
                     name: "0".to_string(),
@@ -1606,7 +754,7 @@ mod tests {
     }
 
     /// `commit_wal` at the offset most tests do not care about.
-    fn commit(writer: &mut RecordingWriter, sampler: &str, ts: &[u64]) {
+    fn commit(writer: &mut SourceWriter, sampler: &str, ts: &[u64]) {
         commit_wal(writer, sampler, ts, 7);
     }
 
@@ -1615,9 +763,9 @@ mod tests {
     /// rejects it inside `materialize_wal_tail`. Same shape of mid-recording
     /// writer failure as a full disk — it happens on the writer thread, after
     /// the hand-off returned.
-    fn commit_unencodable(writer: &mut RecordingWriter, sampler: &str) {
+    fn commit_unencodable(writer: &mut SourceWriter, sampler: &str) {
         let row = WalRow {
-            sampler: sampler.to_string(),
+            stream: sampler.to_string(),
             ts: 1_000,
             wall_offset: 0,
             row: encode_wal_row(&[WalCell {
@@ -1634,16 +782,16 @@ mod tests {
     /// One committed WAL row. The payload is a real encoded cell rather than a
     /// placeholder: sealing decodes the live WAL to build the segment, so a row
     /// that cannot be decoded is a row that cannot be sealed.
-    fn wal_row(sampler: &str, ts: u64) -> WalRow {
+    fn wal_row(sampler: &str, ts: i64) -> WalRow {
         WalRow {
-            sampler: sampler.to_string(),
+            stream: sampler.to_string(),
             ts,
             wall_offset: 7,
             row: encode_wal_row(&[WalCell {
                 name: "0".to_string(),
                 metadata: None,
-                value: WalValue::Counter(ts),
-                window: Some((ts.saturating_sub(1), ts)),
+                value: WalValue::Counter(ts as u64),
+                window: Some(((ts as u64).saturating_sub(1), ts as u64)),
             }])
             .unwrap(),
         }
@@ -1662,7 +810,7 @@ mod tests {
     fn a_cleanly_finalized_archive_leaves_exactly_one_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("done.rez");
-        let (archive, writer) = RezArchive::single(&path, seed()).unwrap();
+        let (archive, writer) = single_archive(&path, seed()).unwrap();
         let mut rec = StreamRecorderV3::new(writer);
         let ts = 1_000_000_000u64;
         rec.ingest(
@@ -1671,7 +819,7 @@ mod tests {
             0,
         )
         .unwrap();
-        archive.finalize_single_rec(rec, (ts, 0)).unwrap();
+        finalize_single_rec(archive, rec, (ts, 0)).unwrap();
 
         let left: Vec<String> = std::fs::read_dir(dir.path())
             .unwrap()
@@ -1727,11 +875,11 @@ mod tests {
     fn removing_an_archive_removes_its_sidecars() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("live.rez");
-        let mut archive = RezArchive::create(&path).unwrap();
-        let mut writer = archive.add_recording(seed()).unwrap();
+        let mut archive = create_archive(&path).unwrap();
+        let mut writer = archive.add_source(seed()).unwrap();
         writer
             .wal(vec![WalRow {
-                sampler: "cpu_usage".to_string(),
+                stream: "cpu_usage".to_string(),
                 ts: 1_000,
                 wall_offset: 0,
                 row: encode_wal_row(&[WalCell {
@@ -1782,16 +930,16 @@ mod tests {
     fn a_tick_costs_one_commit_however_many_recordings_it_spans() {
         fn commits_for(recordings: usize, dir: &Path) -> (u64, usize) {
             let path = dir.join(format!("{recordings}.rez"));
-            let mut archive = RezArchive::create(&path).unwrap();
+            let mut archive = create_archive(&path).unwrap();
             let mut recs: Vec<StreamRecorderV3> = (0..recordings)
                 .map(|i| {
                     let mut seed = seed();
                     seed.labels.insert("source".to_string(), format!("svc{i}"));
-                    StreamRecorderV3::new(archive.add_recording(seed).unwrap())
+                    StreamRecorderV3::new(archive.add_source(seed).unwrap())
                 })
                 .collect();
 
-            // Baseline AFTER the recordings exist: `add_recording` commits, and
+            // Baseline AFTER the recordings exist: `add_source` commits, and
             // what is being measured is the per-TICK cost.
             let baseline = archive.commits_for_test();
 
@@ -1806,7 +954,7 @@ mod tests {
                             0,
                         )
                         .unwrap();
-                    (rec.recording_id(), rows)
+                    (rec.source_id(), rows)
                 })
                 .collect();
             archive.wal_tick(staged).unwrap();
@@ -1856,19 +1004,23 @@ mod tests {
     /// fixture's row sizes are.
     #[test]
     fn a_plain_copy_of_a_live_archive_keeps_up_when_the_writer_checkpoints() {
-        fn last_row_in_a_plain_copy(checkpoint_every: Duration, dir: &Path) -> Option<u64> {
+        fn last_row_in_a_plain_copy(checkpoint_every: Duration, dir: &Path) -> Option<i64> {
             let live = dir.join(format!("live-{}.rez", checkpoint_every.as_millis()));
-            let mut archive =
-                RezArchive::create_checkpointing_every(&live, checkpoint_every).unwrap();
-            let mut writer = archive.add_recording(seed()).unwrap();
-            let id = writer.recording_id();
+            let mut archive = RezArchive::create_checkpointing_every(
+                &live,
+                Box::new(crate::wal::RezEncoder),
+                checkpoint_every,
+            )
+            .unwrap();
+            let mut writer = archive.add_source(seed()).unwrap();
+            let id = writer.source_id();
 
             for t in 0..400u64 {
                 let ts = 1_000_000_000 * (t + 1);
                 writer
                     .wal(vec![WalRow {
-                        sampler: "cpu_usage".to_string(),
-                        ts,
+                        stream: "cpu_usage".to_string(),
+                        ts: ts as i64,
                         wall_offset: 0,
                         row: encode_wal_row(&[WalCell {
                             name: "0".to_string(),
@@ -1933,7 +1085,7 @@ mod tests {
         // recoverable and no consumer has to know a second path.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("out.rez");
-        let (_archive, writer) = RezArchive::single(&path, seed()).unwrap();
+        let (_archive, writer) = single_archive(&path, seed()).unwrap();
 
         assert!(path.exists(), "the output path itself, not a .partial");
         assert!(
@@ -1946,10 +1098,10 @@ mod tests {
         // already there to be read, by a second connection, while the writer
         // still holds the file.
         let db = RezDb::open(&path).unwrap();
-        let recordings = db.read_recordings().unwrap();
+        let recordings = db.read_sources().unwrap();
         assert_eq!(recordings.len(), 1);
-        assert_eq!(recordings[0].id, writer.recording_id());
-        assert_eq!(recordings[0].meta.clock_anchor_wall_ns, ANCHOR);
+        assert_eq!(recordings[0].id, writer.source_id());
+        assert_eq!(recordings[0].meta.clock_anchor_wall_ns, ANCHOR as i64);
         assert_eq!(
             recordings[0].meta.labels.get("source").map(String::as_str),
             Some("rezolus")
@@ -1969,11 +1121,11 @@ mod tests {
         // have committed fine on its own, is gone too.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("out.rez");
-        let (_archive, mut writer) = RezArchive::single(&path, seed()).unwrap();
-        let rid = writer.recording_id();
+        let (_archive, mut writer) = single_archive(&path, seed()).unwrap();
+        let rid = writer.source_id();
 
         // Plant the row the batch's SECOND segment collides with on the
-        // primary key `(recording_id, sampler, seq)`, from another connection.
+        // primary key `(source_id, sampler, seq)`, from another connection.
         {
             let db = RezDb::open(&path).unwrap();
             db.insert_segment(
@@ -2002,7 +1154,8 @@ mod tests {
             .finalize_single(writer, (2_000, 7))
             .expect_err("the colliding insert must fail the recording");
         assert!(
-            err.contains("failed to insert segment blockio#0"),
+            err.to_string()
+                .contains("failed to insert segment blockio#0"),
             "the writer's own error, not a generic one: {err}"
         );
 
@@ -2021,8 +1174,8 @@ mod tests {
     fn seal_prunes_only_the_sealed_samplers_wal_and_only_up_to_last_ts() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("out.rez");
-        let (_archive, mut writer) = RezArchive::single(&path, seed()).unwrap();
-        let rid = writer.recording_id();
+        let (_archive, mut writer) = single_archive(&path, seed()).unwrap();
+        let rid = writer.source_id();
 
         for ts in [10, 20, 30] {
             writer
@@ -2064,11 +1217,13 @@ mod tests {
         // finalizes still holds every row.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("out.rez");
-        let (_archive, mut writer) = RezArchive::single(&path, seed()).unwrap();
-        let rid = writer.recording_id();
+        let (_archive, mut writer) = single_archive(&path, seed()).unwrap();
+        let rid = writer.source_id();
 
         for i in 1..=5u64 {
-            writer.wal(vec![wal_row("drivehealth", i * 10)]).unwrap();
+            writer
+                .wal(vec![wal_row("drivehealth", (i * 10) as i64)])
+                .unwrap();
         }
         // No finalize, no seal — the writer just goes away.
         drop(writer);
@@ -2077,7 +1232,7 @@ mod tests {
 
         let db = RezDb::open(&path).unwrap();
         assert_eq!(
-            db.all_samplers(rid).unwrap(),
+            db.all_streams(rid).unwrap(),
             vec!["drivehealth"],
             "a sampler that never sealed is still discoverable"
         );
@@ -2094,7 +1249,7 @@ mod tests {
             WalValue::Counter(10)
         );
         assert!(
-            !db.read_recordings().unwrap()[0].complete,
+            !db.read_sources().unwrap()[0].complete,
             "a recording killed before finalize is not complete"
         );
     }
@@ -2110,8 +1265,8 @@ mod tests {
         // `clock_offsets` rows are what keep that true here.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("out.rez");
-        let (_archive, mut writer) = RezArchive::single(&path, seed()).unwrap();
-        let rid = writer.recording_id();
+        let (_archive, mut writer) = single_archive(&path, seed()).unwrap();
+        let rid = writer.source_id();
 
         // The newest row belongs to the sampler named FIRST, and the older
         // sampler carries a wildly different offset — so a derivation that took
@@ -2133,7 +1288,7 @@ mod tests {
             vec![(3_000, 7)],
             "the batch's newest sealed row, paired with its OWN table's offset"
         );
-        assert!(!db.read_recordings().unwrap()[0].complete);
+        assert!(!db.read_sources().unwrap()[0].complete);
     }
 
     #[test]
@@ -2143,8 +1298,8 @@ mod tests {
         // `:wall_offset` column the segment itself carries. Same rule as v2.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("out.rez");
-        let (_archive, mut writer) = RezArchive::single(&path, seed()).unwrap();
-        let rid = writer.recording_id();
+        let (_archive, mut writer) = single_archive(&path, seed()).unwrap();
+        let rid = writer.source_id();
 
         commit_wal(&mut writer, "cpu_usage", &[1_000], 7);
         writer.seal(vec!["cpu_usage".to_string()]).unwrap();
@@ -2184,18 +1339,18 @@ mod tests {
         let open_both = |first: &str, second: &str| {
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("out.rez");
-            let mut archive = RezArchive::create(&path).unwrap();
-            let a = archive.add_recording(seed_for(first)).unwrap();
-            let b = archive.add_recording(seed_for(second)).unwrap();
+            let mut archive = create_archive(&path).unwrap();
+            let a = archive.add_source(seed_for(first)).unwrap();
+            let b = archive.add_source(seed_for(second)).unwrap();
             let out = [
                 (
                     first.to_string(),
-                    a.recording_id(),
+                    a.source_id(),
                     a.stagger_key().to_string(),
                 ),
                 (
                     second.to_string(),
-                    b.recording_id(),
+                    b.source_id(),
                     b.stagger_key().to_string(),
                 ),
             ];
@@ -2247,10 +1402,10 @@ mod tests {
         // anchoring its whole series.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("out.rez");
-        let mut archive = RezArchive::create(&path).unwrap();
-        let mut a = archive.add_recording(seed()).unwrap();
-        let b = archive.add_recording(seed()).unwrap();
-        let (rid_a, rid_b) = (a.recording_id(), b.recording_id());
+        let mut archive = create_archive(&path).unwrap();
+        let mut a = archive.add_source(seed()).unwrap();
+        let b = archive.add_source(seed()).unwrap();
+        let (rid_a, rid_b) = (a.source_id(), b.source_id());
 
         // A seals a row at T, so T is observed for A.
         commit_wal(&mut a, "cpu_usage", &[1_000], 7);
@@ -2281,7 +1436,7 @@ mod tests {
         // noticed instead of producing per-tick log spam.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("out.rez");
-        let (_archive, mut writer) = RezArchive::single(&path, seed()).unwrap();
+        let (_archive, mut writer) = single_archive(&path, seed()).unwrap();
 
         // The hand-off itself succeeds: the failure happens on the writer.
         commit_unencodable(&mut writer, "cpu_usage");
@@ -2303,15 +1458,16 @@ mod tests {
         }
         let err = surfaced.expect("the writer's error must surface on a hand-off");
         assert!(
-            err.contains("failed to encode a cpu_usage segment"),
+            err.to_string()
+                .contains("failed to encode a cpu_usage segment"),
             "the writer's stored error, not a generic send failure: {err}"
         );
 
         // Exit-on-first-error: nothing the writer accepted after the failure
         // reached the file, and the recording is not complete.
         let db = RezDb::open(&path).unwrap();
-        let recording = &db.read_recordings().unwrap()[0];
-        assert!(db.samplers(recording.id).unwrap().is_empty());
+        let recording = &db.read_sources().unwrap()[0];
+        assert!(db.streams(recording.id).unwrap().is_empty());
         assert!(!recording.complete);
     }
 
@@ -2322,7 +1478,7 @@ mod tests {
         // long as nothing happens to be due.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("out.rez");
-        let (_archive, mut writer) = RezArchive::single(&path, seed()).unwrap();
+        let (_archive, mut writer) = single_archive(&path, seed()).unwrap();
         commit_unencodable(&mut writer, "cpu_usage");
         writer.seal(vec!["cpu_usage".to_string()]).unwrap();
 
@@ -2338,7 +1494,8 @@ mod tests {
         }
         let err = surfaced.expect("a dead writer must surface on an empty batch too");
         assert!(
-            err.contains("failed to encode a cpu_usage segment"),
+            err.to_string()
+                .contains("failed to encode a cpu_usage segment"),
             "the writer's stored error, not a generic one: {err}"
         );
     }
@@ -2347,8 +1504,8 @@ mod tests {
     fn finalize_marks_the_recording_complete() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("out.rez");
-        let (_archive, mut writer) = RezArchive::single(&path, seed()).unwrap();
-        let rid = writer.recording_id();
+        let (_archive, mut writer) = single_archive(&path, seed()).unwrap();
+        let rid = writer.source_id();
 
         writer.wal(vec![wal_row("cpu_usage", 1_000)]).unwrap();
         writer.seal(vec!["cpu_usage".to_string()]).unwrap();
@@ -2358,7 +1515,7 @@ mod tests {
         // place, because nothing was ever staged.
         assert_eq!(detect_rez_format(&path).unwrap(), RezFormat::V3Sqlite);
         let db = RezDb::open(&path).unwrap();
-        let recordings = db.read_recordings().unwrap();
+        let recordings = db.read_sources().unwrap();
         assert_eq!(recordings.len(), 1);
         assert!(
             recordings[0].complete,
@@ -2380,8 +1537,8 @@ mod tests {
         // table the reader cannot reassemble.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("out.rez");
-        let (_archive, mut writer) = RezArchive::single(&path, seed()).unwrap();
-        let rid = writer.recording_id();
+        let (_archive, mut writer) = single_archive(&path, seed()).unwrap();
+        let rid = writer.source_id();
 
         // Each round commits the rows that round's segment should cover, then
         // seals — the WAL tail is what the segment is, so the rows have to land
@@ -2448,15 +1605,15 @@ mod tests {
         // noise (steady state, where it would be pure cost), and it must be
         // BOUNDED when it does run, so a shrink cannot put a multi-second
         // reclaim on a tick.
-        use crate::rez_sqlite::RecordingMeta;
+        use crate::rez_sqlite::SourceMeta;
 
         let dir = tempfile::tempdir().unwrap();
         let mut db = RezDb::create(&dir.path().join("t.rez")).unwrap();
         let rid = db
-            .insert_recording(&RecordingMeta {
+            .insert_source(&SourceMeta {
                 labels: BTreeMap::new(),
                 metadata: BTreeMap::new(),
-                clock_anchor_wall_ns: ANCHOR,
+                clock_anchor_wall_ns: ANCHOR as i64,
             })
             .unwrap();
 
@@ -2468,8 +1625,8 @@ mod tests {
                 seq,
                 &SegmentMeta {
                     rows: 1,
-                    first_ts: seq,
-                    last_ts: seq,
+                    first_ts: seq as i64,
+                    last_ts: seq as i64,
                 },
                 &blob,
             )
@@ -2562,8 +1719,8 @@ mod tests {
     /// join it with `drop(archive)` (or `finalize_single`), which is what
     /// flushes everything queued.
     fn recorder(path: &Path, policy: SealPolicy) -> (RezArchive, StreamRecorderV3, i64) {
-        let (archive, writer) = RezArchive::single(path, seed()).unwrap();
-        let rid = writer.recording_id();
+        let (archive, writer) = single_archive(path, seed()).unwrap();
+        let rid = writer.source_id();
         (archive, StreamRecorderV3::with_policy(writer, policy), rid)
     }
 
@@ -2626,12 +1783,12 @@ mod tests {
 
         let db = RezDb::open(&path).unwrap();
         assert!(
-            db.samplers(rid).unwrap().is_empty(),
+            db.streams(rid).unwrap().is_empty(),
             "no segment was ever sealed"
         );
         let wal = db.read_wal(rid, "cpu_usage").unwrap();
         assert_eq!(
-            wal.iter().map(|r| r.ts).collect::<Vec<_>>(),
+            wal.iter().map(|r| r.ts as u64).collect::<Vec<_>>(),
             want,
             "every tick's row is in the WAL, in order"
         );
@@ -2815,7 +1972,7 @@ mod tests {
 
         let db = RezDb::open(&path).unwrap();
         assert_eq!(
-            db.all_samplers(rid).unwrap(),
+            db.all_streams(rid).unwrap(),
             vec!["drivehealth"],
             "a sampler with no segment at all is still discoverable"
         );
@@ -2826,12 +1983,12 @@ mod tests {
         let live = db.live_wal(rid, "drivehealth").unwrap();
         assert_eq!(live.len() as u64, TICKS, "every ingested tick is live");
         for (i, row) in live.iter().enumerate() {
-            let i = i as u64;
+            let i = i as i64;
             let ts = 10_000 + i * 1_000;
             assert_eq!(row.ts, ts);
             assert_eq!(
                 row.wall_offset,
-                i as i64 - 100,
+                i - 100,
                 "each tick's own clock observation, not a shared one"
             );
             let c = cells(row);
@@ -2840,14 +1997,18 @@ mod tests {
                 vec!["0", "1", "2"],
                 "all three shapes recovered"
             );
-            assert_eq!(c[0].value, WalValue::Counter(i));
-            assert_eq!(c[1].value, WalValue::Gauge(-(i as i64)));
+            assert_eq!(c[0].value, WalValue::Counter(i as u64));
+            assert_eq!(c[1].value, WalValue::Gauge(-i));
             let WalValue::Histogram(gp, mvp, ref buckets) = c[2].value else {
                 panic!("the third metric is a histogram: {:?}", c[2].value);
             };
             assert_eq!((gp, mvp), (3, 8), "the H2 config rebuilds the histogram");
             assert_eq!(buckets.iter().sum::<u64>(), 1);
-            assert_eq!(c[0].window, Some((ts - 500, ts)), "windows recovered");
+            assert_eq!(
+                c[0].window,
+                Some(((ts - 500) as u64, ts as u64)),
+                "windows recovered"
+            );
         }
         // The labels are in the live WAL itself, so the recovered columns carry
         // the same identity a sealed segment's would.
@@ -2856,7 +2017,7 @@ mod tests {
             assert_eq!(m.get("sampler").map(String::as_str), Some("drivehealth"));
             assert_eq!(m.get("unit").map(String::as_str), Some("nanoseconds"));
         }
-        assert!(!db.read_recordings().unwrap()[0].complete);
+        assert!(!db.read_sources().unwrap()[0].complete);
     }
 
     fn shape_meta(metric: &str, sampler: &str, unit: &str) -> HashMap<String, String> {
@@ -3017,8 +2178,8 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(i, &t)| WalRow {
-                sampler: sampler.to_string(),
-                ts: t,
+                stream: sampler.to_string(),
+                ts: t as i64,
                 wall_offset: 7,
                 row: encode_wal_row(&[WalCell {
                     name: "0".to_string(),
@@ -3122,10 +2283,10 @@ mod tests {
             rec.ingest(&s, ts, 0).unwrap();
             rec.maybe_seal().unwrap();
         }
-        archive.finalize_single_rec(rec, (12_000, 5)).unwrap();
+        finalize_single_rec(archive, rec, (12_000, 5)).unwrap();
 
         let db = RezDb::open(&path).unwrap();
-        assert!(db.read_recordings().unwrap()[0].complete);
+        assert!(db.read_sources().unwrap()[0].complete);
         assert_eq!(
             db.total_rows(rid, "cpu_usage").unwrap(),
             3,
@@ -3585,7 +2746,7 @@ mod tests {
             rec.sync().unwrap();
 
             let db = RezDb::open(&path).unwrap();
-            let all = db.all_samplers(rid).unwrap();
+            let all = db.all_streams(rid).unwrap();
             let mut selected: Vec<&str> = all
                 .iter()
                 .map(String::as_str)
@@ -3608,7 +2769,7 @@ mod tests {
             // row: the oldest surviving row has `schema: None` and there is
             // nothing before it in this span to resolve it against.
             let unanchored = WalRow {
-                sampler: "cpu_usage/percpu".to_string(),
+                stream: "cpu_usage/percpu".to_string(),
                 ts: 1_000,
                 wall_offset: 0,
                 row: encode_wal_group_row(&WalGroupRow {
@@ -3622,7 +2783,7 @@ mod tests {
                 .unwrap(),
             };
             let anchored = WalRow {
-                sampler: "cpu_usage/percpu".to_string(),
+                stream: "cpu_usage/percpu".to_string(),
                 ts: 2_000,
                 wall_offset: 0,
                 row: encode_wal_group_row(&WalGroupRow {
@@ -3663,7 +2824,7 @@ mod tests {
         fn materialize_wal_tail_of_a_fully_unanchored_span_is_none() {
             let sch = group_schema(&["0"]);
             let row = WalRow {
-                sampler: "cpu_usage/percpu".to_string(),
+                stream: "cpu_usage/percpu".to_string(),
                 ts: 1_000,
                 wall_offset: 0,
                 row: encode_wal_group_row(&WalGroupRow {
@@ -3783,7 +2944,7 @@ mod tests {
         // Duplicate group names in one tick (Important 4): the recorder
         // accepts any msgpack endpoint, not just the rezolus agent, so a
         // producer-supplied duplicate name must degrade, not take the
-        // recording down via a `(recording_id, sampler, ts)` PK violation.
+        // recording down via a `(source_id, sampler, ts)` PK violation.
         // -----------------------------------------------------------------
 
         #[test]

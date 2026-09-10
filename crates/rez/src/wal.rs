@@ -16,8 +16,9 @@ use tracing::warn;
 #[cfg(feature = "write")]
 use crate::rez::Entry;
 use crate::rez::{write_table_parquet, Cell, CellValue, GroupTableBuilder, TableBuilder};
-use crate::rez_sqlite::WalRow;
 use crate::window::Window;
+use dendro::db::WalRow;
+use dendro::segment::{Segment, SegmentEncoder};
 
 /// One metric's contribution to a WAL row: exactly what
 /// `TableBuilder::push_row` needs to place the value in its column, and nothing
@@ -130,13 +131,17 @@ impl WalValue {
 fn materialize_sampler_wal_tail(
     sampler: &str,
     rows: &[WalRow],
-) -> Result<Option<MaterializedTail>, Box<dyn std::error::Error>> {
+) -> Result<Option<Segment>, Box<dyn std::error::Error>> {
     if rows.is_empty() {
         return Ok(None);
     }
     // Never skips a row (unlike the group path, below) — every row in `rows`
     // ends up in the materialized table, so its extent IS `rows`' own span.
     let first_ts = rows[0].ts;
+    // This path never skips a row, so the segment's span is the input's. Taken
+    // from the rows rather than assumed, because `Segment` describes the BYTES
+    // and dendro validates that claim against what it handed us.
+    let last_ts = rows[rows.len() - 1].ts;
     let row_count = rows.len() as u64;
     let mut builder = TableBuilder::new(sampler.to_string());
     for row in rows {
@@ -199,36 +204,14 @@ fn materialize_sampler_wal_tail(
                 },
             })
             .collect();
-        builder.push_row(row.ts, row.wall_offset, &cells);
+        builder.push_row(row.ts as u64, row.wall_offset, &cells);
     }
-    Ok(Some(MaterializedTail {
+    Ok(Some(Segment {
         bytes: write_table_parquet(&builder.finish())?,
         rows: row_count,
         first_ts,
+        last_ts,
     }))
-}
-
-/// A materialized segment's bytes plus the actual extent of INPUT rows that
-/// went into it — which can differ from the caller's own `rows` slice for a
-/// V3 group table whose leading rows were skipped as un-anchored (see
-/// `materialize_group_wal_tail`). `materialize_sampler_wal_tail` never
-/// skips, so its `rows`/`first_ts` are always the input slice's own span —
-/// this type exists so both paths report the same two facts uniformly and a
-/// caller (`seal_batch`) never has to know which one ran.
-///
-/// **`last_ts` is deliberately NOT here.** Unlike `first_ts`/`rows`, the
-/// input slice's OWN last row's timestamp is always correct as a segment's
-/// `last_ts` even when leading rows were skipped: a V3 group's un-anchored
-/// run is always a LEADING prefix (retention removes a prefix, never punches
-/// a hole — `RezDb::evict_before`'s doc), so the last input row is never
-/// itself skipped. Callers already have that timestamp from the `WalRow`s
-/// they read; duplicating it here would just be a second place for it to
-/// drift from the one that is actually used.
-#[derive(Debug, PartialEq)]
-pub struct MaterializedTail {
-    pub bytes: Vec<u8>,
-    pub rows: u64,
-    pub first_ts: u64,
 }
 
 /// True for a V3 acquisition-group table key (`"<sampler>/<group>"`); false
@@ -273,7 +256,7 @@ pub fn is_group_table_key(table_key: &str) -> bool {
 pub fn materialize_wal_tail(
     table_key: &str,
     rows: &[WalRow],
-) -> Result<Option<MaterializedTail>, Box<dyn std::error::Error>> {
+) -> Result<Option<Segment>, Box<dyn std::error::Error>> {
     if is_group_table_key(table_key) {
         materialize_group_wal_tail(table_key, rows)
     } else {
@@ -351,7 +334,7 @@ pub fn decode_wal_group_row(bytes: &[u8]) -> Result<WalGroupRow, String> {
 fn materialize_group_wal_tail(
     table_key: &str,
     rows: &[WalRow],
-) -> Result<Option<MaterializedTail>, Box<dyn std::error::Error>> {
+) -> Result<Option<Segment>, Box<dyn std::error::Error>> {
     if rows.is_empty() {
         return Ok(None);
     }
@@ -362,7 +345,12 @@ fn materialize_group_wal_tail(
     // what makes a catalog `SegmentMeta::first_ts` correct even when a
     // leading un-anchored run was skipped: it is NOT `rows[0].ts` (the raw
     // WAL span's own start) unless nothing was skipped.
-    let mut first_ts: Option<u64> = None;
+    let mut first_ts: Option<i64> = None;
+    // Tracked, not taken from the input: this path SKIPS rows whose schema is
+    // not yet anchored, so the segment's last row is the last one actually
+    // pushed. dendro prunes the WAL to this, so a value from the input would
+    // delete rows the segment does not contain.
+    let mut last_ts: Option<i64> = None;
     for row in rows {
         let decoded = decode_wal_group_row(&row.row)?;
         let schema = match decoded.schema {
@@ -393,7 +381,7 @@ fn materialize_group_wal_tail(
         };
         let window = decoded.window.map(|(begin, end)| Window::new(begin, end));
         builder.push_row(
-            row.ts,
+            row.ts as u64,
             row.wall_offset,
             window,
             schema,
@@ -402,17 +390,19 @@ fn materialize_group_wal_tail(
             &decoded.histograms,
         );
         first_ts.get_or_insert(row.ts);
+        last_ts = Some(row.ts);
     }
     let row_count = builder.rows() as u64;
     if row_count == 0 {
         return Ok(None);
     }
-    Ok(Some(MaterializedTail {
+    Ok(Some(Segment {
         bytes: write_table_parquet(&builder.finish())?,
         rows: row_count,
         // `row_count > 0` implies the loop pushed at least one row, which is
         // exactly when `first_ts` gets set — never `None` here.
         first_ts: first_ts.expect("a non-empty materialized table has a first pushed row"),
+        last_ts: last_ts.expect("a non-empty materialized table has a last pushed row"),
     }))
 }
 
@@ -424,4 +414,58 @@ pub fn encode_wal_row(cells: &[WalCell]) -> Result<Vec<u8>, String> {
 /// The inverse of [`encode_wal_row`] — the recovery entry point.
 pub fn decode_wal_row(bytes: &[u8]) -> Result<Vec<WalCell>, String> {
     rmp_serde::from_slice(bytes).map_err(|e| format!("failed to decode a WAL row: {e}"))
+}
+
+/// The `.rez` payload's [`SegmentEncoder`]: how a WAL row becomes a column.
+///
+/// This is the whole of what `dendro` does not know about a `.rez`. Both the
+/// writer thread (when it seals) and an independent reader (materializing a
+/// live tail from an archive some other process is still writing) reach the
+/// row shape through this one impl, which is why [`WalCell`]/[`WalGroupRow`]
+/// have to be self-sufficient: the reader has none of the writer's schema
+/// cache to consult.
+pub struct RezEncoder;
+
+impl SegmentEncoder for RezEncoder {
+    fn encode(&self, stream: &str, rows: &[WalRow]) -> dendro::segment::EncodeResult {
+        // The error keeps its type across the boundary now: dendro wraps it in
+        // `Error::Encoder` and exposes it as `source()`, so a caller can get
+        // back to what actually failed instead of a sentence about it.
+        materialize_wal_tail(stream, rows)
+            .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.to_string().into() })
+    }
+}
+
+/// A rezolus timestamp — `u64` nanoseconds since the epoch — as dendro stores
+/// one.
+///
+/// dendro's timestamps are `i64` because SQLite has exactly one integer storage
+/// class and it is signed; a value above `i64::MAX` does not error there, it
+/// silently becomes a float. Epoch nanoseconds do not reach that until
+/// **2262-04-11T23:47:16Z**, so this cannot fail for any clock this agent
+/// reads.
+///
+/// It is still a conversion rather than an `as` cast, and that is the whole
+/// point: if it ever does fail, the recording stops with a sentence naming the
+/// value. An `as` cast would fold it negative, and a negative timestamp
+/// compares below every real one — silently wrong ordering, a watermark that
+/// un-shadows sealed rows, and a segment invisible to every range query.
+pub fn dendro_ts(ns: u64) -> Result<i64, String> {
+    i64::try_from(ns).map_err(|_| {
+        format!(
+            "timestamp {ns} ns is past 2262-04-11, beyond what an archive can \
+             store (SQLite integers are signed)"
+        )
+    })
+}
+
+/// A rezolus timestamp used as a query BOUND, as dendro takes one.
+///
+/// Clamped rather than converted, and the difference matters: the unbounded
+/// upper edge is spelled `u64::MAX`, which is not a timestamp anyone recorded
+/// but "no limit". Refusing it would make `CopySpec::everything()` copy
+/// nothing; casting it would make the bound `-1` and select nothing. Saturating
+/// at `i64::MAX` is what the caller meant.
+pub fn dendro_ts_bound(ns: u64) -> i64 {
+    ns.min(i64::MAX as u64) as i64
 }

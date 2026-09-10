@@ -23,7 +23,7 @@ use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::arrow::ArrowWriter;
 
 use crate::rez::{build_labels, segment_writer_props, WALL_OFFSET_COLUMN};
-use crate::rez_sqlite::{RecordingMeta, RezTx, SegmentMeta};
+use crate::rez_sqlite::{RezTx, SegmentMeta, SourceMeta};
 
 /// The metric a value column belongs to, for `keep_metrics` matching: the
 /// column name, its base before `:` (`foo` for `foo:buckets`), or the `metric`
@@ -120,7 +120,7 @@ pub fn ingest_parquet_bytes(
         // legitimate "this side has none of the kept metrics"; without one it
         // means an empty parquet. Either way the recording carries no tables.
         let (labels, metadata) = recording_identity(&kv);
-        let rec_id = tx.insert_recording(&RecordingMeta {
+        let rec_id = tx.insert_source(&SourceMeta {
             labels,
             metadata,
             clock_anchor_wall_ns: 0,
@@ -130,7 +130,7 @@ pub fn ingest_parquet_bytes(
     }
 
     let (labels, metadata) = recording_identity(&kv);
-    let rec_id = tx.insert_recording(&RecordingMeta {
+    let rec_id = tx.insert_source(&SourceMeta {
         labels,
         metadata,
         // An ingested parquet has no recorded clock anchor; row timestamps are
@@ -198,8 +198,8 @@ pub fn ingest_parquet_bytes(
         }
         let meta = SegmentMeta {
             rows,
-            first_ts,
-            last_ts,
+            first_ts: crate::wal::dendro_ts(first_ts)?,
+            last_ts: crate::wal::dendro_ts(last_ts)?,
         };
         tx.insert_segment(rec_id, sampler, 0, &meta, &buf)?;
         tables += 1;
@@ -306,14 +306,14 @@ mod tests {
         })
         .unwrap();
 
-        let recs = db.read_recordings().unwrap();
+        let recs = db.read_sources().unwrap();
         assert_eq!(recs.len(), 1);
         assert_eq!(
             recs[0].meta.labels.get("source").map(String::as_str),
             Some("redis")
         );
         assert!(recs[0].complete);
-        let mut tables = db.all_samplers(recs[0].id).unwrap();
+        let mut tables = db.all_streams(recs[0].id).unwrap();
         tables.sort();
         assert_eq!(
             tables,
@@ -353,9 +353,9 @@ mod tests {
             Ok(())
         })
         .unwrap();
-        let recs = db.read_recordings().unwrap();
+        let recs = db.read_sources().unwrap();
         assert_eq!(
-            db.all_samplers(recs[0].id).unwrap(),
+            db.all_streams(recs[0].id).unwrap(),
             vec!["cpu_usage".to_string()],
             "only the table holding the kept metric survives"
         );

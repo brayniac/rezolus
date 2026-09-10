@@ -146,7 +146,7 @@ type ProbedTable = (String, TableNames, f64, Option<(u64, u64)>);
 ///
 /// v2 (tar) has no index — the whole archive is already in memory by the time
 /// the reader sees it, so its bytes are handed over directly. v3 (SQLite) is
-/// indexed by `(recording_id, sampler, seq)`, so a table's payload can be
+/// indexed by `(source_id, sampler, seq)`, so a table's payload can be
 /// fetched when it is first queried and never before. That is the difference
 /// worth having: at open the reader needs one segment per table for its name
 /// catalog, and the catalog answers everything else.
@@ -154,7 +154,7 @@ enum SegmentSource {
     Bytes(Vec<Vec<u8>>),
     Db {
         path: std::path::PathBuf,
-        recording_id: i64,
+        source_id: i64,
         sampler: String,
     },
     /// A catalog that exists only in memory, shared by every table of the
@@ -168,7 +168,7 @@ enum SegmentSource {
     /// is read from several threads on the native probe path.
     SharedDb {
         db: Arc<std::sync::Mutex<RezDb>>,
-        recording_id: i64,
+        source_id: i64,
         sampler: String,
     },
 }
@@ -181,22 +181,22 @@ impl SegmentSource {
             SegmentSource::Bytes(b) => Ok(b.clone()),
             SegmentSource::Db {
                 path,
-                recording_id,
+                source_id,
                 sampler,
             } => {
                 let db = RezDb::open(path)?;
-                table_segments(&db, *recording_id, sampler)
+                table_segments(&db, *source_id, sampler)
             }
             SegmentSource::SharedDb {
                 db,
-                recording_id,
+                source_id,
                 sampler,
             } => {
                 // A poisoned lock means another thread panicked mid-read. The
                 // catalog is read-only here, so nothing is half-written and
                 // the data is still good.
                 let db = db.lock().unwrap_or_else(|e| e.into_inner());
-                table_segments(&db, *recording_id, sampler)
+                table_segments(&db, *source_id, sampler)
             }
         }
     }
@@ -714,7 +714,7 @@ impl RezReader {
                 recordings,
             });
         }
-        let recordings = read_recordings(path)?;
+        let recordings = read_sources(path)?;
         Self::from_recordings(recordings, filename, pool)
     }
 
@@ -754,7 +754,7 @@ impl RezReader {
         if rez::detect_rez_format(path)? == rez::RezFormat::V3Sqlite {
             return Self::from_v3(path, pool);
         }
-        let recordings = read_recordings(path)?;
+        let recordings = read_sources(path)?;
         let mut out = Vec::with_capacity(recordings.len());
         for rec in recordings {
             let labels = rec.labels.clone();
@@ -796,7 +796,7 @@ impl RezReader {
         let db = shared.lock().unwrap_or_else(|e| e.into_inner());
         let mut out = Vec::new();
 
-        for (recording, rec) in db.read_recordings()?.into_iter().enumerate() {
+        for (recording, rec) in db.read_sources()?.into_iter().enumerate() {
             if !rec.complete {
                 tracing::warn!(
                     "recording {} was not cleanly finalized; it was recovered up to its \
@@ -812,7 +812,7 @@ impl RezReader {
             // grows as samplers and acquisition groups multiply.
             let mut pending: Vec<PendingProbe> = Vec::new();
 
-            for sampler in db.all_samplers(rec.id)? {
+            for sampler in db.all_streams(rec.id)? {
                 let metas = db.read_segment_meta(rec.id, &sampler)?;
 
                 // The probe segment is the first SEALED one — or, when a table
@@ -842,7 +842,11 @@ impl RezReader {
                     sealed.first_ts.into_iter().chain(wal.first_ts).min(),
                     sealed.last_ts.into_iter().chain(wal.last_ts).max(),
                 ) {
-                    (Some(b), Some(e)) => Some((b, e)),
+                    // dendro speaks `i64`; this layer's spans are `u64`
+                    // nanoseconds. Both are non-negative here because they came
+                    // out of the catalog, which only ever held what rezolus put
+                    // in.
+                    (Some(b), Some(e)) => Some((b as u64, e as u64)),
                     _ => None,
                 };
 
@@ -864,12 +868,12 @@ impl RezReader {
                     segments: match &path {
                         Some(path) => SegmentSource::Db {
                             path: path.clone(),
-                            recording_id: rec.id,
+                            source_id: rec.id,
                             sampler,
                         },
                         None => SegmentSource::SharedDb {
                             db: Arc::clone(&shared),
-                            recording_id: rec.id,
+                            source_id: rec.id,
                             sampler,
                         },
                     },
@@ -1444,7 +1448,7 @@ impl MetricsSource for RezReader {
 /// non-v3 arm deliberately falls through to `read_archive_bytes` unchanged —
 /// including for `NotRez`, so a caller handed something that is not a `.rez`
 /// at all keeps getting the tar reader's own error rather than a new one.
-fn read_recordings(path: &Path) -> Result<Vec<RecordingBytes>, Box<dyn std::error::Error>> {
+fn read_sources(path: &Path) -> Result<Vec<RecordingBytes>, Box<dyn std::error::Error>> {
     match rez::detect_rez_format(path)? {
         rez::RezFormat::V3Sqlite => read_v3_recordings(path),
         rez::RezFormat::V2Tar | rez::RezFormat::NotRez => Ok(rez::read_archive_bytes(path)?.1),
@@ -1456,7 +1460,7 @@ fn read_recordings(path: &Path) -> Result<Vec<RecordingBytes>, Box<dyn std::erro
 ///
 /// Two things differ from a mechanical transcription of the catalog:
 ///
-/// * Tables are enumerated with `all_samplers`, NOT `samplers`. The latter
+/// * Tables are enumerated with `all_streams`, NOT `samplers`. The latter
 ///   sees only `segments`, so a table still inside its first seal period —
 ///   16 of 26 in the fleet measurement that motivated this container — would
 ///   be invisible, which is precisely the data v3 exists to keep.
@@ -1467,9 +1471,9 @@ fn read_recordings(path: &Path) -> Result<Vec<RecordingBytes>, Box<dyn std::erro
 fn read_v3_recordings(path: &Path) -> Result<Vec<RecordingBytes>, Box<dyn std::error::Error>> {
     let db = RezDb::open(path)?;
     let mut out = Vec::new();
-    for rec in db.read_recordings()? {
+    for rec in db.read_sources()? {
         let mut tables = Vec::new();
-        for sampler in db.all_samplers(rec.id)? {
+        for sampler in db.all_streams(rec.id)? {
             let segments = table_segments(&db, rec.id, &sampler)?;
             // Only reachable if a sampler's every WAL row was pruned without
             // its segment landing — which the seal ordering rules out. A table
@@ -1503,15 +1507,15 @@ fn read_v3_recordings(path: &Path) -> Result<Vec<RecordingBytes>, Box<dyn std::e
 /// would splice those rows in a second time.
 fn table_segments(
     db: &RezDb,
-    recording_id: i64,
+    source_id: i64,
     sampler: &str,
 ) -> Result<Vec<Vec<u8>>, Box<dyn std::error::Error>> {
     let mut segments: Vec<Vec<u8>> = db
-        .read_segments(recording_id, sampler)?
+        .read_segments(source_id, sampler)?
         .into_iter()
         .map(|s| s.bytes)
         .collect();
-    if let Some(tail) = materialize_wal_tail(sampler, &db.live_wal(recording_id, sampler)?)? {
+    if let Some(tail) = materialize_wal_tail(sampler, &db.live_wal(source_id, sampler)?)? {
         segments.push(tail.bytes);
     }
     Ok(segments)
@@ -1529,6 +1533,7 @@ fn union_sorted(iters: impl Iterator<Item = Vec<String>>) -> Vec<String> {
 mod tests {
     use super::*;
     use crate::rez::RezRecorder;
+    use crate::rez_v3_writer::{finalize_single_rec, single_archive};
     use crate::window::Window;
     use metriken_exposition::{Counter, Gauge, Snapshot, SnapshotV2};
     use std::time::SystemTime;
@@ -1926,7 +1931,7 @@ mod tests {
     #[test]
     fn a_live_wal_tail_survives_the_trip_through_bytes() {
         use crate::rez::recorder_tests_support::{counter, snap};
-        use crate::rez_v3_writer::{ManifestSeed, RezArchive, StreamRecorderV3};
+        use crate::rez_v3_writer::{ManifestSeed, StreamRecorderV3};
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("live.rez");
@@ -1937,7 +1942,7 @@ mod tests {
             metadata: Default::default(),
             clock_anchor_wall_ns: 1_000_000_000,
         };
-        let (archive, writer) = RezArchive::single(&path, seed).unwrap();
+        let (archive, writer) = single_archive(&path, seed).unwrap();
         let mut rec = StreamRecorderV3::new(writer);
         for t in 0..3u64 {
             let ts = 1_000_000_000 * (t + 1);
@@ -1992,7 +1997,7 @@ mod tests {
     #[test]
     fn a_copy_taken_mid_write_says_what_went_wrong() {
         use crate::rez::recorder_tests_support::{counter, snap};
-        use crate::rez_v3_writer::{ManifestSeed, RezArchive, StreamRecorderV3};
+        use crate::rez_v3_writer::{ManifestSeed, StreamRecorderV3};
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("live.rez");
@@ -2003,7 +2008,7 @@ mod tests {
             metadata: Default::default(),
             clock_anchor_wall_ns: 1_000_000_000,
         };
-        let (archive, writer) = RezArchive::single(&path, seed).unwrap();
+        let (archive, writer) = single_archive(&path, seed).unwrap();
         let mut rec = StreamRecorderV3::new(writer);
         rec.ingest(
             &snap(
@@ -2373,7 +2378,8 @@ mod tests {
     mod v3 {
         use super::*;
         use crate::rez_sqlite::WalRow;
-        use crate::rez_v3_writer::{ManifestSeed, RezArchive, StreamRecorderV3};
+        use crate::rez_v3_writer::RezArchive;
+        use crate::rez_v3_writer::{ManifestSeed, StreamRecorderV3};
         use crate::seal_policy::SealPolicy;
         use crate::wal::{encode_wal_row, WalCell, WalValue};
         use metriken_exposition::Histogram as ExpHistogram;
@@ -2384,7 +2390,7 @@ mod tests {
             ManifestSeed {
                 labels: rez_labels(),
                 metadata: rez_labels(),
-                clock_anchor_wall_ns: ANCHOR,
+                clock_anchor_wall_ns: ANCHOR as i64,
             }
         }
 
@@ -2400,7 +2406,7 @@ mod tests {
         /// must outlive the recorder — dropping it stops the writer — and
         /// joining it is what flushes everything queued to disk.
         fn recorder(path: &std::path::Path, max_rows: usize) -> (RezArchive, StreamRecorderV3) {
-            let (archive, writer) = RezArchive::single(path, seed()).unwrap();
+            let (archive, writer) = single_archive(path, seed()).unwrap();
             (
                 archive,
                 StreamRecorderV3::with_policy(writer, policy(max_rows)),
@@ -2424,7 +2430,7 @@ mod tests {
                 last_ts = *ts;
             }
             if finalize {
-                archive.finalize_single_rec(rec, (last_ts, 0)).unwrap();
+                finalize_single_rec(archive, rec, (last_ts, 0)).unwrap();
             } else {
                 // Mid-flight: the tail stays live in the WAL. The archive is
                 // still joined, so what WAS committed reaches disk — dropping
@@ -2596,12 +2602,12 @@ mod tests {
             // buffer whose lookback has passed a quiet sampler by.
             {
                 let mut db = RezDb::open(&path).unwrap();
-                let rid = db.read_recordings().unwrap()[0].id;
+                let rid = db.read_sources().unwrap()[0].id;
                 // Not `u64::MAX`: `evict` binds the cutoff as `i64`, so
                 // that wraps to -1 and deletes nothing.
-                db.evict_before(rid, i64::MAX as u64).unwrap();
+                db.evict_before(rid, i64::MAX).unwrap();
                 assert!(
-                    db.all_samplers(rid)
+                    db.all_streams(rid)
                         .unwrap()
                         .iter()
                         .all(|s| db.read_segments(rid, s).unwrap().is_empty()),
@@ -2642,13 +2648,13 @@ mod tests {
             // Evict only `blockio_requests`, as retention would for the
             // sampler that stopped producing rows first.
             {
-                let rid = RezDb::open(&path).unwrap().read_recordings().unwrap()[0].id;
+                let rid = RezDb::open(&path).unwrap().read_sources().unwrap()[0].id;
                 // Straight through rusqlite rather than adding a test-only
                 // hook to `RezDb`: retention is per-sampler here, which
                 // `evict_before` (time-based, whole-recording) cannot express.
                 let conn = rusqlite::Connection::open(&path).unwrap();
                 conn.execute(
-                    "DELETE FROM segments WHERE recording_id = ?1 AND sampler = ?2",
+                    "DELETE FROM segments WHERE source_id = ?1 AND stream = ?2",
                     rusqlite::params![rid, "blockio_requests"],
                 )
                 .unwrap();
@@ -2680,8 +2686,8 @@ mod tests {
         /// fixture's segmentation can be asserted instead of assumed.
         fn sealed_counts(path: &std::path::Path) -> BTreeMap<String, usize> {
             let db = RezDb::open(path).unwrap();
-            let rid = db.read_recordings().unwrap()[0].id;
-            db.all_samplers(rid)
+            let rid = db.read_sources().unwrap()[0].id;
+            db.all_streams(rid)
                 .unwrap()
                 .into_iter()
                 .map(|s| {
@@ -2692,9 +2698,9 @@ mod tests {
         }
 
         /// Live (unsealed) WAL row timestamps for `sampler`.
-        fn live_ts(path: &std::path::Path, sampler: &str) -> Vec<u64> {
+        fn live_ts(path: &std::path::Path, sampler: &str) -> Vec<i64> {
             let db = RezDb::open(path).unwrap();
-            let rid = db.read_recordings().unwrap()[0].id;
+            let rid = db.read_sources().unwrap()[0].id;
             db.live_wal(rid, sampler)
                 .unwrap()
                 .iter()
@@ -2884,7 +2890,7 @@ mod tests {
         /// helper rather than re-derived here.
         fn decoded_segments(path: &std::path::Path, sampler: &str) -> Vec<rez::RezTable> {
             let db = RezDb::open(path).unwrap();
-            let rid = db.read_recordings().unwrap()[0].id;
+            let rid = db.read_sources().unwrap()[0].id;
             table_segments(&db, rid, sampler)
                 .unwrap()
                 .into_iter()
@@ -3117,13 +3123,13 @@ mod tests {
             // `read_wal` at all.
             {
                 let mut db = RezDb::open(&path).unwrap();
-                let rid = db.read_recordings().unwrap()[0].id;
+                let rid = db.read_sources().unwrap()[0].id;
                 let straddling: Vec<WalRow> = (1..=6u64)
                     .map(|i| {
                         let ts = 1_000_000_000 * i;
                         WalRow {
-                            sampler: "cpu_usage".to_string(),
-                            ts,
+                            stream: "cpu_usage".to_string(),
+                            ts: ts as i64,
                             wall_offset: 0,
                             row: encode_wal_row(&[WalCell {
                                 name: "cpu_cycles".to_string(),
@@ -3564,9 +3570,7 @@ mod tests {
                 rec.ingest(&s, ts, 0).unwrap();
                 rec.maybe_seal().unwrap();
             }
-            _archive
-                .finalize_single_rec(rec, (1_000_000_000 * n, 0))
-                .unwrap();
+            finalize_single_rec(_archive, rec, (1_000_000_000 * n, 0)).unwrap();
 
             let counts = sealed_counts(&path);
             assert!(
@@ -3929,9 +3933,7 @@ mod tests {
             // and it is the writer thread that seals the tails. Reading the
             // file without joining races that seal, and a table whose
             // segments have not landed yet reopens with none at all.
-            _archive
-                .finalize_single_rec(rec, (3_000_000_000, 0))
-                .unwrap();
+            finalize_single_rec(_archive, rec, (3_000_000_000, 0)).unwrap();
 
             let reader = open(&path);
             assert!(

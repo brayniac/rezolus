@@ -1,22 +1,37 @@
-//! Rewriting a v3 (SQLite) `.rez` container.
+//! The rez-specific half of archive rewriting: which columns a projection must
+//! keep, and upgrading a v1/v2 tar `.rez` into the v3 container.
 //!
-//! `combine`, `filter` and `annotate` all produce a new archive from existing
-//! ones without decoding a single segment: the parquet BLOBs pass through
-//! byte-identical and only the catalog around them changes. Hindsight's ranged
-//! dump is the same operation with a time bound, so all four share this copy
-//! rather than each growing their own — the WAL-tail handling below is subtle
-//! enough that a second implementation would be a second set of bugs.
+//! The container-level copy — catalog `UPDATE`s, verbatim BLOB copies,
+//! arrow-level segment projection — is `dendro::rewrite`. What is here is the
+//! part that knows what a `.rez` column is for.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use crate::rez::table_sampler;
-use crate::rez_sqlite::{RecordingMeta, RezDb, RezTx, SegmentMeta};
+use dendro::db::{Db as RezDb, SegmentMeta, SourceMeta, Tx as RezTx};
+use dendro::rewrite::{ColumnFilter, CopySpec as DendroCopySpec};
 
-/// What one copy pass carries across.
+use crate::rez::table_sampler;
+
+/// A `.rez` column filter: keep the structural columns unconditionally, plus
+/// the value columns (and their per-metric window sidecars) for the named
+/// metrics.
+pub struct RezColumns<'a>(pub &'a BTreeSet<String>);
+
+impl ColumnFilter for RezColumns<'_> {
+    fn keep(&self, field: &arrow::datatypes::Field) -> bool {
+        keep_rez_column(field, self.0)
+    }
+    fn is_data(&self, field: &arrow::datatypes::Field) -> bool {
+        is_value_column(field.name())
+    }
+}
+
+/// What one copy pass carries across, in `.rez` terms.
+///
+/// The sampler/metric vocabulary is this layer's; [`CopySpec::to_dendro`]
+/// lowers it to the container's predicates.
 pub struct CopySpec<'a> {
-    /// Row-timestamp bound in nanoseconds. The rewrite tools copy everything;
-    /// hindsight's dump narrows it to the incident window.
     pub start: u64,
     pub end: u64,
     /// Keep only tables whose *sampler* — the part of a `<sampler>/<group>`
@@ -26,15 +41,8 @@ pub struct CopySpec<'a> {
     /// is the unit an operator names, and under V3 one sampler owns several
     /// group tables. Dropping "the sampler" has to drop all of its groups.
     pub keep_samplers: Option<&'a BTreeSet<String>>,
-    /// Extra metadata merged into each copied recording's own, overwriting on
-    /// key collision. `annotate` embeds KPIs this way; the others pass `None`.
     pub metadata_extra: Option<&'a BTreeMap<String, String>>,
-    /// When set, project each copied segment's parquet down to the columns for
-    /// these metrics (plus the mandatory timestamp / offset / acquisition-window
-    /// sidecars), decoding and re-encoding it. `None` is the fast path — segment
-    /// BLOBs pass through byte-identical. This is the ONE copy that touches
-    /// segment bytes; see [`project_segment_columns`]. A table left with no
-    /// value column (it holds none of the kept metrics) is dropped.
+    /// Project each copied segment down to these metrics' columns.
     pub keep_metrics: Option<&'a BTreeSet<String>>,
 }
 
@@ -51,129 +59,53 @@ impl CopySpec<'_> {
     }
 }
 
-/// Copy every recording in `src` into the open destination transaction,
-/// returning how many recordings were copied.
+/// Copy every recording in `src` into the open destination transaction.
 ///
-/// The destination transaction is the caller's so that `combine` can fold
-/// several sources into one atomic write: either the combined archive has all
-/// of its inputs or it does not exist.
-///
-/// Each copied recording keeps its source's `complete` flag. That flag answers
-/// "may data after the last row be missing", which is a property of the DATA
-/// and survives being copied — a recording recovered from a checkpoint rather
-/// than cleanly finalized is still truncated after a combine or a filter, and
-/// claiming otherwise would hide the loss. Missing beats wrong.
-///
-/// The one caller that overrides it is hindsight's dump, which marks its copy
-/// complete afterwards for a specific reason: the buffer it copied is
-/// perpetually mid-recording and would otherwise never produce a snapshot that
-/// did not warn.
-pub fn copy_recordings_into(
+/// A thin lowering onto [`dendro::rewrite::copy_sources_into`]: the sampler
+/// filter becomes a stream predicate and the metric filter a [`ColumnFilter`].
+pub fn copy_sources_into(
     src: &RezDb,
     tx: &RezTx<'_>,
     spec: &CopySpec<'_>,
 ) -> Result<usize, String> {
-    let recordings = src.read_recordings()?;
-    let mut copied = 0usize;
-    for rec in &recordings {
-        let mut meta = rec.meta.clone();
-        if let Some(extra) = spec.metadata_extra {
-            for (k, v) in extra {
-                meta.metadata.insert(k.clone(), v.clone());
-            }
-        }
-        let id = tx.insert_recording(&meta)?;
-        if rec.complete {
-            tx.mark_complete(id)?;
-        }
-        copied += 1;
-
-        for table in src.all_samplers(rec.id)? {
-            if let Some(keep) = spec.keep_samplers {
-                if !keep.contains(table_sampler(&table)) {
-                    continue;
-                }
-            }
-            // `seq` is renumbered from 0 per table rather than carried over.
-            // A filtered or range-bounded copy leaves holes in the source's
-            // numbering, and the reader splices segments in `seq` order, so
-            // the copy's own numbering has to be dense and start at zero.
-            let mut seq = 0u64;
-            for segment in src.segments_overlapping(rec.id, &table, spec.start, spec.end)? {
-                match spec.keep_metrics {
-                    // Column trim re-encodes; a table with none of the kept
-                    // metrics projects to no value column and is dropped (its
-                    // segments simply never inserted). Row count, timestamps
-                    // and windows are unchanged by a projection, so the
-                    // segment's own `meta` is reused verbatim.
-                    Some(keep) => {
-                        if let Some(projected) = project_segment_columns(&segment.bytes, keep)? {
-                            tx.insert_segment(id, &table, seq, &segment.meta, &projected)?;
-                            seq += 1;
-                        }
-                    }
-                    None => {
-                        tx.insert_segment(id, &table, seq, &segment.meta, &segment.bytes)?;
-                        seq += 1;
-                    }
-                }
-            }
-
-            // The unsealed tail is the newest data in the archive and the only
-            // data a quiet table may have at all, so it is never optional —
-            // only out of range. A `.rez` still being written (a hindsight
-            // buffer, or a recording combined mid-flight) keeps real rows here
-            // that no segment holds yet.
-            let tail = src.live_wal(rec.id, &table)?;
-            let (Some(first), Some(last)) = (tail.first(), tail.last()) else {
-                continue;
-            };
-            if last.ts < spec.start || first.ts > spec.end {
-                continue;
-            }
-            // `first`/`tail.len()` served the range check above and nothing
-            // else: the catalog's `first_ts`/`rows` come from what actually
-            // materializes, because a V3 group's leading un-anchored rows are
-            // real WAL rows that never reach the segment. Cataloguing the raw
-            // tail's span would claim a start the bytes do not contain.
-            // `last_ts` stays the raw tail's own last row — a skip is always a
-            // leading run, so that one is always right.
-            let materialized = crate::wal::materialize_wal_tail(&table, &tail)
-                .map_err(|e| format!("failed to seal the {table} tail: {e}"))?;
-            if let Some(materialized) = materialized {
-                let meta = SegmentMeta {
-                    rows: materialized.rows,
-                    first_ts: materialized.first_ts,
-                    last_ts: last.ts,
-                };
-                match spec.keep_metrics {
-                    Some(keep) => {
-                        if let Some(projected) = project_segment_columns(&materialized.bytes, keep)?
-                        {
-                            tx.insert_segment(id, &table, seq, &meta, &projected)?;
-                        }
-                    }
-                    None => {
-                        tx.insert_segment(id, &table, seq, &meta, &materialized.bytes)?;
-                    }
-                }
-            }
-        }
-
-        // Drift observations are part of the recording's identity and cost
-        // nothing to carry; they are already only a handful of rows per seal.
-        for (ts, offset) in src.read_clock_offsets(rec.id)? {
-            tx.insert_clock_offset(id, ts, offset)?;
-        }
-    }
-    Ok(copied)
+    let keep_sampler = spec
+        .keep_samplers
+        .map(|keep| move |table: &str| keep.contains(table_sampler(table)));
+    let keep_columns = spec.keep_metrics.map(RezColumns);
+    let lowered = DendroCopySpec {
+        start: crate::wal::dendro_ts_bound(spec.start),
+        end: crate::wal::dendro_ts_bound(spec.end),
+        keep_streams: keep_sampler.as_ref().map(|f| f as &dyn Fn(&str) -> bool),
+        metadata_extra: spec.metadata_extra,
+        keep_columns: keep_columns.as_ref().map(|c| c as &dyn ColumnFilter),
+    };
+    dendro::rewrite::copy_sources_into(src, tx, &lowered, &crate::wal::RezEncoder)
+        .map_err(String::from)
 }
 
-/// Columns every projection keeps regardless of which metrics are requested:
-/// the timestamp, the wall-clock offset sidecar, and the table-level
-/// acquisition-window pair (the BARE `:window_*`, which a V3 group table
-/// applies to all of its metrics). Dropping any of these breaks the reader's
-/// ability to place rows in time or band a rate.
+/// Project one segment's parquet down to the columns for `keep_metrics` plus
+/// the structural sidecars, re-encoding it with the archive's own writer
+/// properties so the result is indistinguishable from a natively-sealed
+/// segment (LZ4_RAW, no dictionary, default row groups — NOT report-save's
+/// ZSTD).
+///
+/// A column projection changes neither the row count nor the timestamps nor
+/// the windows, so the caller reuses the segment's existing `SegmentMeta`
+/// unchanged. Returns `None` when no value column survives — the table holds
+/// none of the kept metrics and should be dropped rather than reduced to bare
+/// structural columns.
+///
+/// This is the one place the rewrite tools decode a segment: `combine`,
+/// `filter --samplers` and `annotate` all move BLOBs verbatim, but a
+/// per-column trim cannot. What `.rez` supplies is [`RezColumns`] — which
+/// columns are structural is this layer's knowledge, not the container's.
+pub fn project_segment_columns(
+    bytes: &[u8],
+    keep_metrics: &BTreeSet<String>,
+) -> Result<Option<Vec<u8>>, String> {
+    dendro::rewrite::project_segment_columns(bytes, &RezColumns(keep_metrics)).map_err(String::from)
+}
+
 fn is_structural_column(name: &str) -> bool {
     name == "timestamp"
         || name == crate::rez::WALL_OFFSET_COLUMN
@@ -218,84 +150,6 @@ fn keep_rez_column(f: &arrow::datatypes::Field, keep_metrics: &BTreeSet<String>)
             .is_some_and(|m| keep_metrics.contains(m))
 }
 
-/// Project one segment's parquet down to the columns for `keep_metrics` plus
-/// the structural sidecars, decoding and re-encoding it with
-/// `rez::segment_writer_props()` so the result is indistinguishable from a
-/// natively-sealed segment (LZ4_RAW, no dictionary, default row groups — NOT
-/// report-save's ZSTD).
-///
-/// A column projection changes neither the row count nor the timestamps nor
-/// the windows, so the caller reuses the segment's existing `SegmentMeta`
-/// unchanged. Returns `None` when no value column survives — the table holds
-/// none of the kept metrics and should be dropped rather than reduced to bare
-/// structural columns.
-///
-/// This is the one place the rewrite tools decode a segment: `combine`,
-/// `filter --samplers` and `annotate` all move BLOBs verbatim, but a
-/// per-column trim cannot.
-pub fn project_segment_columns(
-    bytes: &[u8],
-    keep_metrics: &BTreeSet<String>,
-) -> Result<Option<Vec<u8>>, String> {
-    use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
-    use parquet::arrow::ArrowWriter;
-
-    let builder = ParquetRecordBatchReaderBuilder::try_new(bytes::Bytes::copy_from_slice(bytes))
-        .map_err(|e| format!("failed to open a segment for projection: {e}"))?;
-    let schema = builder.schema().clone();
-
-    let mut indices: Vec<usize> = Vec::new();
-    let mut has_value = false;
-    for (i, f) in schema.fields().iter().enumerate() {
-        if keep_rez_column(f, keep_metrics) {
-            indices.push(i);
-            has_value |= is_value_column(f.name());
-        }
-    }
-    if !has_value {
-        return Ok(None);
-    }
-
-    let projected_schema = std::sync::Arc::new(
-        schema
-            .project(&indices)
-            .map_err(|e| format!("failed to project a segment schema: {e}"))?,
-    );
-    let reader = builder
-        .build()
-        .map_err(|e| format!("failed to read a segment for projection: {e}"))?;
-
-    let mut buf: Vec<u8> = Vec::new();
-    {
-        let mut writer = ArrowWriter::try_new(
-            &mut buf,
-            projected_schema,
-            Some(crate::rez::segment_writer_props()),
-        )
-        .map_err(|e| format!("failed to open a projected segment writer: {e}"))?;
-        for batch in reader {
-            let batch = batch.map_err(|e| format!("failed to read a segment batch: {e}"))?;
-            let projected = batch
-                .project(&indices)
-                .map_err(|e| format!("failed to project a segment batch: {e}"))?;
-            writer
-                .write(&projected)
-                .map_err(|e| format!("failed to write a projected segment batch: {e}"))?;
-        }
-        writer
-            .close()
-            .map_err(|e| format!("failed to finalize a projected segment: {e}"))?;
-    }
-    Ok(Some(buf))
-}
-
-/// One segment's catalog facts, read from the parquet itself.
-///
-/// A v1/v2 manifest carries `rows` and `cadence_ns` for a whole TABLE and
-/// nothing per segment, but v3's catalog is per segment and wants a time span,
-/// so the numbers have to come from the bytes. Only the `timestamp` column is
-/// decoded — projecting it away from a cgroup-heavy table with thousands of
-/// columns is the difference between reading a few KB and reading the segment.
 fn segment_catalog_facts(bytes: &[u8]) -> Result<Option<SegmentMeta>, String> {
     use arrow::array::{Array, UInt64Array};
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
@@ -340,8 +194,8 @@ fn segment_catalog_facts(bytes: &[u8]) -> Result<Option<SegmentMeta>, String> {
         // and is dropped rather than inserted with a fabricated one.
         (Some(first_ts), Some(last_ts)) => Ok(Some(SegmentMeta {
             rows,
-            first_ts,
-            last_ts,
+            first_ts: crate::wal::dendro_ts(first_ts)?,
+            last_ts: crate::wal::dendro_ts(last_ts)?,
         })),
         _ => Ok(None),
     }
@@ -375,7 +229,7 @@ pub fn upgrade_tar_to_v3(src: &Path, dest: &Path) -> Result<usize, String> {
             // Catalog every segment first: a v1 manifest has no clock anchor,
             // and the earliest row is the only truthful stand-in for one.
             let mut cataloged: Vec<CatalogedTable<'_>> = Vec::new();
-            let mut earliest: Option<u64> = None;
+            let mut earliest: Option<i64> = None;
             for (sampler, segments) in &rb.tables {
                 let mut kept = Vec::new();
                 for bytes in segments {
@@ -387,10 +241,15 @@ pub fn upgrade_tar_to_v3(src: &Path, dest: &Path) -> Result<usize, String> {
                 cataloged.push((sampler.as_str(), kept));
             }
 
-            let id = tx.insert_recording(&RecordingMeta {
+            let id = tx.insert_source(&SourceMeta {
                 labels: rb.labels.clone(),
                 metadata: rb.metadata.clone(),
-                clock_anchor_wall_ns: entry.clock_anchor_wall_ns.or(earliest).unwrap_or_default(),
+                clock_anchor_wall_ns: entry
+                    .clock_anchor_wall_ns
+                    .map(crate::wal::dendro_ts)
+                    .transpose()?
+                    .or(earliest)
+                    .unwrap_or_default(),
             })?;
             n += 1;
             if rb.complete {
@@ -419,51 +278,6 @@ pub fn upgrade_tar_to_v3(src: &Path, dest: &Path) -> Result<usize, String> {
 mod tests {
     use crate::rez_sqlite::RezDb;
     use std::collections::BTreeSet;
-
-    /// Every table in the v3 schema is either copied by
-    /// [`super::copy_recordings_into`] or deliberately not carried, and this
-    /// test is what makes that a decision rather than an oversight.
-    ///
-    /// The weakness of copying instead of deleting is exactly here: a delete
-    /// preserves whatever it does not remove, so schema growth is free, while
-    /// a copy only carries what it was told to. Adding a table to the schema
-    /// without teaching the copy about it would silently drop that table from
-    /// every combined, filtered or dumped archive — a data-loss bug with no
-    /// error and no symptom until someone queries for what is missing.
-    ///
-    /// So: adding a table here fails this test. Either copy it in
-    /// `copy_recordings_into` or add it to `NOT_CARRIED` with the reason.
-    #[test]
-    fn every_schema_table_is_either_copied_or_deliberately_dropped() {
-        /// Carried across by `copy_recordings_into`.
-        const COPIED: &[&str] = &["recordings", "segments", "wal", "clock_offsets"];
-        /// Not carried, and correct not to be.
-        const NOT_CARRIED: &[&str] = &[
-            // Written by `RezDb::create` for the destination itself; copying
-            // the source's would say nothing new and could disagree.
-            "schema_version",
-        ];
-
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("schema.rez");
-        let db = RezDb::create(&path).unwrap();
-
-        let mut actual = db.user_table_names().unwrap();
-        actual.sort();
-        let mut expected: Vec<String> = COPIED
-            .iter()
-            .chain(NOT_CARRIED)
-            .map(|s| s.to_string())
-            .collect();
-        expected.sort();
-
-        assert_eq!(
-            actual, expected,
-            "the v3 schema changed. `copy_recordings_into` copies a fixed set of tables, so a \
-             new one is silently dropped from every combined/filtered/dumped archive until it \
-             is handled. Copy it, or list it in NOT_CARRIED with the reason."
-        );
-    }
     /// A tar archive upgrades to v3 with its data and its identity intact:
     /// segment BLOBs byte-for-byte, labels, metadata, and — the one most
     /// easily lost — the `complete` flag, so a recording recovered from a
@@ -511,7 +325,7 @@ mod tests {
                 rez::RezFormat::V3Sqlite
             );
             let db = RezDb::open(&out).unwrap();
-            let recordings = db.read_recordings().unwrap();
+            let recordings = db.read_sources().unwrap();
             assert_eq!(recordings.len(), 1);
             assert_eq!(
                 recordings[0].meta.labels.get("arm").map(String::as_str),
@@ -525,16 +339,16 @@ mod tests {
             );
 
             // Segment BLOBs verbatim, in order.
-            for (sampler, segments) in &before {
-                let got = db.read_segments(recordings[0].id, sampler).unwrap();
+            for (stream, segments) in &before {
+                let got = db.read_segments(recordings[0].id, stream).unwrap();
                 assert_eq!(
                     got.iter().map(|s| s.bytes.clone()).collect::<Vec<_>>(),
                     *segments,
-                    "{sampler} segments must be carried byte-for-byte"
+                    "{stream} segments must be carried byte-for-byte"
                 );
                 assert!(
                     got.iter().all(|s| s.meta.first_ts <= s.meta.last_ts),
-                    "{sampler} segment spans must be cataloged from the parquet itself"
+                    "{stream} segment spans must be cataloged from the parquet itself"
                 );
             }
         }

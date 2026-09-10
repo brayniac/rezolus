@@ -29,7 +29,7 @@ pub(crate) struct RecordingSelector {
     // `BTreeMap`, not `HashMap`: `Display` renders selector text into error
     // messages, so iteration order has to be deterministic (pinned by
     // `display_orders_pairs_deterministically` below); a `BTreeMap` also
-    // matches `rez_sqlite::RecordingMeta.labels`, so a manifest's labels can
+    // matches `rez_sqlite::SourceMeta.labels`, so a manifest's labels can
     // be consumed with no conversion.
     labels: BTreeMap<String, String>,
 }

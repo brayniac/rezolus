@@ -221,7 +221,7 @@ pub fn run(config: Config) {
     let seed = crate::recorder::rez_v3_writer::ManifestSeed {
         labels: crate::recorder::rez::build_labels("rezolus", agent_systeminfo.as_deref(), &[]),
         metadata: buffer_metadata(interval_dur, &agent_systeminfo, &agent_descriptions),
-        clock_anchor_wall_ns,
+        clock_anchor_wall_ns: clock_anchor_wall_ns as i64,
     };
 
     // Segment size tracks the scrape interval rather than being fixed: the

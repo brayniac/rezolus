@@ -227,7 +227,7 @@ fn filter_rez_v3(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use crate::recorder::rez::table_sampler;
     use crate::recorder::rez_sqlite::RezDb;
-    use crate::recorder::rez_v3_rewrite::{copy_recordings_into, CopySpec};
+    use crate::recorder::rez_v3_rewrite::{copy_sources_into, CopySpec};
 
     let src = RezDb::open(path)?;
 
@@ -236,8 +236,8 @@ fn filter_rez_v3(
     // overwrite a long-lived capture with an archive holding nothing.
     let mut present: BTreeSet<String> = BTreeSet::new();
     let mut total = 0usize;
-    for rec in src.read_recordings()? {
-        for table in src.all_samplers(rec.id)? {
+    for rec in src.read_sources()? {
+        for table in src.all_streams(rec.id)? {
             total += 1;
             present.insert(table_sampler(&table).to_string());
         }
@@ -283,12 +283,12 @@ fn filter_rez_v3(
                 keep_metrics,
                 ..CopySpec::everything()
             };
-            copy_recordings_into(src, tx, &spec)?;
+            copy_sources_into(src, tx, &spec)?;
             Ok(())
         })
     })?;
-    for rec in dst.read_recordings()? {
-        kept += dst.all_samplers(rec.id)?.len();
+    for rec in dst.read_sources()? {
+        kept += dst.all_streams(rec.id)?.len();
     }
     drop(dst);
     drop(src);
@@ -625,9 +625,9 @@ mod tests {
         filter_rez_v3(&path, Some(&keep), None, Some(&out)).unwrap();
 
         let db = crate::recorder::rez_sqlite::RezDb::open(&out).unwrap();
-        let recordings = db.read_recordings().unwrap();
+        let recordings = db.read_sources().unwrap();
         assert_eq!(recordings.len(), 1);
-        let tables = db.all_samplers(recordings[0].id).unwrap();
+        let tables = db.all_streams(recordings[0].id).unwrap();
         assert_eq!(
             tables,
             vec!["cpu_usage".to_string()],
@@ -656,10 +656,10 @@ mod tests {
         filter_rez_v3(&path, None, Some(&metrics), Some(&out)).unwrap();
 
         let db = crate::recorder::rez_sqlite::RezDb::open(&out).unwrap();
-        let recordings = db.read_recordings().unwrap();
+        let recordings = db.read_sources().unwrap();
         assert_eq!(recordings.len(), 1);
         assert_eq!(
-            db.all_samplers(recordings[0].id).unwrap(),
+            db.all_streams(recordings[0].id).unwrap(),
             vec!["cpu_usage".to_string()],
             "only the table holding metric \"0\" survives"
         );
@@ -712,8 +712,8 @@ mod tests {
 
         // Input untouched.
         let db = crate::recorder::rez_sqlite::RezDb::open(&path).unwrap();
-        let recordings = db.read_recordings().unwrap();
-        assert_eq!(db.all_samplers(recordings[0].id).unwrap().len(), 1);
+        let recordings = db.read_sources().unwrap();
+        assert_eq!(db.all_streams(recordings[0].id).unwrap().len(), 1);
     }
 
     /// A typo'd sampler name must not be read as "keep nothing". `--output`
@@ -738,8 +738,8 @@ mod tests {
 
         // And the input is untouched.
         let db = crate::recorder::rez_sqlite::RezDb::open(&path).unwrap();
-        let recordings = db.read_recordings().unwrap();
-        assert_eq!(db.all_samplers(recordings[0].id).unwrap().len(), 1);
+        let recordings = db.read_sources().unwrap();
+        assert_eq!(db.all_streams(recordings[0].id).unwrap().len(), 1);
     }
 
     /// Filtering a v1/v2 tar archive keeps the named samplers AND upgrades the
@@ -762,10 +762,10 @@ mod tests {
             "the filtered output is v3 even though the input was a tar archive"
         );
         let db = crate::recorder::rez_sqlite::RezDb::open(&out).unwrap();
-        let recordings = db.read_recordings().unwrap();
+        let recordings = db.read_sources().unwrap();
         assert_eq!(recordings.len(), 1);
         assert_eq!(
-            db.all_samplers(recordings[0].id).unwrap(),
+            db.all_streams(recordings[0].id).unwrap(),
             vec!["cpu_usage".to_string()]
         );
         assert!(
@@ -852,9 +852,9 @@ mod tests {
             rez::RezFormat::V3Sqlite
         );
         let db = crate::recorder::rez_sqlite::RezDb::open(&out).unwrap();
-        let recordings = db.read_recordings().unwrap();
+        let recordings = db.read_sources().unwrap();
         assert_eq!(
-            db.all_samplers(recordings[0].id).unwrap(),
+            db.all_streams(recordings[0].id).unwrap(),
             vec!["cpu_usage".to_string()],
             "the dropped table is gone, segments and all"
         );

@@ -23,4 +23,5 @@ tracing = "0.1"
 # Reader-only: report `.rez` assembly (trim + parquet ingest) must stay
 # metriken-free so the WASM viewer can build a report in the browser. The
 # binary unifies this to the full `write` build via its own dependency.
+dendro = { workspace = true }
 rez = { path = "../rez", default-features = false }

@@ -713,7 +713,7 @@ impl RezStream {
         };
         // Keyed by recording id, which is what the writer commits against.
         if let Some(rec) = self.recs.get(&endpoint) {
-            self.staged.push((rec.recording_id(), rows));
+            self.staged.push((rec.source_id(), rows));
         }
         Ok(())
     }
@@ -725,7 +725,7 @@ impl RezStream {
     /// whose endpoints all went quiet cannot sit on a dead writer unnoticed.
     fn commit_tick(&mut self) -> Result<(), String> {
         let staged = std::mem::take(&mut self.staged);
-        self.archive.wal_tick(staged)
+        self.archive.wal_tick(staged).map_err(String::from)
     }
 
     /// Open a recording for an endpoint that became reachable after the
@@ -748,9 +748,9 @@ impl RezStream {
         let seed = rez_v3_writer::ManifestSeed {
             labels,
             metadata: build_rez_metadata(config, ep),
-            clock_anchor_wall_ns,
+            clock_anchor_wall_ns: clock_anchor_wall_ns as i64,
         };
-        let writer = self.archive.add_recording(seed)?;
+        let writer = self.archive.add_source(seed)?;
         self.recs
             .insert(idx, rez_v3_writer::StreamRecorderV3::new(writer));
         Ok(())
@@ -779,7 +779,7 @@ impl RezStream {
     /// Mark the recording complete and stop the writer, reporting either
     /// failure.
     ///
-    /// Both halves matter. `RecordingWriter::finalize` only *queues* the
+    /// Both halves matter. `SourceWriter::finalize` only *queues* the
     /// completion — the writer owns the thread now, so the handle cannot join
     /// it — and the final seal it triggers runs after that hand-off returns. So
     /// the archive is joined here, unconditionally, and its result is folded
@@ -804,7 +804,7 @@ impl RezStream {
         }
         // Unconditional, and after every handle has been consumed: the join can
         // only complete once they have all released their senders.
-        let joined = archive.join();
+        let joined = archive.join().map_err(String::from);
         first_err.map_or(joined, Err)
     }
 
@@ -864,7 +864,7 @@ fn start_rez_recorder(
     eps: &[(usize, &EndpointState)],
     clock_anchor_wall_ns: u64,
 ) -> Result<RezStream, String> {
-    let archive = rez_v3_writer::RezArchive::create(&config.output)?;
+    let archive = rez_v3_writer::create_archive(&config.output)?;
     let mut stream = RezStream {
         recs: BTreeMap::new(),
         seen_labels: BTreeMap::new(),
@@ -899,7 +899,7 @@ fn warn_if_indistinguishable(
     labels: &BTreeMap<String, String>,
     url: &Url,
 ) {
-    let key = seal_policy::recording_stagger_key(labels);
+    let key = seal_policy::source_stagger_key(labels);
     if let Some(warning) = indistinguishable_warning(seen, &key, url) {
         eprintln!("{warning}");
     }

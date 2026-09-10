@@ -48,7 +48,7 @@ mod tests {
         let out = dir.path().join("report.rez");
         std::fs::write(&out, &bytes).unwrap();
         let db = RezDb::open(&out).unwrap();
-        let recs = db.read_recordings().unwrap();
+        let recs = db.read_sources().unwrap();
         assert_eq!(recs.len(), 1);
         let md = &recs[0].meta.metadata;
         assert_eq!(
@@ -60,7 +60,7 @@ mod tests {
             Some(REPORT_VALUE_TRIMMED)
         );
         assert_eq!(
-            db.all_samplers(recs[0].id).unwrap(),
+            db.all_streams(recs[0].id).unwrap(),
             vec!["cpu_usage".to_string()],
             "only the table holding kept metric \"0\" survives"
         );
@@ -79,7 +79,7 @@ mod tests {
         let out = dir.path().join("report.rez");
         std::fs::write(&out, &bytes).unwrap();
         let db = RezDb::open(&out).unwrap();
-        let recs = db.read_recordings().unwrap();
+        let recs = db.read_sources().unwrap();
         let md = &recs[0].meta.metadata;
         assert!(md.contains_key(KEY_SELECTION), "selection embedded");
         assert!(
@@ -87,7 +87,7 @@ mod tests {
             "an untrimmed save carries no report marker"
         );
         assert_eq!(
-            db.all_samplers(recs[0].id).unwrap().len(),
+            db.all_streams(recs[0].id).unwrap().len(),
             2,
             "every table is copied"
         );
@@ -102,20 +102,20 @@ mod tests {
         populated_v3_rez(&src, "baseline", &["cpu_usage"], 4);
         {
             let db = RezDb::open(&src).unwrap();
-            let recs = db.read_recordings().unwrap();
+            let recs = db.read_sources().unwrap();
             let mut md = recs[0].meta.metadata.clone();
             md.insert(
                 KEY_EVENTS.to_string(),
                 r#"{"events":[{"timestamp":1,"description":"x"}]}"#.to_string(),
             );
-            db.update_recording_metadata(recs[0].id, &md).unwrap();
+            db.update_source_metadata(recs[0].id, &md).unwrap();
         }
 
         let bytes = build_rez_report(&src, None, "{}", None).unwrap();
         let out = dir.path().join("report.rez");
         std::fs::write(&out, &bytes).unwrap();
         let db = RezDb::open(&out).unwrap();
-        let md = &db.read_recordings().unwrap()[0].meta.metadata;
+        let md = &db.read_sources().unwrap()[0].meta.metadata;
         assert!(
             !md.contains_key(KEY_EVENTS),
             "a save with no events drops the stale key"

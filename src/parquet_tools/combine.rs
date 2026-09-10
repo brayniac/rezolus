@@ -324,7 +324,7 @@ fn combine_rez_v3(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use crate::recorder::rez::RezFormat;
     use crate::recorder::rez_sqlite::RezDb;
-    use crate::recorder::rez_v3_rewrite::{copy_recordings_into, upgrade_tar_to_v3, CopySpec};
+    use crate::recorder::rez_v3_rewrite::{copy_sources_into, upgrade_tar_to_v3, CopySpec};
 
     let staging = tempfile::tempdir()?;
     let mut upgraded = 0usize;
@@ -354,7 +354,7 @@ fn combine_rez_v3(
             // this is what stops retention from deleting a segment out from
             // under the copy.
             src.read_snapshot(|src| {
-                recordings += copy_recordings_into(src, tx, &CopySpec::everything())?;
+                recordings += copy_sources_into(src, tx, &CopySpec::everything())?;
                 Ok(())
             })?;
         }
@@ -2764,7 +2764,7 @@ mod tests {
             rez::RezFormat::V3Sqlite
         );
         let db = crate::recorder::rez_sqlite::RezDb::open(&out).unwrap();
-        let recordings = db.read_recordings().unwrap();
+        let recordings = db.read_sources().unwrap();
         assert_eq!(recordings.len(), 2);
         // v3 has no directory names; a recording is its id plus its labels,
         // and the labels are what keep the two arms apart.
@@ -2830,7 +2830,7 @@ mod tests {
             rez::RezFormat::V3Sqlite
         );
         let db = crate::recorder::rez_sqlite::RezDb::open(&out).unwrap();
-        let recordings = db.read_recordings().unwrap();
+        let recordings = db.read_sources().unwrap();
         assert_eq!(recordings.len(), 2);
 
         // The one that matters: `complete` answers "may data after the last
@@ -2853,7 +2853,7 @@ mod tests {
         let a_rows: u64 = a_tables.iter().map(|(_, s)| s.len() as u64).sum();
         assert!(a_rows >= 3, "the input must actually be segmented");
         for rec in &recordings {
-            let mut tables = db.all_samplers(rec.id).unwrap();
+            let mut tables = db.all_streams(rec.id).unwrap();
             tables.sort();
             assert_eq!(
                 tables,
@@ -2897,7 +2897,7 @@ mod tests {
     /// wrong recording, which only a read catches.
     ///
     /// Mutation check: dropping the `seq` renumbering in
-    /// `copy_recordings_into` leaves this passing only while every input has a
+    /// `copy_sources_into` leaves this passing only while every input has a
     /// single segment, which is why the fixture writes several ticks.
     #[test]
     fn combine_assembles_v3_inputs_into_one_readable_archive() {
@@ -2918,7 +2918,7 @@ mod tests {
         );
 
         let db = crate::recorder::rez_sqlite::RezDb::open(&out).unwrap();
-        let recordings = db.read_recordings().unwrap();
+        let recordings = db.read_sources().unwrap();
         assert_eq!(recordings.len(), 2, "one recording per input");
         let arms: Vec<&str> = recordings
             .iter()
@@ -2935,7 +2935,7 @@ mod tests {
                 "an assembled archive is finished by definition and must not \
                  open with a 'not cleanly finalized' warning"
             );
-            let mut tables = db.all_samplers(rec.id).unwrap();
+            let mut tables = db.all_streams(rec.id).unwrap();
             tables.sort();
             assert_eq!(
                 tables,
@@ -3000,7 +3000,7 @@ mod tests {
             "a mixed combine still produces a v3 archive"
         );
         let db = crate::recorder::rez_sqlite::RezDb::open(&out).unwrap();
-        let recordings = db.read_recordings().unwrap();
+        let recordings = db.read_sources().unwrap();
         assert_eq!(recordings.len(), 2, "both inputs contributed a recording");
         let arms: Vec<&str> = recordings
             .iter()
@@ -3008,7 +3008,7 @@ mod tests {
             .collect();
         assert_eq!(arms, vec!["baseline", "experiment"]);
         for rec in &recordings {
-            let tables = db.all_samplers(rec.id).unwrap();
+            let tables = db.all_streams(rec.id).unwrap();
             assert!(!tables.is_empty(), "a recording came across with no tables");
             for t in &tables {
                 assert!(
@@ -3044,7 +3044,7 @@ mod tests {
         combine_parquet_to_rez(&[p1, p2], &out).unwrap();
 
         let db = crate::recorder::rez_sqlite::RezDb::open(&out).unwrap();
-        let recs = db.read_recordings().unwrap();
+        let recs = db.read_sources().unwrap();
         assert_eq!(recs.len(), 2, "one recording per parquet input");
         let sources: std::collections::BTreeSet<String> = recs
             .iter()

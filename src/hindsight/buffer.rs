@@ -29,7 +29,7 @@ use metriken_exposition::Snapshot;
 
 use super::state::TimeRange;
 use crate::recorder::rez_sqlite::RezDb;
-use crate::recorder::rez_v3_writer::{ManifestSeed, RezArchive, StreamRecorderV3};
+use crate::recorder::rez_v3_writer::{create_archive, ManifestSeed, RezArchive, StreamRecorderV3};
 use crate::recorder::seal_policy::SealPolicy;
 
 /// The rolling buffer. One `.rez` recording, fed a row per tick, trimmed to
@@ -77,8 +77,8 @@ impl HindsightBuffer {
         lookback: Duration,
         policy: SealPolicy,
     ) -> Result<Self, String> {
-        let mut archive = RezArchive::create(path)?;
-        let writer = archive.add_recording(seed)?;
+        let mut archive = create_archive(path)?;
+        let writer = archive.add_source(seed)?;
         Ok(Self {
             rec: StreamRecorderV3::with_policy(writer, policy),
             archive,
@@ -222,8 +222,11 @@ fn summarize_db(db: &RezDb) -> Result<Summary, String> {
         pages: db.pragma_u32("page_count")?,
         ..Summary::default()
     };
-    for rec in db.read_recordings()? {
-        let (first, last) = db.recording_time_span(rec.id)?;
+    for rec in db.read_sources()? {
+        // dendro's spans are `i64`; this layer reports `u64` nanoseconds. Both
+        // came out of the catalog, so they are whatever rezolus put in.
+        let (first, last) = db.source_time_span(rec.id)?;
+        let (first, last) = (first.map(|v| v as u64), last.map(|v| v as u64));
         out.first_ts = match (out.first_ts, first) {
             (Some(a), Some(b)) => Some(a.min(b)),
             (a, b) => a.or(b),
@@ -232,7 +235,7 @@ fn summarize_db(db: &RezDb) -> Result<Summary, String> {
             (Some(a), Some(b)) => Some(a.max(b)),
             (a, b) => a.or(b),
         };
-        for sampler in db.all_samplers(rec.id)? {
+        for sampler in db.all_streams(rec.id)? {
             let (segments, span) = db.segment_span(rec.id, &sampler)?;
             let live_wal_rows = db.live_wal_span(rec.id, &sampler)?.rows;
             out.rows += span.rows + live_wal_rows;
@@ -304,12 +307,7 @@ pub fn dump(buffer: &Path, dest: &Path, range: &TimeRange) -> Result<Summary, St
     drop(src);
 
     let mut db = RezDb::open(&staged)?;
-    for id in db
-        .read_recordings()?
-        .iter()
-        .map(|r| r.id)
-        .collect::<Vec<_>>()
-    {
+    for id in db.read_sources()?.iter().map(|r| r.id).collect::<Vec<_>>() {
         // The buffer's recording is still running and so is never `complete`;
         // this copy of it is finished by definition. Without this every
         // hindsight dump would open with a "not cleanly finalized, data may be
@@ -367,7 +365,7 @@ pub fn dump(buffer: &Path, dest: &Path, range: &TimeRange) -> Result<Summary, St
 /// body is empty everywhere except in
 /// `a_dump_keeps_a_segment_evicted_after_its_snapshot_opened`.
 ///
-/// It fires once the snapshot is PINNED (`read_recordings` is the first read,
+/// It fires once the snapshot is PINNED (`read_sources` is the first read,
 /// and `BEGIN DEFERRED` takes its read mark there) and before a single segment
 /// BLOB has been copied — i.e. exactly the window in which retention running
 /// on the writer's connection would, without the snapshot, delete a segment
@@ -379,13 +377,13 @@ fn copy_range(
     end: u64,
     listed: &dyn Fn(),
 ) -> Result<(), String> {
-    use crate::recorder::rez_v3_rewrite::{copy_recordings_into, CopySpec};
-    let mut dst = RezDb::create(staged)?;
+    use crate::recorder::rez_v3_rewrite::{copy_sources_into, CopySpec};
+    let mut dst = RezDb::create(staged).map_err(String::from)?;
     src.read_snapshot(|src| {
         // Pins the snapshot before a single segment BLOB is copied:
-        // `read_recordings` is the first read, so `BEGIN DEFERRED` takes its
+        // `read_sources` is the first read, so `BEGIN DEFERRED` takes its
         // read mark here.
-        let _pinned = src.read_recordings()?;
+        let _pinned = src.read_sources()?;
         listed();
         dst.transaction(|tx| {
             let spec = CopySpec {
@@ -393,10 +391,11 @@ fn copy_range(
                 end,
                 ..CopySpec::everything()
             };
-            copy_recordings_into(src, tx, &spec)?;
+            copy_sources_into(src, tx, &spec).map_err(dendro::Error::from)?;
             Ok(())
         })
     })
+    .map_err(String::from)
 }
 
 #[cfg(test)]
@@ -404,7 +403,7 @@ mod tests {
     use super::*;
     use crate::recorder::rez::recorder_tests_support::{counter, snap};
     use crate::recorder::rez::{detect_rez_format, read_table_parquet, RezFormat};
-    use crate::recorder::rez_sqlite::{Evicted, RecordingMeta, SegmentMeta};
+    use crate::recorder::rez_sqlite::{Evicted, SegmentMeta, SourceMeta};
     use std::collections::BTreeMap;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::Arc;
@@ -420,7 +419,7 @@ mod tests {
             metadata: [("sampling_interval_ms".to_string(), "1000".to_string())]
                 .into_iter()
                 .collect(),
-            clock_anchor_wall_ns: ANCHOR,
+            clock_anchor_wall_ns: ANCHOR as i64,
         }
     }
 
@@ -482,7 +481,7 @@ mod tests {
         drop(buf);
 
         let db = RezDb::open(&path).unwrap();
-        let rid = db.read_recordings().unwrap()[0].id;
+        let rid = db.read_sources().unwrap()[0].id;
 
         // cpu_usage sealed at rows 0-3, 4-7, 8-11. The first is wholly older
         // than the cutoff and goes; the second straddles it and is kept whole.
@@ -490,7 +489,7 @@ mod tests {
         assert_eq!(
             segments
                 .iter()
-                .map(|s| (s.meta.first_ts, s.meta.last_ts))
+                .map(|s| (s.meta.first_ts as u64, s.meta.last_ts as u64))
                 .collect::<Vec<_>>(),
             vec![
                 (ANCHOR + 4 * SECOND, ANCHOR + 7 * SECOND),
@@ -516,7 +515,7 @@ mod tests {
             db.read_wal(rid, "drivehealth")
                 .unwrap()
                 .iter()
-                .map(|r| r.ts)
+                .map(|r| r.ts as u64)
                 .collect::<Vec<_>>(),
             vec![ANCHOR + 10 * SECOND],
             "WAL rows older than the cutoff are evicted too; the one inside \
@@ -636,10 +635,10 @@ mod tests {
         let path = dir.path().join("buffer.rez");
         let mut db = RezDb::create(&path).unwrap();
         let rid = db
-            .insert_recording(&RecordingMeta {
+            .insert_source(&SourceMeta {
                 labels: BTreeMap::new(),
                 metadata: BTreeMap::new(),
-                clock_anchor_wall_ns: ANCHOR,
+                clock_anchor_wall_ns: ANCHOR as i64,
             })
             .unwrap();
 
@@ -652,13 +651,13 @@ mod tests {
                 cycle,
                 &SegmentMeta {
                     rows: 1,
-                    first_ts: cycle,
-                    last_ts: cycle,
+                    first_ts: cycle as i64,
+                    last_ts: cycle as i64,
                 },
                 &bytes,
             )
             .unwrap();
-            db.evict_before(rid, cycle.saturating_sub(RETAIN - 1))
+            db.evict_before(rid, cycle.saturating_sub(RETAIN - 1) as i64)
                 .unwrap();
             if cycle == WARM {
                 warm_pages = db.pragma_u32("page_count").unwrap();
@@ -776,12 +775,12 @@ mod tests {
         // timeline across the segment/WAL splice, with nothing duplicated at
         // the seam and no half-written segment.
         let db = RezDb::open(&dest).unwrap();
-        let rid = db.read_recordings().unwrap()[0].id;
+        let rid = db.read_sources().unwrap()[0].id;
         assert!(
-            db.read_recordings().unwrap()[0].complete,
+            db.read_sources().unwrap()[0].complete,
             "a dump is a finished artifact even though the buffer runs on"
         );
-        let samplers = db.all_samplers(rid).unwrap();
+        let samplers = db.all_streams(rid).unwrap();
         assert_eq!(samplers, vec!["cpu_usage", "scheduler"]);
         for sampler in samplers {
             let mut stamps = Vec::new();
@@ -795,7 +794,12 @@ mod tests {
                 );
                 stamps.extend(table.timestamps);
             }
-            stamps.extend(db.live_wal(rid, &sampler).unwrap().iter().map(|r| r.ts));
+            stamps.extend(
+                db.live_wal(rid, &sampler)
+                    .unwrap()
+                    .iter()
+                    .map(|r| r.ts as u64),
+            );
             assert!(
                 stamps.windows(2).all(|w| w[0] < w[1]),
                 "{sampler}: rows must form one strictly increasing timeline, \
@@ -876,7 +880,7 @@ mod tests {
         // opens a SECOND connection (`RezDb::open`), so without this, the
         // read can race the async writer thread and see the file before the
         // last `ingest`/`maintain` tick actually committed — exactly what
-        // `RecordingWriter::sync`'s doc warns a second-connection reader must
+        // `SourceWriter::sync`'s doc warns a second-connection reader must
         // guard against. Reproduced under heavy parallel-test contention on
         // a multi-core Linux container (never locally, on a quiet machine),
         // as `rows >= 6` failing with fewer rows than were ingested.
@@ -929,7 +933,7 @@ mod tests {
 
         // The dump is segments and nothing else — no WAL rows were copied.
         let db = RezDb::open(&dest).unwrap();
-        let rid = db.read_recordings().unwrap()[0].id;
+        let rid = db.read_sources().unwrap()[0].id;
         assert!(db.read_wal(rid, "drivehealth").unwrap().is_empty());
         let segments = db.read_segments(rid, "drivehealth").unwrap();
         assert_eq!(segments.len(), 1, "the tail was sealed into one segment");
@@ -979,7 +983,7 @@ mod tests {
         // reading the database as it stood when it started.
         //
         // Deterministic, not a race. The eviction runs in the `listed` seam,
-        // which fires after `read_recordings` has pinned the snapshot and
+        // which fires after `read_sources` has pinned the snapshot and
         // before the first segment BLOB is read — so "the delete landed inside
         // the window" is a fact of the call order rather than something the
         // scheduler has to be persuaded to do. No sleeps, no retries, no
@@ -1010,8 +1014,8 @@ mod tests {
             // reads. Opened inside the seam so it cannot be blamed for pinning
             // anything itself.
             let mut writer = RezDb::open(&path).unwrap();
-            let rid = writer.read_recordings().unwrap()[0].id;
-            evicted.set(writer.evict_before(rid, cutoff).unwrap());
+            let rid = writer.read_sources().unwrap()[0].id;
+            evicted.set(writer.evict_before(rid, cutoff as i64).unwrap());
         })
         .unwrap();
         drop(src);
@@ -1025,13 +1029,13 @@ mod tests {
             "fixture: the seam must really have deleted segments mid-dump"
         );
         let after = RezDb::open(&path).unwrap();
-        let rid = after.read_recordings().unwrap()[0].id;
+        let rid = after.read_sources().unwrap()[0].id;
         assert_eq!(
             after
                 .read_segments(rid, "cpu_usage")
                 .unwrap()
                 .iter()
-                .map(|s| s.meta.first_ts)
+                .map(|s| s.meta.first_ts as u64)
                 .collect::<Vec<_>>(),
             vec![
                 ANCHOR + 6 * SECOND,
@@ -1046,12 +1050,12 @@ mod tests {
         // — a snapshot that covered the catalog but not the BLOBs would leave a
         // segment row pointing at bytes that were deleted.
         let dumped = RezDb::open(&staged).unwrap();
-        let rid = dumped.read_recordings().unwrap()[0].id;
+        let rid = dumped.read_sources().unwrap()[0].id;
         let segments = dumped.read_segments(rid, "cpu_usage").unwrap();
         assert_eq!(
             segments
                 .iter()
-                .map(|s| (s.meta.first_ts, s.meta.last_ts))
+                .map(|s| (s.meta.first_ts as u64, s.meta.last_ts as u64))
                 .collect::<Vec<_>>(),
             (0..6)
                 .map(|i| (ANCHOR + 2 * i * SECOND, ANCHOR + (2 * i + 1) * SECOND))

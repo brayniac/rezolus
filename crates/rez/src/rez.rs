@@ -2242,6 +2242,7 @@ mod builder_tests {
 /// `parquet` tests all build `.rez` fixtures with these.
 #[cfg(any(test, feature = "test-support"))]
 pub mod recorder_tests_support {
+    use crate::rez_v3_writer::{create_archive, finalize_single_rec, single_archive};
     // The agent's window: these builders make snapshot values, which is the
     // one place the archive still speaks metriken's vocabulary.
     use crate::window::Window;
@@ -2278,7 +2279,7 @@ pub mod recorder_tests_support {
     /// sampler tables yet) — the cheapest fixture for tests across the crate
     /// that just need `detect_rez_format(path)` to see `V3Sqlite`.
     pub fn empty_v3_rez(path: &std::path::Path) {
-        use crate::rez_v3_writer::{ManifestSeed, RezArchive};
+        use crate::rez_v3_writer::ManifestSeed;
         let seed = ManifestSeed {
             labels: [("source".to_string(), "rezolus".to_string())]
                 .into_iter()
@@ -2286,7 +2287,7 @@ pub mod recorder_tests_support {
             metadata: Default::default(),
             clock_anchor_wall_ns: 1_700_000_000_000_000_000,
         };
-        RezArchive::single(path, seed).unwrap();
+        single_archive(path, seed).unwrap();
     }
 
     /// A finalized MULTI-recording v3 `.rez`: one recording per `(source,
@@ -2299,11 +2300,11 @@ pub mod recorder_tests_support {
     /// data came back would pass either way; distinguishable values make the
     /// wrong arm fail.
     pub fn multi_recording_v3_rez(path: &std::path::Path, recordings: &[(&str, &str)]) {
-        use crate::rez_v3_writer::{ManifestSeed, RezArchive, StreamRecorderV3};
+        use crate::rez_v3_writer::{ManifestSeed, StreamRecorderV3};
         use crate::window::Window;
         const ANCHOR: u64 = 1_700_000_000_000_000_000;
 
-        let mut archive = RezArchive::create(path).unwrap();
+        let mut archive = create_archive(path).unwrap();
         let mut recs: Vec<StreamRecorderV3> = Vec::new();
         for (source, host) in recordings {
             let seed = ManifestSeed {
@@ -2319,9 +2320,9 @@ pub mod recorder_tests_support {
                 metadata: [("source".to_string(), source.to_string())]
                     .into_iter()
                     .collect(),
-                clock_anchor_wall_ns: ANCHOR,
+                clock_anchor_wall_ns: ANCHOR as i64,
             };
-            recs.push(StreamRecorderV3::new(archive.add_recording(seed).unwrap()));
+            recs.push(StreamRecorderV3::new(archive.add_source(seed).unwrap()));
         }
         for (i, rec) in recs.iter_mut().enumerate() {
             for t in 0..3u64 {
@@ -2350,7 +2351,7 @@ pub mod recorder_tests_support {
     /// materialize WAL tails, so a fixture with no data would exercise
     /// neither.
     pub fn populated_v3_rez(path: &std::path::Path, arm: &str, samplers: &[&str], ticks: u64) {
-        use crate::rez_v3_writer::{ManifestSeed, RezArchive, StreamRecorderV3};
+        use crate::rez_v3_writer::{ManifestSeed, StreamRecorderV3};
         const ANCHOR: u64 = 1_700_000_000_000_000_000;
         let seed = ManifestSeed {
             labels: [
@@ -2362,9 +2363,9 @@ pub mod recorder_tests_support {
             metadata: [("sampling_interval_ms".to_string(), "1000".to_string())]
                 .into_iter()
                 .collect(),
-            clock_anchor_wall_ns: ANCHOR,
+            clock_anchor_wall_ns: ANCHOR as i64,
         };
-        let (archive, writer) = RezArchive::single(path, seed).unwrap();
+        let (archive, writer) = single_archive(path, seed).unwrap();
         let mut rec = StreamRecorderV3::new(writer);
         for tick in 0..ticks {
             let ts = ANCHOR + tick * 1_000_000_000;
@@ -2375,9 +2376,7 @@ pub mod recorder_tests_support {
                 .collect();
             rec.ingest(&snap(ts, counters), ts, 0).unwrap();
         }
-        archive
-            .finalize_single_rec(rec, (ANCHOR + ticks * 1_000_000_000, 0))
-            .unwrap();
+        finalize_single_rec(archive, rec, (ANCHOR + ticks * 1_000_000_000, 0)).unwrap();
     }
 }
 
@@ -3746,7 +3745,7 @@ mod malformed_histogram_tests {
     ///
     /// The blast radius was wider than "sealing" by the time this was fixed:
     /// `materialize_wal_tail` is also how the reader materializes a live WAL
-    /// tail, and how `copy_recordings_into` carries one across for `combine`,
+    /// tail, and how `copy_sources_into` carries one across for `combine`,
     /// `filter`, `upgrade` and hindsight's dump. All of them inherited it.
     ///
     /// `push_row` is infallible now, so the wedge is impossible by type rather

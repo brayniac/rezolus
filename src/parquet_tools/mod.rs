@@ -832,7 +832,7 @@ mod command_name_tests {
     #[test]
     fn a_snapshot_carries_what_a_plain_copy_leaves_in_the_sidecar() {
         use ::rez::rez::recorder_tests_support::{counter, snap};
-        use ::rez::rez_v3_writer::{ManifestSeed, RezArchive, StreamRecorderV3};
+        use ::rez::rez_v3_writer::{single_archive, ManifestSeed, StreamRecorderV3};
 
         let dir = tempfile::tempdir().unwrap();
         let live = dir.path().join("live.rez");
@@ -843,7 +843,7 @@ mod command_name_tests {
             metadata: Default::default(),
             clock_anchor_wall_ns: 1_000_000_000,
         };
-        let (archive, writer) = RezArchive::single(&live, seed).unwrap();
+        let (archive, writer) = single_archive(&live, seed).unwrap();
         let mut rec = StreamRecorderV3::new(writer);
 
         // Enough ticks, wide enough, to push past the WAL autocheckpoint and
@@ -869,8 +869,11 @@ mod command_name_tests {
         // How far each one's newest row reaches.
         let reach = |p: &std::path::Path| -> Option<u64> {
             let db = ::rez::rez_sqlite::RezDb::open(p).ok()?;
-            let rec = db.read_recordings().ok()?.into_iter().next()?;
-            db.live_wal_span(rec.id, "cpu_usage").ok()?.last_ts
+            let rec = db.read_sources().ok()?.into_iter().next()?;
+            db.live_wal_span(rec.id, "cpu_usage")
+                .ok()?
+                .last_ts
+                .map(|v| v as u64)
         };
 
         assert_eq!(

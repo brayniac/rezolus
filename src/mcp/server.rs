@@ -1124,8 +1124,8 @@ mod tests {
         .collect();
         // Precondition: the OLD identity really would have conflated them.
         assert_eq!(
-            crate::recorder::seal_policy::recording_stagger_key(&a),
-            crate::recorder::seal_policy::recording_stagger_key(&b),
+            crate::recorder::seal_policy::source_stagger_key(&a),
+            crate::recorder::seal_policy::source_stagger_key(&b),
             "fixture must actually exercise the aliasing the fix removes",
         );
 

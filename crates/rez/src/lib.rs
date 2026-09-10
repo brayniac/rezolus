@@ -13,8 +13,19 @@
 /// `write` — the browser assembles `.rez` reports from uploaded parquet bytes.
 pub mod parquet_ingest;
 pub mod reader;
+/// The container, now `dendro`. Re-exported under the path call sites already
+/// use, and under the names they already say.
+pub mod rez_sqlite {
+    pub use dendro::db::{
+        Db as RezDb, Evicted, SegmentMeta, SegmentRow, SourceMeta, SourceRow, Span, Tx as RezTx,
+        WalRow, PAGE_SIZE,
+    };
+}
+/// Segment sealing policy, now `dendro`.
+pub mod seal_policy {
+    pub use dendro::seal::*;
+}
 pub mod rez;
-pub mod rez_sqlite;
 /// The tar (v1/v2) `.rez` writer, kept only so tests can build v1/v2 fixtures.
 /// Nothing ships that writes this container any more.
 #[cfg(any(test, feature = "test-support"))]
@@ -31,6 +42,5 @@ pub mod rez_v3_rewrite;
 #[cfg(feature = "write")]
 pub mod rez_v3_writer;
 pub mod schema;
-pub mod seal_policy;
 pub mod wal;
 pub mod window;

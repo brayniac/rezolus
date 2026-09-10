@@ -383,7 +383,7 @@ fn embed_rez_report_markers(
     selection_json: &str,
     events_json: Option<&str>,
 ) -> Result<(), String> {
-    let recordings = db.read_recordings()?;
+    let recordings = db.read_sources()?;
     let anchor = recordings.first().ok_or_else(|| {
         "report has no recordings (source was empty or fully trimmed)".to_string()
     })?;
@@ -401,7 +401,8 @@ fn embed_rez_report_markers(
             metadata.remove(KEY_EVENTS);
         }
     }
-    db.update_recording_metadata(anchor.id, &metadata)
+    db.update_source_metadata(anchor.id, &metadata)
+        .map_err(String::from)
 }
 
 /// Build a `.rez` report from a `.rez` source's bytes: copy every recording
@@ -414,13 +415,13 @@ pub fn build_rez_report_from_rez(
     events_json: Option<&str>,
 ) -> Result<Vec<u8>, String> {
     use rez::rez_sqlite::RezDb;
-    use rez::rez_v3_rewrite::{copy_recordings_into, CopySpec};
+    use rez::rez_v3_rewrite::{copy_sources_into, CopySpec};
 
-    let src = RezDb::open_bytes(source_bytes.to_vec())?;
-    let mut dst = RezDb::create_in_memory()?;
+    let src = RezDb::open_bytes(source_bytes.to_vec()).map_err(String::from)?;
+    let mut dst = RezDb::create_in_memory().map_err(String::from)?;
     dst.transaction(|tx| {
         src.read_snapshot(|src| {
-            copy_recordings_into(
+            copy_sources_into(
                 src,
                 tx,
                 &CopySpec {
@@ -429,10 +430,13 @@ pub fn build_rez_report_from_rez(
                 },
             )
             .map(|_| ())
+            // rez keeps String errors; dendro's closures want its own.
+            .map_err(dendro::Error::from)
         })
-    })?;
+    })
+    .map_err(String::from)?;
     embed_rez_report_markers(&dst, keep_metrics.is_some(), selection_json, events_json)?;
-    dst.serialize()
+    dst.serialize().map_err(String::from)
 }
 
 /// One side of a parquet compare: its bytes and the columns to keep (`None`
@@ -460,9 +464,10 @@ pub fn build_rez_report_from_parquets(
             ingest_parquet_bytes(side.bytes, tx, side.keep_metrics)?;
         }
         Ok(())
-    })?;
+    })
+    .map_err(String::from)?;
     embed_rez_report_markers(&dst, trimmed, selection_json, events_json)?;
-    dst.serialize()
+    dst.serialize().map_err(String::from)
 }
 
 #[cfg(test)]
@@ -977,7 +982,7 @@ mod tests {
         let out = build_rez_report_from_parquets(&sides, true, r#"{"entries":[]}"#, None).unwrap();
 
         let db = RezDb::open_bytes(out).unwrap();
-        let recs = db.read_recordings().unwrap();
+        let recs = db.read_sources().unwrap();
         assert_eq!(recs.len(), 2, "one recording per parquet side");
         let anchor = &recs[0].meta.metadata;
         assert_eq!(
@@ -1010,7 +1015,7 @@ mod tests {
         // Untrimmed parquet build carries no report marker.
         {
             let db = RezDb::open_bytes(source.clone()).unwrap();
-            assert!(!db.read_recordings().unwrap()[0]
+            assert!(!db.read_sources().unwrap()[0]
                 .meta
                 .metadata
                 .contains_key(KEY_REPORT));
@@ -1020,7 +1025,7 @@ mod tests {
         let out =
             build_rez_report_from_rez(&source, Some(&keep), r#"{"entries":[1]}"#, None).unwrap();
         let db = RezDb::open_bytes(out).unwrap();
-        let md = &db.read_recordings().unwrap()[0].meta.metadata;
+        let md = &db.read_sources().unwrap()[0].meta.metadata;
         assert_eq!(
             md.get(KEY_SELECTION).map(String::as_str),
             Some(r#"{"entries":[1]}"#)

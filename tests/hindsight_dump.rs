@@ -593,7 +593,7 @@ fn read_rez(path: &Path, sampler: &str) -> Archive {
     let mut stmt = conn
         .prepare(
             "SELECT rows, first_ts, last_ts, bytes FROM segments \
-             WHERE sampler = ?1 ORDER BY recording_id, seq",
+             WHERE stream = ?1 ORDER BY source_id, seq",
         )
         .expect("failed to prepare the segment query");
     let segments: Vec<Segment> = stmt
@@ -618,7 +618,7 @@ fn read_rez(path: &Path, sampler: &str) -> Archive {
         .collect();
 
     let mut stmt = conn
-        .prepare("SELECT ts FROM wal WHERE sampler = ?1 ORDER BY ts")
+        .prepare("SELECT ts FROM wal WHERE stream = ?1 ORDER BY ts")
         .expect("failed to prepare the WAL query");
     let wal = stmt
         .query_map([sampler], |row| Ok(row.get::<_, i64>(0)? as u64))

@@ -41,7 +41,7 @@ use tracing::warn;
 
 #[cfg(test)]
 use super::seal_policy::stagger_bucket;
-use super::seal_policy::SINGLE_RECORDING_KEY;
+use super::seal_policy::SINGLE_SOURCE_KEY;
 use super::seal_policy::{SealPolicy, SegmentAccount};
 
 use super::rez::{
@@ -556,7 +556,7 @@ impl BuilderState {
             // identity is constant. Spread across samplers is unchanged; only
             // the particular bucket each draws differs from before the key
             // widened, which the stagger does not depend on.
-            account: SegmentAccount::open_first(sampler, SINGLE_RECORDING_KEY, policy),
+            account: SegmentAccount::open_first(sampler, SINGLE_SOURCE_KEY, policy),
         }
     }
 
@@ -1506,7 +1506,7 @@ mod tests {
     fn zero_bucket_sampler_still_seals() {
         const MAX_ROWS: usize = 256;
         assert_eq!(
-            stagger_bucket("network_interfaces", SINGLE_RECORDING_KEY),
+            stagger_bucket("network_interfaces", SINGLE_SOURCE_KEY),
             0,
             "chosen for its zero bucket"
         );

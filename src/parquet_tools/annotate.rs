@@ -395,7 +395,7 @@ fn annotate_rez_v3_at(
     let readers = crate::rez_reader::RezReader::open_recordings(path, pool)?;
 
     let db = RezDb::open(path)?;
-    let recordings = db.read_recordings()?;
+    let recordings = db.read_sources()?;
     if recordings.len() != readers.len() {
         return Err(format!(
             "{} has {} recording(s) in its catalog but {} readable — refusing to annotate a \
@@ -446,7 +446,7 @@ fn annotate_rez_v3_at(
             events_report = Some((events.events.len(), ops.clear));
         }
 
-        db.update_recording_metadata(rec.id, &metadata)?;
+        db.update_source_metadata(rec.id, &metadata)?;
     }
 
     let mut parts: Vec<String> = Vec::new();
@@ -1069,7 +1069,7 @@ mod tests {
         annotate_rez_v3(&path, &kpi_annotation(ext_json)).unwrap();
 
         let db = crate::recorder::rez_sqlite::RezDb::open(&path).unwrap();
-        let recordings = db.read_recordings().unwrap();
+        let recordings = db.read_sources().unwrap();
         assert_eq!(recordings.len(), 1);
         let embedded = recordings[0]
             .meta
@@ -1116,7 +1116,7 @@ mod tests {
             crate::recorder::rez::RezFormat::V3Sqlite
         );
         let db = crate::recorder::rez_sqlite::RezDb::open(&path).unwrap();
-        let recordings = db.read_recordings().unwrap();
+        let recordings = db.read_sources().unwrap();
         assert!(recordings
             .iter()
             .all(|rec| rec.meta.metadata.contains_key(KEY_SERVICE_QUERIES)));
@@ -1164,7 +1164,7 @@ mod tests {
         .unwrap();
 
         let db = crate::recorder::rez_sqlite::RezDb::open(&path).unwrap();
-        let recordings = db.read_recordings().unwrap();
+        let recordings = db.read_sources().unwrap();
         let segments = db.read_segments(recordings[0].id, "cpu_usage").unwrap();
         assert_eq!(
             segments.iter().map(|s| s.bytes.clone()).collect::<Vec<_>>(),
@@ -1205,7 +1205,7 @@ mod tests {
 
         // Stored in the catalog metadata column.
         let db = crate::recorder::rez_sqlite::RezDb::open(&path).unwrap();
-        let recordings = db.read_recordings().unwrap();
+        let recordings = db.read_sources().unwrap();
         assert_eq!(recordings.len(), 1);
         let raw = recordings[0]
             .meta
@@ -1256,7 +1256,7 @@ mod tests {
         annotate_rez_v3(&path, &annotation).unwrap();
 
         let db = crate::recorder::rez_sqlite::RezDb::open(&path).unwrap();
-        let md = &db.read_recordings().unwrap()[0].meta.metadata;
+        let md = &db.read_sources().unwrap()[0].meta.metadata;
         assert!(md.contains_key(KEY_SERVICE_QUERIES), "KPIs embedded");
         assert!(
             md.contains_key(crate::parquet_metadata::KEY_EVENTS),
@@ -1293,7 +1293,7 @@ mod tests {
 
         let db = crate::recorder::rez_sqlite::RezDb::open(&path).unwrap();
         assert!(
-            !db.read_recordings().unwrap()[0]
+            !db.read_sources().unwrap()[0]
                 .meta
                 .metadata
                 .contains_key(crate::parquet_metadata::KEY_EVENTS),
