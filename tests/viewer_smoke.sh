@@ -306,7 +306,15 @@ if echo "$selection_js" | grep -E "(\bselectionStore\b|\bSelectionView\b|\bpersi
          "no old store identifiers" "$LOGDIR/file.log"
 fi
 
-PORT_AB_COMBINED=18504
+# Its own port. This used to be 18504, which the N-way viewer above is still
+# listening on — so this server panicked with `AddrInUse`, `wait_for_port`
+# succeeded against the WRONG server, and every assertion below ran against
+# the N-way archive.
+# EVERY server this script started must be in every later trap: the trap ends
+# with a bare `wait`, which waits on ALL children, so one omitted PID is a
+# hang at exit rather than a leak. `PID_NWAY` was dropped from the traps below
+# and the script hung there indefinitely.
+PORT_AB_COMBINED=18508
 COMBINED_AB_TAR="$LOGDIR/combined-ab.parquet.ab.tar"
 
 echo "==> parquet combine --ab produces a *.parquet.ab.tar tarball"
@@ -338,7 +346,7 @@ echo "==> viewer auto-detects combined-AB tarball and reports compare_mode"
     --listen 127.0.0.1:$PORT_AB_COMBINED \
     > "$LOGDIR/ab-combined.log" 2>&1 &
 PID_AB_COMBINED=$!
-trap 'kill $PID_UPLOAD $PID_FILE $PID_AB $PID_PROXY $PID_AB_COMBINED 2>/dev/null || true; wait 2>/dev/null || true' EXIT
+trap 'kill $PID_UPLOAD $PID_FILE $PID_AB $PID_NWAY $PID_PROXY $PID_AB_COMBINED 2>/dev/null || true; wait 2>/dev/null || true' EXIT
 
 wait_for_port $PORT_AB_COMBINED || {
     echo "--- log for combined-AB viewer ---"
@@ -377,7 +385,7 @@ echo "==> trimmed report loads in a fresh viewer with report mode active"
     --listen 127.0.0.1:$PORT_REPORT \
     > "$LOGDIR/report.log" 2>&1 &
 PID_REPORT=$!
-trap 'kill $PID_UPLOAD $PID_FILE $PID_AB $PID_PROXY $PID_AB_COMBINED $PID_REPORT 2>/dev/null || true; wait 2>/dev/null || true' EXIT
+trap 'kill $PID_UPLOAD $PID_FILE $PID_AB $PID_NWAY $PID_PROXY $PID_AB_COMBINED $PID_REPORT 2>/dev/null || true; wait 2>/dev/null || true' EXIT
 
 wait_for_port $PORT_REPORT || {
     echo "--- log for report viewer ---"
@@ -414,7 +422,7 @@ echo "==> simple-capture: non-Rezolus parquet fixture"
     --listen 127.0.0.1:$PORT_SIMPLE \
     > "$LOGDIR/simple.log" 2>&1 &
 PID_SIMPLE=$!
-trap 'kill $PID_UPLOAD $PID_FILE $PID_AB $PID_PROXY $PID_AB_COMBINED $PID_REPORT $PID_SIMPLE 2>/dev/null || true; wait 2>/dev/null || true' EXIT
+trap 'kill $PID_UPLOAD $PID_FILE $PID_AB $PID_NWAY $PID_PROXY $PID_AB_COMBINED $PID_REPORT $PID_SIMPLE 2>/dev/null || true; wait 2>/dev/null || true' EXIT
 
 wait_for_port $PORT_SIMPLE || {
     echo "--- log for simple-capture viewer ---"
