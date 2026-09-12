@@ -1127,7 +1127,7 @@ mod tests {
         // Plant the row the batch's SECOND segment collides with on the
         // primary key `(source_id, sampler, seq)`, from another connection.
         {
-            let db = RezDb::open(&path).unwrap();
+            let mut db = RezDb::open(&path).unwrap();
             db.insert_segment(
                 rid,
                 "blockio",
@@ -1638,7 +1638,7 @@ mod tests {
         // says nothing about whether the GUARD ran — see
         // `reclaim_is_skipped_until_the_free_list_is_a_tenth_of_the_file`,
         // which is where that claim lives, because it is invisible here.)
-        reclaim_if_fragmented(&db).unwrap();
+        reclaim_if_fragmented(&mut db).unwrap();
         assert_eq!(
             db.pragma_u32("page_count").unwrap(),
             full,
@@ -1661,7 +1661,7 @@ mod tests {
 
         // One pass is bounded: it hands back at most RECLAIM_PAGES_PER_PASS,
         // not the whole free list.
-        reclaim_if_fragmented(&db).unwrap();
+        reclaim_if_fragmented(&mut db).unwrap();
         let after_one = db.pragma_u32("page_count").unwrap();
         assert!(
             after_one < full,
@@ -1675,7 +1675,7 @@ mod tests {
 
         // And it keeps going until the file really has shrunk.
         for _ in 0..50 {
-            reclaim_if_fragmented(&db).unwrap();
+            reclaim_if_fragmented(&mut db).unwrap();
         }
         let settled = db.pragma_u32("page_count").unwrap();
         assert!(

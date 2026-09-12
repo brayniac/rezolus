@@ -394,7 +394,7 @@ fn annotate_rez_v3_at(
     let pool = metriken_query::BufferPool::new(256 * 1024 * 1024);
     let readers = crate::rez_reader::RezReader::open_recordings(path, pool)?;
 
-    let db = RezDb::open(path)?;
+    let mut db = RezDb::open(path)?;
     let recordings = db.read_sources()?;
     if recordings.len() != readers.len() {
         return Err(format!(

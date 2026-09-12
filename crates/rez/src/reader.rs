@@ -1989,13 +1989,20 @@ mod tests {
         drop(archive);
     }
 
-    /// A raw copy of an archive a writer still holds is a valid SQLite file
-    /// with none of the archive in it — SQLite's committed pages are in a
-    /// `-wal` sidecar, a second file a single blob does not carry. Say that,
-    /// rather than letting it surface as "no such table: recordings", which
-    /// reads like corruption.
+    /// A plain copy of an archive a writer still holds opens, and is STALE
+    /// rather than broken: the catalog is checkpointed into the file at
+    /// creation (dendro stamps the header and folds it in at once), so a copy
+    /// carries every table and whatever rows had been checkpointed since —
+    /// here none, because the one tick lives in the `-wal` sidecar a single
+    /// copied file does not carry. It used to be that a copy taken before the
+    /// first checkpoint had no catalog at all and was refused with a message
+    /// naming the sidecar; that case no longer exists for an archive dendro
+    /// created, and the header-page-only image it left behind is dendro's own
+    /// `NotAnArchive` test. What remains true, and is asserted here, is that
+    /// the copy is at most `CHECKPOINT_INTERVAL` behind and says nothing it
+    /// does not hold.
     #[test]
-    fn a_copy_taken_mid_write_says_what_went_wrong() {
+    fn a_copy_taken_mid_write_opens_stale_rather_than_broken() {
         use crate::rez::recorder_tests_support::{counter, snap};
         use crate::rez_v3_writer::{ManifestSeed, StreamRecorderV3};
 
@@ -2021,15 +2028,16 @@ mod tests {
         .unwrap();
         rec.sync().unwrap();
 
-        let err = match RezReader::open_recordings_from_bytes(
+        let recordings = RezReader::open_recordings_from_bytes(
             std::fs::read(&path).unwrap(),
             BufferPool::new(8 * 1024 * 1024),
-        ) {
-            Ok(_) => panic!("a mid-write copy has no catalog in it"),
-            Err(e) => e.to_string(),
-        };
-        assert!(err.contains("-wal"), "{err}");
-        assert!(err.contains("still being written"), "{err}");
+        )
+        .expect("a copy with its catalog checkpointed opens");
+        assert!(
+            recordings.is_empty(),
+            "the source row and its tick were committed after the creation checkpoint and \
+             live in the sidecar; the copy must not invent them"
+        );
 
         drop(rec);
         drop(archive);

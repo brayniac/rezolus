@@ -1314,7 +1314,7 @@ mod tests {
         // Write a selection + events payload straight into the recording's
         // manifest metadata (the shape `annotate`/report-save produce).
         {
-            let db = RezDb::open(&rez_path).unwrap();
+            let mut db = RezDb::open(&rez_path).unwrap();
             let recs = db.read_sources().unwrap();
             let mut md = recs[0].meta.metadata.clone();
             md.insert(

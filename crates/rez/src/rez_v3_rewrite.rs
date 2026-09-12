@@ -78,6 +78,9 @@ pub fn copy_sources_into(
         keep_streams: keep_sampler.as_ref().map(|f| f as &dyn Fn(&str) -> bool),
         metadata_extra: spec.metadata_extra,
         keep_columns: keep_columns.as_ref().map(|c| c as &dyn ColumnFilter),
+        // The archive's own properties: a projected segment must be
+        // indistinguishable from a natively sealed one.
+        writer_props: None,
     };
     dendro::rewrite::copy_sources_into(src, tx, &lowered, &crate::wal::RezEncoder)
         .map_err(String::from)
@@ -103,7 +106,12 @@ pub fn project_segment_columns(
     bytes: &[u8],
     keep_metrics: &BTreeSet<String>,
 ) -> Result<Option<Vec<u8>>, String> {
-    dendro::rewrite::project_segment_columns(bytes, &RezColumns(keep_metrics)).map_err(String::from)
+    dendro::rewrite::project_segment_columns(
+        bytes,
+        &RezColumns(keep_metrics),
+        dendro::segment::writer_props(),
+    )
+    .map_err(String::from)
 }
 
 fn is_structural_column(name: &str) -> bool {

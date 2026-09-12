@@ -101,7 +101,7 @@ mod tests {
         let src = dir.path().join("src.rez");
         populated_v3_rez(&src, "baseline", &["cpu_usage"], 4);
         {
-            let db = RezDb::open(&src).unwrap();
+            let mut db = RezDb::open(&src).unwrap();
             let recs = db.read_sources().unwrap();
             let mut md = recs[0].meta.metadata.clone();
             md.insert(

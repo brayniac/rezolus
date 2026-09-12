@@ -1379,7 +1379,7 @@ mod tests {
         );
         // Embed into the anchor recording's manifest (id order is stable).
         {
-            let db = rez::rez_sqlite::RezDb::open(&path).unwrap();
+            let mut db = rez::rez_sqlite::RezDb::open(&path).unwrap();
             let recs = db.read_sources().unwrap();
             let mut md = recs[0].meta.metadata.clone();
             md.insert(

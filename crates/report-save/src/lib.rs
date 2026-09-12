@@ -378,7 +378,7 @@ fn append_tar_entry<W: std::io::Write>(
 /// so a reloaded archive opens straight to the Report view; an untrimmed save
 /// carries the selection but no marker, matching the parquet footer path.
 fn embed_rez_report_markers(
-    db: &rez::rez_sqlite::RezDb,
+    db: &mut rez::rez_sqlite::RezDb,
     trimmed: bool,
     selection_json: &str,
     events_json: Option<&str>,
@@ -435,7 +435,12 @@ pub fn build_rez_report_from_rez(
         })
     })
     .map_err(String::from)?;
-    embed_rez_report_markers(&dst, keep_metrics.is_some(), selection_json, events_json)?;
+    embed_rez_report_markers(
+        &mut dst,
+        keep_metrics.is_some(),
+        selection_json,
+        events_json,
+    )?;
     dst.serialize().map_err(String::from)
 }
 
@@ -466,7 +471,7 @@ pub fn build_rez_report_from_parquets(
         Ok(())
     })
     .map_err(String::from)?;
-    embed_rez_report_markers(&dst, trimmed, selection_json, events_json)?;
+    embed_rez_report_markers(&mut dst, trimmed, selection_json, events_json)?;
     dst.serialize().map_err(String::from)
 }
 

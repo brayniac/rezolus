@@ -1013,7 +1013,7 @@ dependencies = [
 [[package]]
 name = "dendro"
 version = "0.1.0"
-source = "git+https://github.com/iopsystems/dendro?rev=47ce93b8ef44fe33f5779ceb593ab2e32371ecee#47ce93b8ef44fe33f5779ceb593ab2e32371ecee"
+source = "git+https://github.com/iopsystems/dendro?rev=bec693cfe36db78d4f5a9560ac8edaab59d97ab0#bec693cfe36db78d4f5a9560ac8edaab59d97ab0"
 dependencies = [
  "arrow",
  "bytes",
