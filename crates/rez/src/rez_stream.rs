@@ -563,7 +563,13 @@ impl BuilderState {
     /// Append one row to the open segment, and account it.
     pub fn push_entries(&mut self, ts: u64, wall_offset_ns: i64, entries: &[Entry<'_>]) {
         self.builder.push_entries(ts, wall_offset_ns, entries);
-        self.account.add_row(entries_approx_bytes(entries));
+        // Saturating rather than fallible: this is the v2 tar writer, whose
+        // callers have no error path here, and a timestamp past 2262 is
+        // already unrepresentable in the archive it is being written to.
+        self.account.add_row(
+            entries_approx_bytes(entries),
+            crate::wal::dendro_ts_bound(ts),
+        );
     }
 
     fn is_due(&self, now: Instant) -> bool {
@@ -758,6 +764,8 @@ pub fn write_segmented_rez(
             max_bytes: usize::MAX,
             max_rows,
             max_age: Duration::from_secs(3600),
+            // `.rez` staggers rather than aligning: see the stagger key.
+            align: None,
         },
     );
     let mut last_ts = 0;
@@ -1303,6 +1311,8 @@ mod tests {
                 max_bytes: usize::MAX,
                 max_rows: 2,
                 max_age: Duration::from_secs(3600),
+                // `.rez` staggers rather than aligning: see the stagger key.
+                align: None,
             },
         );
 
@@ -1352,6 +1362,8 @@ mod tests {
                 max_bytes: usize::MAX,
                 max_rows: usize::MAX,
                 max_age: Duration::from_millis(5),
+                // `.rez` staggers rather than aligning: see the stagger key.
+                align: None,
             },
         );
 
@@ -1391,6 +1403,8 @@ mod tests {
             max_bytes: usize::MAX,
             max_rows,
             max_age: Duration::from_secs(3600),
+            // `.rez` staggers rather than aligning: see the stagger key.
+            align: None,
         }
     }
 
@@ -1557,6 +1571,8 @@ mod tests {
                 max_rows: 1,
                 // Every builder is trivially past its age bound.
                 max_age: Duration::ZERO,
+                // `.rez` staggers rather than aligning: see the stagger key.
+                align: None,
             },
         );
 

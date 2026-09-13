@@ -28,7 +28,7 @@ dashboard = { path = "crates/dashboard" }
 #
 # To work on dendro and rezolus side by side, uncomment the `[patch]` entry at
 # the bottom of this file rather than editing this line.
-dendro = { default-features = true, git = "https://github.com/iopsystems/dendro", rev = "bec693cfe36db78d4f5a9560ac8edaab59d97ab0" }
+dendro = { default-features = true, git = "https://github.com/iopsystems/dendro", rev = "81bdbf1c5e102f35e54c0917194cffa188560d1d" }
 rez = { path = "crates/rez" }
 report-save = { path = "crates/report-save" }
 include_dir = "0.7.4"

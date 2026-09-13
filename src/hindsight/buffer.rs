@@ -431,6 +431,8 @@ mod tests {
             max_bytes: usize::MAX,
             max_rows: rows,
             max_age: Duration::from_secs(3600),
+            // `.rez` staggers rather than aligning: see the stagger key.
+            align: None,
         }
     }
 

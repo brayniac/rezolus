@@ -211,6 +211,10 @@ fn materialize_sampler_wal_tail(
         rows: row_count,
         first_ts,
         last_ts,
+        // `.rez` builds no caller index yet. The slot is there for caching a
+        // stream's metric names, which is what would remove the reader's last
+        // fixed open cost; see dendro's TSDB survey entry.
+        index: None,
     }))
 }
 
@@ -403,6 +407,8 @@ fn materialize_group_wal_tail(
         // exactly when `first_ts` gets set — never `None` here.
         first_ts: first_ts.expect("a non-empty materialized table has a first pushed row"),
         last_ts: last_ts.expect("a non-empty materialized table has a last pushed row"),
+        // As in the V1/V2 path above: no caller index yet.
+        index: None,
     }))
 }
 

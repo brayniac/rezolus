@@ -287,6 +287,9 @@ impl StreamRecorderV3 {
         // `Err` mid-tick would otherwise leave the samplers already visited
         // holding a builder row whose WAL row was never committed — the one
         // state this design must not produce.
+        // Converted once: every row in a tick shares the tick's timestamp, and
+        // hoisting it keeps pass 2 infallible.
+        let row_ts = crate::wal::dendro_ts(anchored_ts)?;
         let mut wal_rows = Vec::new();
         let mut accepted = Vec::new();
         for (sampler, entries) in group_by_sampler(snapshot) {
@@ -339,7 +342,7 @@ impl StreamRecorderV3 {
                 .collect();
             wal_rows.push(WalRow {
                 stream: sampler.to_string(),
-                ts: crate::wal::dendro_ts(anchored_ts)?,
+                ts: row_ts,
                 wall_offset: wall_offset_ns,
                 row: encode_wal_row(&cells)?,
             });
@@ -357,7 +360,10 @@ impl StreamRecorderV3 {
             self.accounts
                 .entry(sampler.to_string())
                 .or_insert_with(|| SegmentAccount::open_first(sampler, stagger_key, policy))
-                .add_row(entries_approx_bytes(&entries));
+                // The same timestamp the WAL row above carries: the account
+                // uses it for wall-clock aligned boundaries, so an account
+                // fed a different clock would cut in the wrong place.
+                .add_row(entries_approx_bytes(&entries), row_ts);
         }
         Ok(wal_rows)
     }
@@ -387,6 +393,9 @@ impl StreamRecorderV3 {
         anchored_ts: u64,
         wall_offset_ns: i64,
     ) -> Result<Vec<WalRow>, String> {
+        // Converted once: every row in a tick shares the tick's timestamp, and
+        // hoisting it keeps pass 2 infallible.
+        let row_ts = crate::wal::dendro_ts(anchored_ts)?;
         let mut wal_rows = Vec::new();
         let mut accepted: Vec<(&str, u64, usize)> = Vec::new();
         // Names already accepted THIS TICK. `group_by_sampler`'s V1/V2 path is
@@ -582,7 +591,7 @@ impl StreamRecorderV3 {
             };
             wal_rows.push(WalRow {
                 stream: g.name.clone(),
-                ts: crate::wal::dendro_ts(anchored_ts)?,
+                ts: row_ts,
                 wall_offset: wall_offset_ns,
                 row: encode_wal_group_row(&row)?,
             });
@@ -598,7 +607,8 @@ impl StreamRecorderV3 {
             self.accounts
                 .entry(name.to_string())
                 .or_insert_with(|| SegmentAccount::open_first(name, stagger_key, policy))
-                .add_row(bytes);
+                // See `ingest`: the account must see the row's own timestamp.
+                .add_row(bytes, row_ts);
         }
         Ok(wal_rows)
     }
@@ -1703,6 +1713,8 @@ mod tests {
             max_bytes: usize::MAX,
             max_rows,
             max_age: Duration::from_secs(3600),
+            // `.rez` staggers rather than aligning: see the stagger key.
+            align: None,
         }
     }
 
