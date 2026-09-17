@@ -4587,6 +4587,348 @@ mod tests {
                 );
             }
 
+            /// Not a test — what an in-process archive costs the agent, which
+            /// is the open question on #1224's "Option A" (the agent keeps a
+            /// small archive and publishes changesets from it rather than
+            /// hand-rolling a wire format):
+            ///
+            /// ```text
+            /// cargo test -p rez --release inmem_buffer_cost -- --ignored --nocapture
+            /// ```
+            ///
+            /// Run it where `/tmp` is tmpfs and the archive really is in
+            /// memory — it is on `delta`. `crates/rez`'s v3 writer stands in
+            /// for dendro's: same SQLite schema, same WAL-plus-sealed-segment
+            /// design, since dendro is this code extracted.
+            ///
+            /// Reports, per sampling interval, what a five-minute rolling
+            /// buffer costs: resident archive bytes after retention settles,
+            /// and CPU per tick for the append-and-evict path.
+            #[test]
+            #[ignore]
+            fn inmem_buffer_cost() {
+                use std::time::Instant;
+
+                // `delta`'s actual shape: 45 acquisition groups, 3,560
+                // declared members. Sized from the real host rather than a
+                // round number, because cost scales with member count.
+                let mut pop: Vec<(String, GroupSchema, usize)> = Vec::new();
+                for (name, members) in [
+                    ("cgroup_cpu_usage/usage", 1200usize),
+                    ("cgroup_syscall/counts", 800),
+                    ("cpu_usage/usage", 512),
+                    ("cpu_perf/cycles", 256),
+                    ("scheduler_runqueue/latency", 128),
+                    ("syscall_counts/counts", 128),
+                    ("network_traffic/traffic", 64),
+                    ("blockio_requests/requests", 64),
+                ] {
+                    let counters = (0..members)
+                        .map(|i| MetricDesc {
+                            name: format!("{i}"),
+                            metadata: [
+                                ("metric".to_string(), name.replace('/', "_")),
+                                (
+                                    "sampler".to_string(),
+                                    name.split('/').next().unwrap().to_string(),
+                                ),
+                                (
+                                    "name".to_string(),
+                                    format!("/sys/fs/cgroup/system.slice/unit-{i}.service"),
+                                ),
+                            ]
+                            .into_iter()
+                            .collect(),
+                        })
+                        .collect();
+                    pop.push((
+                        name.to_string(),
+                        GroupSchema {
+                            counters,
+                            gauges: Vec::new(),
+                            histograms: Vec::new(),
+                        },
+                        members,
+                    ));
+                }
+                for i in 0..37 {
+                    pop.push((
+                        format!("sampler_{i}/group"),
+                        group_schema(&["a", "b", "c", "d", "e", "f", "g", "h"]),
+                        8,
+                    ));
+                }
+                let members: usize = pop.iter().map(|(_, _, m)| m).sum();
+                println!(
+                    "\n{} groups, {members} declared members, 5 minute retention\n",
+                    pop.len()
+                );
+                println!(
+                    "{:>11} {:>7} {:>12} {:>10} {:>9} {:>9} {:>10} {:>10}",
+                    "interval",
+                    "ticks",
+                    "bytes",
+                    "B/minute",
+                    "ingest50",
+                    "ingest99",
+                    "per seal",
+                    "per evict"
+                );
+                println!("{:>60}{:>30}", "--- microseconds ---", "");
+
+                const RETENTION_S: u64 = 300;
+                // Evict on its own cadence, as a real buffer does. Running it
+                // every tick — as a first cut of this benchmark did — charges
+                // a table-wide DELETE to every tick and buries the ingest cost
+                // it was supposed to isolate.
+                const EVICT_EVERY_S: u64 = 10;
+
+                for interval_ms in [1000u64, 250, 50] {
+                    let dir = tempfile::tempdir().unwrap();
+                    let path = dir.path().join("buffer.rez");
+                    // A segment per 10s of wall time at every interval, so the
+                    // archives are comparable. Note this means seal FREQUENCY
+                    // per tick differs by interval, which is why seal is timed
+                    // separately below rather than folded into a per-tick mean.
+                    let rows_per_segment = (10_000 / interval_ms).max(1) as usize;
+                    let (archive, mut rec, _) = recorder(&path, policy(rows_per_segment));
+
+                    let ticks = RETENTION_S * 2 * 1000 / interval_ms;
+                    let step_ns = interval_ms * 1_000_000;
+                    let (mut ingest_ns, mut seal_ns, mut evict_ns) = (0u128, 0u128, 0u128);
+                    let (mut seals, mut evicts) = (0u64, 0u64);
+                    let mut ingest_each: Vec<u64> = Vec::with_capacity(ticks as usize);
+
+                    for tick in 0..ticks {
+                        let ts = 1_000_000_000 + tick * step_ns;
+                        let groups: Vec<GroupSnapshot> = pop
+                            .iter()
+                            .map(|(name, schema, n)| GroupSnapshot {
+                                name: name.clone(),
+                                schema_hash: schema.hash(),
+                                // A stable schema: the churn this would add is
+                                // #1238's subject, measured separately.
+                                schema: (tick == 0).then(|| Arc::new(schema.clone())),
+                                window: Some(Window::new(ts - step_ns / 2, ts).into()),
+                                counters: (0..*n).map(|i| Some(tick * 7 + i as u64)).collect(),
+                                gauges: Vec::new(),
+                                histograms: Vec::new(),
+                            })
+                            .collect();
+                        let snapshot = v3_snap(ts, groups);
+
+                        let t = Instant::now();
+                        rec.ingest(&snapshot, ts, 0).unwrap();
+                        let d = t.elapsed().as_nanos();
+                        ingest_ns += d;
+                        ingest_each.push(d as u64);
+
+                        let before = rec.open_rows(&pop[0].0);
+                        let t = Instant::now();
+                        rec.maybe_seal().unwrap();
+                        if rec.open_rows(&pop[0].0) < before {
+                            seal_ns += t.elapsed().as_nanos();
+                            seals += 1;
+                        }
+
+                        let secs = tick * interval_ms / 1000;
+                        if secs > RETENTION_S && (tick * interval_ms) % (EVICT_EVERY_S * 1000) == 0
+                        {
+                            let t = Instant::now();
+                            rec.evict_before(ts - RETENTION_S * 1_000_000_000).unwrap();
+                            evict_ns += t.elapsed().as_nanos();
+                            evicts += 1;
+                        }
+                    }
+                    rec.sync().unwrap();
+                    drop(archive);
+
+                    ingest_each.sort_unstable();
+                    let p = |q: f64| ingest_each[((ingest_each.len() as f64 - 1.0) * q) as usize];
+                    let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0)
+                        + std::fs::metadata(path.with_extension("rez-wal"))
+                            .map(|m| m.len())
+                            .unwrap_or(0);
+
+                    println!(
+                        "{:>9}ms {:>7} {:>12} {:>10} {:>9.0} {:>9.0} {:>10.0} {:>10.0}",
+                        interval_ms,
+                        ticks,
+                        bytes,
+                        bytes as u64 / (RETENTION_S / 60),
+                        p(0.5) as f64 / 1000.0,
+                        p(0.99) as f64 / 1000.0,
+                        if seals > 0 {
+                            seal_ns as f64 / seals as f64 / 1000.0
+                        } else {
+                            0.0
+                        },
+                        if evicts > 0 {
+                            evict_ns as f64 / evicts as f64 / 1000.0
+                        } else {
+                            0.0
+                        },
+                    );
+                    let _ = ingest_ns;
+                }
+                println!();
+            }
+
+            /// The latency half of [`inmem_buffer_cost`], paced to the wall
+            /// clock.
+            ///
+            /// ```text
+            /// cargo test -p rez --release inmem_buffer_latency -- --ignored --nocapture
+            /// ```
+            ///
+            /// The unpaced benchmark cannot answer this. Running flat out
+            /// saturates the writer thread, so ingest blocks behind whatever
+            /// is queued and p99 simply reports the queue — its ingest p99 and
+            /// its per-evict cost came back as the same number twice
+            /// (30,474 us beside 30,609). In production ticks arrive with idle
+            /// time between them and the writer drains, so the only way to
+            /// learn what a tick really costs is to arrive on time.
+            ///
+            /// Shorter retention than the sizing benchmark (60s, not 300s):
+            /// latency needs eviction to be RUNNING, not a large buffer, and
+            /// this keeps the run to minutes.
+            #[test]
+            #[ignore]
+            fn inmem_buffer_latency() {
+                use std::time::Instant;
+
+                let mut pop: Vec<(String, GroupSchema, usize)> = Vec::new();
+                for (name, members) in [
+                    ("cgroup_cpu_usage/usage", 1200usize),
+                    ("cgroup_syscall/counts", 800),
+                    ("cpu_usage/usage", 512),
+                    ("cpu_perf/cycles", 256),
+                    ("scheduler_runqueue/latency", 128),
+                    ("syscall_counts/counts", 128),
+                    ("network_traffic/traffic", 64),
+                    ("blockio_requests/requests", 64),
+                ] {
+                    let counters = (0..members)
+                        .map(|i| MetricDesc {
+                            name: format!("{i}"),
+                            metadata: [
+                                ("metric".to_string(), name.replace('/', "_")),
+                                (
+                                    "sampler".to_string(),
+                                    name.split('/').next().unwrap().to_string(),
+                                ),
+                                (
+                                    "name".to_string(),
+                                    format!("/sys/fs/cgroup/system.slice/unit-{i}.service"),
+                                ),
+                            ]
+                            .into_iter()
+                            .collect(),
+                        })
+                        .collect();
+                    pop.push((
+                        name.to_string(),
+                        GroupSchema {
+                            counters,
+                            gauges: Vec::new(),
+                            histograms: Vec::new(),
+                        },
+                        members,
+                    ));
+                }
+                for i in 0..37 {
+                    pop.push((
+                        format!("sampler_{i}/group"),
+                        group_schema(&["a", "b", "c", "d", "e", "f", "g", "h"]),
+                        8,
+                    ));
+                }
+                let members: usize = pop.iter().map(|(_, _, m)| m).sum();
+
+                const RETENTION_S: u64 = 60;
+                const RUN_S: u64 = 150;
+                const EVICT_EVERY_S: u64 = 10;
+
+                println!(
+                    "\n{} groups, {members} members, {RETENTION_S}s retention, \
+                     {RUN_S}s paced per interval\n",
+                    pop.len()
+                );
+                println!(
+                    "{:>11} {:>7} {:>8} {:>8} {:>9} {:>9} {:>8}",
+                    "interval", "ticks", "p50", "p99", "p99.9", "max", "late"
+                );
+                println!("{:>44}", "--- ingest, microseconds ---");
+
+                for interval_ms in [1000u64, 250, 50] {
+                    let dir = tempfile::tempdir().unwrap();
+                    let path = dir.path().join("buffer.rez");
+                    let rows_per_segment = (10_000 / interval_ms).max(1) as usize;
+                    let (archive, mut rec, _) = recorder(&path, policy(rows_per_segment));
+
+                    let ticks = RUN_S * 1000 / interval_ms;
+                    let step = Duration::from_millis(interval_ms);
+                    let step_ns = interval_ms * 1_000_000;
+                    let mut lat: Vec<u64> = Vec::with_capacity(ticks as usize);
+                    let mut late = 0u64;
+                    let start = Instant::now();
+
+                    for tick in 0..ticks {
+                        // Arrive on time, as a sampling clock would.
+                        let due = start + step * tick as u32;
+                        match due.checked_duration_since(Instant::now()) {
+                            Some(d) => std::thread::sleep(d),
+                            None => late += 1,
+                        }
+
+                        let ts = 1_000_000_000 + tick * step_ns;
+                        let groups: Vec<GroupSnapshot> = pop
+                            .iter()
+                            .map(|(name, schema, n)| GroupSnapshot {
+                                name: name.clone(),
+                                schema_hash: schema.hash(),
+                                schema: (tick == 0).then(|| Arc::new(schema.clone())),
+                                window: Some(Window::new(ts - step_ns / 2, ts).into()),
+                                counters: (0..*n).map(|i| Some(tick * 7 + i as u64)).collect(),
+                                gauges: Vec::new(),
+                                histograms: Vec::new(),
+                            })
+                            .collect();
+                        let snapshot = v3_snap(ts, groups);
+
+                        // Everything the sampling path would do inline. Seal
+                        // only ENQUEUES — the parquet encode is on the writer
+                        // thread and deliberately outside this timer, because
+                        // it is outside the agent's sample path too.
+                        let t = Instant::now();
+                        rec.ingest(&snapshot, ts, 0).unwrap();
+                        rec.maybe_seal().unwrap();
+                        let secs = tick * interval_ms / 1000;
+                        if secs > RETENTION_S && (tick * interval_ms) % (EVICT_EVERY_S * 1000) == 0
+                        {
+                            rec.evict_before(ts - RETENTION_S * 1_000_000_000).unwrap();
+                        }
+                        lat.push(t.elapsed().as_nanos() as u64);
+                    }
+                    rec.sync().unwrap();
+                    drop(archive);
+
+                    lat.sort_unstable();
+                    let q = |f: f64| lat[((lat.len() as f64 - 1.0) * f) as usize] as f64 / 1000.0;
+                    println!(
+                        "{:>9}ms {:>7} {:>8.0} {:>8.0} {:>9.0} {:>9.0} {:>8}",
+                        interval_ms,
+                        ticks,
+                        q(0.5),
+                        q(0.99),
+                        q(0.999),
+                        *lat.last().unwrap() as f64 / 1000.0,
+                        late
+                    );
+                }
+                println!();
+            }
+
             /// A V2 snapshot has no acquisition groups, so it has no rows to
             /// serve. Returning an empty body would be indistinguishable to a
             /// consumer from an agent with every sampler disabled.
