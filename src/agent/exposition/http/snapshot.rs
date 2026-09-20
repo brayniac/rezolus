@@ -1103,6 +1103,12 @@ pub(crate) struct SkeletonCache {
     slots: crate::recorder::index::SourceIndex,
     /// Entries this pass produced, before they are folded into `history`.
     index_entries: Vec<(String, crate::recorder::index::IndexEntry)>,
+    /// Where the last pass left the source's index state.
+    ///
+    /// Held rather than recomputed at the start of each pass. The state moves
+    /// only inside a pass, so the start of one is the end of the last, and a
+    /// pass that produced no entries cannot have moved it.
+    last_pass_state: crate::recorder::index::IndexState,
     history: IndexHistory,
 }
 
@@ -1206,6 +1212,7 @@ impl SkeletonCache {
             rebuilds: 0,
             slots: crate::recorder::index::SourceIndex::new(),
             index_entries: Vec::new(),
+            last_pass_state: crate::recorder::index::SourceIndex::new().state(),
             history: IndexHistory::default(),
         }
     }
@@ -1230,12 +1237,21 @@ impl SkeletonCache {
     /// from there.
     fn begin_pass(&mut self) -> crate::recorder::index::IndexState {
         self.index_entries.clear();
-        self.slots.state()
+        // Where the previous pass ended, not a fresh computation. The state
+        // only moves inside a pass, so the two are the same value by
+        // construction — and a pass that changed nothing then hashes nothing
+        // at all, which is most passes: 42 of 51 groups on `delta` never
+        // churn.
+        self.last_pass_state
     }
 
     /// Fold the pass's entries into the history.
     fn end_pass(&mut self, before: crate::recorder::index::IndexState) {
         let entries = std::mem::take(&mut self.index_entries);
+        if !entries.is_empty() {
+            // Only a pass that produced entries can have moved the state.
+            self.last_pass_state = self.slots.state();
+        }
         self.history.record(before, entries);
     }
 
@@ -3758,6 +3774,47 @@ mod tests {
             h.since((0, 0), (0, 0)).as_deref(),
             Some(&[][..]),
             "and the subscriber is still current, because nothing changed"
+        );
+    }
+
+    /// The state a pass starts from must equal what the index actually holds.
+    ///
+    /// `begin_pass` returns a remembered value rather than recomputing one, so
+    /// a pass that failed to update it would hand the next pass a stale start
+    /// — and the history would then key entries on a state no subscriber ever
+    /// held, so catch-up would silently never match and every subscriber would
+    /// resync forever.
+    #[test]
+    fn the_remembered_pass_state_tracks_what_the_index_holds() {
+        let mut cache = SkeletonCache::new();
+        assert_eq!(
+            cache.begin_pass(),
+            cache.index_state(),
+            "an empty cache starts where its empty index is"
+        );
+
+        // A pass that moves something.
+        let before = cache.begin_pass();
+        cache.observe_slots(
+            "probe/one",
+            [(0u32, [("comm".to_string(), "a".to_string())].into())]
+                .into_iter()
+                .collect(),
+        );
+        cache.end_pass(before);
+        assert_eq!(
+            cache.begin_pass(),
+            cache.index_state(),
+            "after a pass that changed the set"
+        );
+
+        // And a pass that moves nothing must not disturb it.
+        let before = cache.begin_pass();
+        cache.end_pass(before);
+        assert_eq!(
+            cache.begin_pass(),
+            cache.index_state(),
+            "after a quiet pass"
         );
     }
 
