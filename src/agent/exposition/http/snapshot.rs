@@ -1101,6 +1101,9 @@ pub(crate) struct SkeletonCache {
     /// compared equal, and member metadata is part of a schema, so a hit means
     /// identity did not move.
     slots: crate::recorder::index::SourceIndex,
+    /// Each group's slot identity hashes as of last tick. Compared against
+    /// this tick's to find what moved, in place of cloning labels to diff.
+    slot_hashes: HashMap<String, BTreeMap<u32, u128>>,
     /// Entries this pass produced, before they are folded into `history`.
     index_entries: Vec<(String, crate::recorder::index::IndexEntry)>,
     /// Where the last pass left the source's index state.
@@ -1211,26 +1214,59 @@ impl SkeletonCache {
             entries: HashMap::new(),
             rebuilds: 0,
             slots: crate::recorder::index::SourceIndex::new(),
+            slot_hashes: HashMap::new(),
             index_entries: Vec::new(),
             last_pass_state: crate::recorder::index::SourceIndex::new().state(),
             history: IndexHistory::default(),
         }
     }
 
-    /// Fold one group's freshly observed slot labels in, recording an entry
-    /// when identity actually moved.
+    /// Last tick's slot hashes for a group, moved OUT so the walk can use them
+    /// without borrowing the cache mid-walk. Returned by `commit_slots`.
+    fn take_slot_hashes(&mut self, group_name: &str) -> BTreeMap<u32, u128> {
+        self.slot_hashes.remove(group_name).unwrap_or_default()
+    }
+
+    /// Fold one group's walk into the index, recording an entry when identity
+    /// actually moved.
     ///
     /// Call only for a group whose schema was rebuilt this tick. On a hit the
-    /// labels were never read, and observing an empty set would be read as
+    /// metadata was never read, so `hashes` would be empty and would look like
     /// every slot having been removed.
-    fn observe_slots(
+    ///
+    /// The change is already worked out: `changed` are the slots whose
+    /// identity hash moved, and a slot present last tick but absent from
+    /// `hashes` was removed. Nothing is diffed here and no labels are cloned —
+    /// that happened in the walk, for the slots that moved and no others.
+    fn commit_slots(
         &mut self,
         group_name: &str,
-        observed: BTreeMap<u32, BTreeMap<String, String>>,
+        hashes: BTreeMap<u32, u128>,
+        prev: BTreeMap<u32, u128>,
+        changed: Vec<crate::recorder::index::SlotEntry>,
     ) {
-        if let Some(entry) = self.slots.observe(group_name, observed) {
+        let removed: Vec<u32> = prev
+            .keys()
+            .filter(|slot| !hashes.contains_key(slot))
+            .copied()
+            .collect();
+        let known = self.slots.stream(group_name).is_some();
+        let change = crate::recorder::index::SlotChange {
+            // A stream's first entry restates it whole, so a subscriber has a
+            // base. `changed` IS the whole set on that tick, because nothing
+            // was in `prev` to compare against.
+            kind: if known {
+                crate::recorder::index::EntryKind::Delta
+            } else {
+                crate::recorder::index::EntryKind::Full
+            },
+            slots: changed,
+            removed,
+        };
+        if let Some(entry) = self.slots.record(group_name, change) {
             self.index_entries.push((group_name.to_string(), entry));
         }
+        self.slot_hashes.insert(group_name.to_string(), hashes);
     }
 
     /// Note the state a pass starts from, so what it produces can be replayed
@@ -1409,9 +1445,33 @@ fn identity_fold_metadata(acc: u128, metadata: &HashMap<String, String>) -> u128
 /// can never be confused regardless of what follows.
 #[inline]
 fn identity_fold_metadata_presence(acc: u128, m: Option<&HashMap<String, String>>) -> u128 {
+    identity_fold(acc, &member_identity(m).to_le_bytes())
+}
+
+/// One member's identity ALONE: folded from a fixed seed, so it depends on that
+/// member's metadata and nothing before it.
+///
+/// The same bytes are walked as when this was folded straight into the group's
+/// accumulator — the sort, the length prefixes, the presence flag are
+/// unchanged — but the per-slot value now falls out as a by-product, and
+/// [`identity_fold_metadata_presence`] chains it in exactly as before.
+///
+/// That by-product is the whole point. The index needs to know WHICH slots
+/// moved, and without a per-slot identity the only way to find out was to clone
+/// every member's label map and diff it — 928 of them for
+/// `syscall_counts/syscall_counts_cgroup`, every tick that group's schema
+/// changed, to discover that one had moved. Measured against v5.20.0 on a
+/// 32-CPU host, that clone-to-compare cost 1.25x the agent's whole sampling
+/// CPU. With this, a changed slot is an integer comparison.
+///
+/// Both the pre-pass and `create_v3`'s own walk fold through here, so the two
+/// cannot disagree about a group's identity — which is what the hit/miss
+/// decision rests on.
+#[inline]
+fn member_identity(m: Option<&HashMap<String, String>>) -> u128 {
     match m {
-        Some(m) => identity_fold_metadata(identity_fold(acc, &[1u8]), m),
-        None => identity_fold(acc, &[0u8]),
+        Some(m) => identity_fold_metadata(identity_fold(IDENTITY_FNV_OFFSET, &[1u8]), m),
+        None => identity_fold(IDENTITY_FNV_OFFSET, &[0u8]),
     }
 }
 
@@ -1769,17 +1829,47 @@ struct GroupBuilder {
     reader_guard: Option<AcquisitionGuard<'static>>,
     needs_schema: bool,
     walk_identity: GroupIdentityAccum,
-    /// What the sampler attached to each populated slot, captured during the
-    /// same walk that reads the values — see `SkeletonCache::observe_slots`.
-    /// Empty on a cache hit, which is exactly when there is nothing to
-    /// observe.
-    slot_labels: BTreeMap<u32, BTreeMap<String, String>>,
+    /// Each populated slot's identity hash, captured during the same walk that
+    /// reads the values. Sixteen bytes per slot and no allocation per label,
+    /// where cloning the labels to diff them cost 1.25x the agent's sampling
+    /// CPU — see `member_identity`.
+    slot_hashes: BTreeMap<u32, u128>,
+    /// Last tick's hashes for this group, moved in at first touch so the walk
+    /// can tell a moved slot from a still one without consulting the cache
+    /// mid-walk. Moved back out at emit.
+    prev_slot_hashes: BTreeMap<u32, u128>,
+    /// Labels for the slots that actually moved — the only ones cloned.
+    changed_slots: Vec<crate::recorder::index::SlotEntry>,
     counter_descs: Vec<MetricDesc>,
     counter_values: Vec<Option<u64>>,
     gauge_descs: Vec<MetricDesc>,
     gauge_values: Vec<Option<i64>>,
     histogram_descs: Vec<MetricDesc>,
     histogram_values: Vec<Option<histogram::Histogram>>,
+}
+
+impl GroupBuilder {
+    /// Record one slot's identity, cloning its labels only if it moved.
+    ///
+    /// The hash comes from `member_identity`, which the walk's own fold
+    /// already computed over these exact bytes — so telling a moved slot from
+    /// a still one costs an integer comparison. Before this, every populated
+    /// slot's label map was cloned on any tick the group's schema changed, to
+    /// discover which one had moved: 928 clones for
+    /// `syscall_counts/syscall_counts_cgroup`, measured at 1.25x the agent's
+    /// whole sampling CPU against v5.20.0.
+    fn note_slot(&mut self, slot: u32, m: Option<&HashMap<String, String>>) {
+        let identity = member_identity(m);
+        if self.prev_slot_hashes.get(&slot) != Some(&identity) {
+            self.changed_slots.push(crate::recorder::index::SlotEntry {
+                slot,
+                labels: m
+                    .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+                    .unwrap_or_default(),
+            });
+        }
+        self.slot_hashes.insert(slot, identity);
+    }
 }
 
 impl Default for GroupBuilder {
@@ -1789,7 +1879,9 @@ impl Default for GroupBuilder {
             reader_guard: None,
             needs_schema: true,
             walk_identity: GroupIdentityAccum::default(),
-            slot_labels: BTreeMap::new(),
+            slot_hashes: BTreeMap::new(),
+            prev_slot_hashes: BTreeMap::new(),
+            changed_slots: Vec::new(),
             counter_descs: Vec::new(),
             counter_values: Vec::new(),
             gauge_descs: Vec::new(),
@@ -2138,6 +2230,21 @@ fn create_v3(
                     window,
                     reader_guard,
                     needs_schema,
+                    // Last tick's slot identities, MOVED in. The walk compares
+                    // against them to tell a moved slot from a still one, and
+                    // a move avoids both a clone here and a borrow of the
+                    // cache from inside the walk. `commit_slots` puts this
+                    // tick's back.
+                    //
+                    // Only a miss walks metadata at all, so a hit neither
+                    // needs these nor returns any — which is why `commit_slots`
+                    // is called only on the miss path.
+                    prev_slot_hashes: if needs_schema {
+                        let (sampler, name) = *e.key();
+                        cache.take_slot_hashes(&format!("{sampler}/{name}"))
+                    } else {
+                        BTreeMap::new()
+                    },
                     ..Default::default()
                 };
 
@@ -2288,17 +2395,13 @@ fn create_v3(
                                     for (k, v) in m {
                                         entry_metadata.insert(k.clone(), v.clone());
                                     }
-                                    // The same map, kept unmerged. Once it is
-                                    // folded into `entry_metadata` above the
-                                    // per-slot half cannot be told from the
-                                    // metric-level half again — a member key
-                                    // may shadow a metric one — and an index
-                                    // entry needs the per-slot half alone.
-                                    group.slot_labels.insert(
-                                        idx as u32,
-                                        m.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-                                    );
                                 }
+                                // The slot's identity, which the fold above
+                                // already computed. Its labels are cloned only
+                                // if it MOVED — cloning all of them to find
+                                // out which did is what cost 1.25x the agent's
+                                // sampling CPU.
+                                group.note_slot(idx as u32, m);
                                 group.counter_descs.push(MetricDesc {
                                     name: format!("{metric_id}x{idx}"),
                                     metadata: entry_metadata,
@@ -2396,17 +2499,13 @@ fn create_v3(
                                     for (k, v) in m {
                                         entry_metadata.insert(k.clone(), v.clone());
                                     }
-                                    // The same map, kept unmerged. Once it is
-                                    // folded into `entry_metadata` above the
-                                    // per-slot half cannot be told from the
-                                    // metric-level half again — a member key
-                                    // may shadow a metric one — and an index
-                                    // entry needs the per-slot half alone.
-                                    group.slot_labels.insert(
-                                        idx as u32,
-                                        m.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-                                    );
                                 }
+                                // The slot's identity, which the fold above
+                                // already computed. Its labels are cloned only
+                                // if it MOVED — cloning all of them to find
+                                // out which did is what cost 1.25x the agent's
+                                // sampling CPU.
+                                group.note_slot(idx as u32, m);
                             });
 
                             group.counter_descs.push(MetricDesc {
@@ -2449,17 +2548,13 @@ fn create_v3(
                                     for (k, v) in m {
                                         entry_metadata.insert(k.clone(), v.clone());
                                     }
-                                    // The same map, kept unmerged. Once it is
-                                    // folded into `entry_metadata` above the
-                                    // per-slot half cannot be told from the
-                                    // metric-level half again — a member key
-                                    // may shadow a metric one — and an index
-                                    // entry needs the per-slot half alone.
-                                    group.slot_labels.insert(
-                                        idx as u32,
-                                        m.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-                                    );
                                 }
+                                // The slot's identity, which the fold above
+                                // already computed. Its labels are cloned only
+                                // if it MOVED — cloning all of them to find
+                                // out which did is what cost 1.25x the agent's
+                                // sampling CPU.
+                                group.note_slot(idx as u32, m);
                                 group.gauge_descs.push(MetricDesc {
                                     name: format!("{metric_id}x{idx}"),
                                     metadata: entry_metadata,
@@ -2513,17 +2608,13 @@ fn create_v3(
                                     for (k, v) in m {
                                         entry_metadata.insert(k.clone(), v.clone());
                                     }
-                                    // The same map, kept unmerged. Once it is
-                                    // folded into `entry_metadata` above the
-                                    // per-slot half cannot be told from the
-                                    // metric-level half again — a member key
-                                    // may shadow a metric one — and an index
-                                    // entry needs the per-slot half alone.
-                                    group.slot_labels.insert(
-                                        idx as u32,
-                                        m.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-                                    );
                                 }
+                                // The slot's identity, which the fold above
+                                // already computed. Its labels are cloned only
+                                // if it MOVED — cloning all of them to find
+                                // out which did is what cost 1.25x the agent's
+                                // sampling CPU.
+                                group.note_slot(idx as u32, m);
                             });
 
                             group.gauge_descs.push(MetricDesc {
@@ -2824,7 +2915,12 @@ fn create_v3(
         // and an empty observation means "every slot is gone", not "nothing
         // changed".
         if group.needs_schema {
-            cache.observe_slots(&group_name, std::mem::take(&mut group.slot_labels));
+            cache.commit_slots(
+                &group_name,
+                std::mem::take(&mut group.slot_hashes),
+                std::mem::take(&mut group.prev_slot_hashes),
+                std::mem::take(&mut group.changed_slots),
+            );
         }
 
         let (schema, hash) = if group.needs_schema {
@@ -3795,11 +3891,14 @@ mod tests {
 
         // A pass that moves something.
         let before = cache.begin_pass();
-        cache.observe_slots(
+        cache.commit_slots(
             "probe/one",
-            [(0u32, [("comm".to_string(), "a".to_string())].into())]
-                .into_iter()
-                .collect(),
+            [(0u32, 7u128)].into_iter().collect(),
+            BTreeMap::new(),
+            vec![crate::recorder::index::SlotEntry {
+                slot: 0,
+                labels: [("comm".to_string(), "a".to_string())].into(),
+            }],
         );
         cache.end_pass(before);
         assert_eq!(

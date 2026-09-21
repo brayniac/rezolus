@@ -387,6 +387,36 @@ impl SourceIndex {
         self.streams.iter().map(|(k, v)| (k.as_str(), v))
     }
 
+    /// Producer side: record a change the caller has already worked out.
+    ///
+    /// [`observe`](Self::observe) takes a whole live set and diffs it, which
+    /// means the caller must have built one — cloning every slot's labels to do
+    /// so. A caller that can tell which slots moved by cheaper means, such as a
+    /// per-slot identity hash it was computing anyway, has no reason to pay
+    /// that: it passes the change straight in.
+    ///
+    /// Returns `None` when the change is empty, so a stream that did not move
+    /// stays silent exactly as it does through `observe`.
+    pub fn record(&mut self, stream: &str, change: SlotChange) -> Option<IndexEntry> {
+        // A stream this index has never seen must produce an entry even when
+        // it is empty, so a subscriber has a base to apply deltas to. After
+        // that, nothing changed means nothing sent.
+        let known = self.streams.contains_key(stream);
+        if known && change.slots.is_empty() && change.removed.is_empty() {
+            return None;
+        }
+        let kind = change.kind;
+        let slots = change.slots.clone();
+        let removed = change.removed.clone();
+        self.with_stream(stream, |index| index.apply(&change)).ok()?;
+        Some(IndexEntry {
+            kind,
+            slots,
+            removed,
+            state: self.state(),
+        })
+    }
+
     /// Producer side: fold one stream's live set in and return the entry to
     /// transmit, stamped with the source's state after the fold.
     pub fn observe<I>(&mut self, stream: &str, observed: I) -> Option<IndexEntry>
