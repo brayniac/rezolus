@@ -2239,8 +2239,6 @@ dependencies = [
 [[package]]
 name = "metriken"
 version = "0.11.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49659db0fae8c610294543743e0f5eeb3ec2247b2df8bc5d32cec9d9a898bf0d"
 dependencies = [
  "getrandom 0.3.4",
  "histogram",
@@ -2253,12 +2251,11 @@ dependencies = [
 [[package]]
 name = "metriken-archive"
 version = "0.2.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2f69730df97b8f971c1d266e2f0e98d0a2bfa709f74b6b8a4c03fbfd66800c8"
 dependencies = [
  "arrow",
  "bytes",
  "dendro",
+ "metriken",
  "metriken-exposition",
  "metriken-query",
  "metriken-segment",
@@ -2269,8 +2266,6 @@ dependencies = [
 [[package]]
 name = "metriken-core"
 version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c1f24356a64325a1d2ba5a94377a179752b8b3e67f826819b0166c137870f4c"
 dependencies = [
  "histogram",
  "linkme",
@@ -2282,8 +2277,6 @@ dependencies = [
 [[package]]
 name = "metriken-derive"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba9466276652f7134a720d6d7e004bb5277dfa85a349e63030bb80b9aacf3db5"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -2294,8 +2287,6 @@ dependencies = [
 [[package]]
 name = "metriken-exposition"
 version = "0.21.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "912b0aebf577bef62bf27c7b034400cff7896385c12e96a03e8a865de6d45d1d"
 dependencies = [
  "arrow",
  "chrono",
@@ -2310,8 +2301,6 @@ dependencies = [
 [[package]]
 name = "metriken-query"
 version = "0.33.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89e4432a553e5ac09fd65b6feff53c0a981493aa01db2272f52c4b7fa121857b"
 dependencies = [
  "arrow",
  "bytes",
@@ -2330,8 +2319,6 @@ dependencies = [
 [[package]]
 name = "metriken-segment"
 version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a0ae5f0b97ef03d71e5c4f582b2c16e5860b828450a7157b07610657834d044"
 dependencies = [
  "arrow",
  "bytes",
