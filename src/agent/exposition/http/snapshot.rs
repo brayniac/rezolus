@@ -16,6 +16,21 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime};
 
+// BENCH BRANCH ONLY: the V3 snapshot build's own cost, as the running agent
+// sees it. A snapshot carries the previous build's value, since these are set
+// after the build they describe.
+#[metriken::metric(
+    name = "rezolus_snapshot_build_ns",
+    description = "Duration of the most recent V3 snapshot build, in nanoseconds"
+)]
+static SNAPSHOT_BUILD_NS: metriken::Gauge = metriken::Gauge::new();
+
+#[metriken::metric(
+    name = "rezolus_snapshot_build",
+    description = "Distribution of V3 snapshot build durations, in nanoseconds"
+)]
+static SNAPSHOT_BUILD: metriken::AtomicHistogram = metriken::AtomicHistogram::new(4, 34);
+
 pub struct SnapshotBuilder {
     cached: Option<CachedSnapshot>,
     samplers: Arc<Box<[Box<dyn Sampler>]>>,
@@ -138,12 +153,20 @@ impl SnapshotBuilder {
                 external_metrics,
                 (sampled_ts, sampled_wall_offset),
             ),
-            SnapshotFormat::V3 => create_v3(
-                duration,
-                external_metrics,
-                &mut self.v3,
-                (sampled_ts, sampled_wall_offset),
-            ),
+            SnapshotFormat::V3 => {
+                // BENCH BRANCH ONLY: time the build for measurement.
+                let start = Instant::now();
+                let snapshot = create_v3(
+                    duration,
+                    external_metrics,
+                    &mut self.v3,
+                    (sampled_ts, sampled_wall_offset),
+                );
+                let ns = start.elapsed().as_nanos() as u64;
+                SNAPSHOT_BUILD_NS.set(ns as i64);
+                let _ = SNAPSHOT_BUILD.increment(ns);
+                snapshot
+            }
         };
 
         self.cached = Some(CachedSnapshot {
@@ -3781,3 +3804,11 @@ mod tests {
 #[cfg(test)]
 #[path = "v3_contract.rs"]
 mod v3_contract;
+
+#[cfg(test)]
+#[path = "bench_old_v3.rs"]
+mod bench_old_v3;
+
+#[cfg(test)]
+#[path = "bench_old_vs_new.rs"]
+mod bench_old_vs_new;

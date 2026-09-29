@@ -275,12 +275,12 @@ assets = [
 # TEMPORARY: metriken's group builder and frame producer (metriken PR #207)
 # are not released yet. Drop this section before merge.
 [patch.crates-io]
-metriken = { path = "/Users/brian/workspace/iopsystems/metriken-5b/metriken" }
-metriken-core = { path = "/Users/brian/workspace/iopsystems/metriken-5b/metriken-core" }
-metriken-exposition = { path = "/Users/brian/workspace/iopsystems/metriken-5b/metriken-exposition" }
-metriken-archive = { path = "/Users/brian/workspace/iopsystems/metriken-5b/metriken-archive" }
-metriken-segment = { path = "/Users/brian/workspace/iopsystems/metriken-5b/metriken-segment" }
-metriken-query = { path = "/Users/brian/workspace/iopsystems/metriken-5b/metriken-query" }
+metriken = { git = "https://github.com/iopsystems/metriken", rev = "a8eb8a58ba712654585d1e11e5608422ea72a069" }
+metriken-core = { git = "https://github.com/iopsystems/metriken", rev = "a8eb8a58ba712654585d1e11e5608422ea72a069" }
+metriken-exposition = { git = "https://github.com/iopsystems/metriken", rev = "a8eb8a58ba712654585d1e11e5608422ea72a069" }
+metriken-archive = { git = "https://github.com/iopsystems/metriken", rev = "a8eb8a58ba712654585d1e11e5608422ea72a069" }
+metriken-segment = { git = "https://github.com/iopsystems/metriken", rev = "a8eb8a58ba712654585d1e11e5608422ea72a069" }
+metriken-query = { git = "https://github.com/iopsystems/metriken", rev = "a8eb8a58ba712654585d1e11e5608422ea72a069" }
 
 
 
