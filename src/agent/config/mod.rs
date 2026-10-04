@@ -28,6 +28,7 @@ fn enabled() -> bool {
 /// section. Reserved for samplers whose cost makes accidental activation
 /// (e.g. via an absent/commented config) unacceptable.
 const OPT_IN_SAMPLERS: &[&str] = &[
+    "cpu_guest",
     "ext4_ops",
     "gpu_amd_pmu",
     "hw_sensors",

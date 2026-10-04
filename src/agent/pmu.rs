@@ -45,6 +45,12 @@ pub enum PmuKind {
     /// fixed eight-entry allowlist holds no energy register, so RAPL is not
     /// reachable through it.
     Rapl,
+    /// Core counters taken from the reservation itself, on the reserved CPUs
+    /// only: `cpu_guest`, which counts guest execution where guests run. It
+    /// does not compete with the agent's other PMU samplers, whose budget on
+    /// those CPUs already excludes the reservation, and it is refused when
+    /// there is no reservation to take from.
+    Reserved,
 }
 
 /// The PMU samplers, in the order they claim counters, with the PMU each uses
@@ -83,6 +89,9 @@ pub const DEFAULT_PRIORITY: &[(&str, PmuKind, usize)] = &[
     // ranges from one to three across the parts measured. Not budgeted, so
     // the number is documentary only.
     ("cpu_power", PmuKind::Rapl, 5),
+    // Reserved: two of the counters `reserved_pmu_counters` holds back, on the
+    // reserved CPUs. Opt-in, so this entry only matters where it is enabled.
+    ("cpu_guest", PmuKind::Reserved, 2),
 ];
 
 /// What the agent decided to do about one PMU sampler.
@@ -148,9 +157,33 @@ pub fn plan(
     // other's subset, and both directions of partial coverage are real.
     let mut free_reserved = available.saturating_sub(reserved);
     let mut free_open = available;
+    // What the reservation actually holds: it cannot hold back counters the
+    // probe did not find.
+    let mut free_held = reserved.min(available);
     let mut plan = Vec::with_capacity(order.len());
 
     for &(sampler, kind, wants) in order {
+        if kind == PmuKind::Reserved {
+            let free_at_decision = free_held;
+            let granted = wants > 0 && !cpus.reserved.is_empty() && wants <= free_held;
+            if granted {
+                free_held -= wants;
+            }
+            plan.push(Grant {
+                sampler,
+                wants,
+                granted,
+                free_at_decision,
+                // Always the reserved CPUs, even when that is every CPU: this
+                // sampler must not open events anywhere else. Not `partial`,
+                // which reports a shortfall; running only where guests run is
+                // what it is for.
+                cpus: granted.then(|| cpus.reserved.clone()),
+                partial: None,
+            });
+            continue;
+        }
+
         if kind != PmuKind::Core {
             // Not from the contended pool, so not ours to ration.
             plan.push(Grant {
@@ -657,6 +690,35 @@ mod tests {
     /// symptom would be a sampler quietly claiming counters outside the budget,
     /// which is the exact failure this module exists to prevent.
     #[cfg(target_os = "linux")]
+    #[test]
+    fn the_reserved_kind_takes_from_the_reservation_on_reserved_cpus_only() {
+        let order = [
+            ("cpu_perf", PmuKind::Core, 2),
+            ("cpu_guest", PmuKind::Reserved, 2),
+        ];
+        let split = CpuSplit {
+            reserved: vec![4, 5, 6, 7],
+            open: 4,
+        };
+
+        // A reservation of 6 on a 5-counter PMU holds back 5; cpu_guest takes 2
+        // of them, and cpu_perf still runs on the open CPUs from its own pool.
+        let p = plan(&order, 5, 6, &split);
+        assert!(p[1].granted);
+        assert_eq!(p[1].cpus.as_deref(), Some(&[4, 5, 6, 7][..]));
+        assert_eq!(p[1].partial, None);
+        assert_eq!(p[0].cpus.as_deref(), Some(&[0, 1, 2, 3][..]));
+
+        // No reservation: nothing to take from, so refused.
+        let p = plan(&order, 5, 0, &split);
+        assert!(!p[1].granted);
+        assert_eq!(p[1].cpus, None);
+
+        // A reservation smaller than the set: refused whole.
+        let p = plan(&order, 5, 1, &split);
+        assert!(!p[1].granted);
+    }
+
     #[test]
     fn pmu_samplers_are_registered() {
         use crate::agent::samplers::SAMPLERS;

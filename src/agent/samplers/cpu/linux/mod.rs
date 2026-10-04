@@ -3,6 +3,7 @@ mod branch;
 mod cores;
 mod dtlb;
 mod frequency;
+mod guest;
 mod l3;
 mod perf;
 mod power;
