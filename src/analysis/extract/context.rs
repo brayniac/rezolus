@@ -58,6 +58,7 @@ pub(crate) const EXPECTED_SUBSYSTEMS: &[&str] = &[
     "cpu_cores",
     "cpu_dtlb",
     "cpu_frequency",
+    "cpu_guest",
     "cpu_l3",
     "cpu_perf",
     "cpu_power",
