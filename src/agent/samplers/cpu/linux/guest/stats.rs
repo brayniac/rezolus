@@ -6,8 +6,7 @@ use linkme::distributed_slice;
 
 /// Brackets the per-CPU read of the guest-only counters (`GuestInner::refresh`).
 /// Single writer: only `refresh` calls `acquire()`/`finish()`, and it reads
-/// every CPU's group in one pass with no phase boundary between the counts
-/// and the indices.
+/// every CPU's group in one pass.
 pub static CPU_GUEST_ACQ: AcquisitionGroup = AcquisitionGroup::new(
     crate::agent::samplers::bpf_sampler_name("cpu_guest"),
     "cpu_guest_sweep",
@@ -29,17 +28,3 @@ pub static CPU_GUEST_CYCLES: CounterGroup = CounterGroup::new(MAX_CPUS);
     metadata = { unit = "instructions", acq_group = "cpu_guest_sweep" }
 )]
 pub static CPU_GUEST_INSTRUCTIONS: CounterGroup = CounterGroup::new(MAX_CPUS);
-
-#[metric(
-    name = "cpu_guest_pmc_index",
-    description = "The hardware counter (RDPMC index) holding this event on this CPU, or -1 while it holds none",
-    metadata = { event = "cycles", acq_group = "cpu_guest_sweep" }
-)]
-pub static CPU_GUEST_PMC_INDEX_CYCLES: GaugeGroup = GaugeGroup::new(MAX_CPUS);
-
-#[metric(
-    name = "cpu_guest_pmc_index",
-    description = "The hardware counter (RDPMC index) holding this event on this CPU, or -1 while it holds none",
-    metadata = { event = "instructions", acq_group = "cpu_guest_sweep" }
-)]
-pub static CPU_GUEST_PMC_INDEX_INSTRUCTIONS: GaugeGroup = GaugeGroup::new(MAX_CPUS);

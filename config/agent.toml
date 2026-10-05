@@ -197,9 +197,7 @@ enabled = true
 [samplers.cpu_dtlb]
 
 # Guest execution on the CPUs reserved_pmu_cpus covers: cycles and instructions
-# counted only while a guest runs (perf exclude_host), per CPU, plus the
-# hardware counter index each event holds (cpu_guest_pmc_index), for a guest
-# that reads the counters itself with RDPMC. Takes two of the counters
+# counted only while a guest runs (perf exclude_host), per CPU. Takes two of the counters
 # reserved_pmu_counters holds back, on the reserved CPUs only, and is refused
 # when there is no reservation. Opt-in: off unless enabled = true here.
 [samplers.cpu_guest]
