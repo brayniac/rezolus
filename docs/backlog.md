@@ -1204,6 +1204,8 @@ recording (single iGPU, 55 min at 1 s).
 Source: [XFS telemetry](journal/2026-09-29-xfs-samplers.md), Results — step
 2, "Also observed". Found by reading the kernel's per-program statistics on
 the CI guest while profiling `ext4_ops` and `xfs_log`.
+A guest-side path that avoids the trap is proposed in
+[A sampler from a BPF object named in config](journal/2026-10-08-bpf-object-sampler.md).
 
 - **`cpu_perf`'s `sched_switch` program costs 20.5 µs per run on a KVM
   guest** — Open. rezolus 5.20.0 (the image's agent; the program is
@@ -1233,6 +1235,17 @@ the CI guest while profiling `ext4_ops` and `xfs_log`.
   ("needs 2/cpu, 1 free"). Expected, but the status line does not say who
   holds them; a hint ("another perf user holds N counters") would save the
   diagnosis. Stop the image's service before a VM bench.
+
+## Agent — samplers from BPF objects
+
+Source: [A sampler from a BPF object named in config](journal/2026-10-08-bpf-object-sampler.md).
+
+- **Load a sampler's BPF object from a path named in config** — Open,
+  proposal. For programs that cannot ship in Rezolus, the first being a guest
+  counter reader built on an out-of-tree KVM interface. Five open questions;
+  1, 2 and 4 gate coding.
+- **`docs/external_metrics.md` promises an `ext_` prefix that no code
+  applies** — Open. Correct the doc, or apply the prefix.
 
 ## Agent — per-cgroup I/O attribution
 
