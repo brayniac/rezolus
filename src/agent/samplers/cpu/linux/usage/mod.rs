@@ -451,6 +451,19 @@ fn init(config: Arc<Config>) -> SamplerResult {
             .as_mut()
             .expect("the program declares read-only data")
             .cgroup_attribution = cgroup_attribution as u8;
+        if let (Ok(_), Ok(stripes)) = (
+            std::env::var("REZOLUS_STRIPE_L3"),
+            std::env::var("REZOLUS_STRIPES"),
+        ) {
+            let table = crate::agent::bpf::l3_shard_table(stripes.parse().unwrap());
+            let cpus = crate::agent::bpf::possible_cpus();
+            tracing::info!("process stripe table: {:?}", &table[..cpus]);
+            open.maps
+                .rodata_data
+                .as_mut()
+                .expect("the program declares read-only data")
+                .process_stripe_of_cpu = table;
+        }
         if !cgroup_attribution {
             let maps = &mut open.maps;
             for map in [

@@ -1403,7 +1403,18 @@ fn l3_group(cpu: usize) -> Option<usize> {
 /// An unlisted CPU's entry is 0, which the BPF side reads as copy
 /// `cpu % CGROUP_SHARDS`.
 pub(crate) fn assign_cgroup_shards(cpus: &[(usize, usize)]) -> [u8; CGROUP_SHARD_TABLE] {
-    let shards = crate::agent::CGROUP_SHARDS;
+    assign_shards(cpus, crate::agent::CGROUP_SHARDS)
+}
+
+/// Experiment: the L3-aware CPU-to-copy table for `shards` copies.
+pub(crate) fn l3_shard_table(shards: usize) -> [u8; CGROUP_SHARD_TABLE] {
+    let cpus: Vec<(usize, usize)> = (0..possible_cpus())
+        .filter_map(|cpu| l3_group(cpu).map(|group| (cpu, group)))
+        .collect();
+    assign_shards(&cpus, shards)
+}
+
+fn assign_shards(cpus: &[(usize, usize)], shards: usize) -> [u8; CGROUP_SHARD_TABLE] {
     let mut table = [0u8; CGROUP_SHARD_TABLE];
 
     let mut by_group: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();

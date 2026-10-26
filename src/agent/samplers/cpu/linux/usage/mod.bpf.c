@@ -6,6 +6,10 @@
 #include "../../../agent/bpf/cgroup.h"
 #include "../../../agent/bpf/helpers.h"
 #include "../../../agent/bpf/task.h"
+
+#ifndef PROCESS_STRIPES
+#define PROCESS_STRIPES 1
+#endif
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_core_read.h>
 #include <bpf/bpf_tracing.h>
@@ -196,8 +200,28 @@ struct {
     __uint(map_flags, BPF_F_MMAPABLE);
     __type(key, u32);
     __type(value, u64);
-    __uint(max_entries, MAX_PID);
+    __uint(max_entries, MAX_PID * PROCESS_STRIPES);
 } process_cpu_usage SEC(".maps");
+
+// Experiment: PROCESS_STRIPES copies of the MAX_PID counters, one after
+// another; a CPU adds to copy cpu % PROCESS_STRIPES.
+// Entry `cpu` is 1 + the copy that CPU adds to; 0 falls back to cpu % S.
+const volatile u8 process_stripe_of_cpu[CGROUP_SHARD_TABLE] = {};
+
+static __always_inline u32 process_index(u32 slot) {
+    u32 cpu = bpf_get_smp_processor_id();
+    u32 stripe = process_stripe_of_cpu[cpu & (CGROUP_SHARD_TABLE - 1)];
+    return ((stripe ? stripe - 1 : cpu) % PROCESS_STRIPES) * MAX_PID + slot;
+}
+
+static __always_inline void process_zero(u32 slot) {
+    u64 zero = 0;
+#pragma unroll
+    for (u32 s = 0; s < PROCESS_STRIPES; s++) {
+        u32 idx = s * MAX_PID + slot;
+        bpf_map_update_elem(&process_cpu_usage, &idx, &zero, BPF_ANY);
+    }
+}
 
 // per-process instance marker, at pid_slot(tgid): the thread group's start
 // time (its leader's, which a thread that execs from outside the leader
@@ -383,8 +407,7 @@ static __always_inline void start_process(struct task_struct* task) {
     if ((m & ~METADATA_PENDING) == start_time || m == (start_time | INSTANCE_EXITED))
         return;
 
-    u64 zero = 0;
-    bpf_map_update_elem(&process_cpu_usage, &slot, &zero, BPF_ANY);
+    process_zero(slot);
 
     // Pending before the send, as in handle_new_task: the sweep releases
     // labels the marker does not hold live.
@@ -432,11 +455,12 @@ static __always_inline void account_process(struct task_struct* task, bool btf, 
     if (m == 0 || (m & INSTANCE_EXITED))
         return;
 
-    array_add(&process_cpu_usage, slot, delta);
+    u32 idx = process_index(slot);
+    array_add(&process_cpu_usage, idx, delta);
 
     if (*marker & INSTANCE_EXITED) {
         u64 zero = 0;
-        bpf_map_update_elem(&process_cpu_usage, &slot, &zero, BPF_ANY);
+        bpf_map_update_elem(&process_cpu_usage, &idx, &zero, BPF_ANY);
         return;
     }
 
@@ -842,8 +866,7 @@ static __always_inline int account__sched_process_exit(u64* ctx, bool btf) {
         if (process_marker && *process_marker) {
             u64 ended = (*process_marker & ~METADATA_PENDING) | INSTANCE_EXITED;
             bpf_map_update_elem(&process_start_times, &process_slot, &ended, BPF_ANY);
-            u64 zero = 0;
-            bpf_map_update_elem(&process_cpu_usage, &process_slot, &zero, BPF_ANY);
+            process_zero(process_slot);
         }
     }
 
