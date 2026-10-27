@@ -6,6 +6,10 @@
 #include "../../../agent/bpf/cgroup.h"
 #include "../../../agent/bpf/helpers.h"
 #include "../../../agent/bpf/task.h"
+
+#ifndef PROCESS_COMBINE_TICKS
+#define PROCESS_COMBINE_TICKS 0
+#endif
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_core_read.h>
 #include <bpf/bpf_tracing.h>
@@ -212,6 +216,22 @@ struct {
     __uint(max_entries, MAX_PID);
 } process_start_times SEC(".maps");
 
+// Experiment: this CPU's adds to one process's counter not yet committed.
+// `instance` is the process marker without METADATA_PENDING.
+struct process_pending {
+    u32 slot;
+    u32 ticks;
+    u64 instance;
+    u64 delta;
+};
+
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __type(key, u32);
+    __type(value, struct process_pending);
+    __uint(max_entries, 1);
+} process_pending SEC(".maps");
+
 // process metadata: a task_info describing the thread group's leader, sent
 // when the group is first seen and when the leader is renamed
 struct {
@@ -417,6 +437,26 @@ static __always_inline void start_process(struct task_struct* task) {
  * the send, so a thread in the rest of do_exit cannot mark the group's
  * metadata sent after the group's last exit has marked it exited.
  */
+#if PROCESS_COMBINE_TICKS
+// Experiment: add this CPU's pending delta to its process's counter, if the
+// marker still holds that instance live.
+static __always_inline void process_commit(struct process_pending* p) {
+    if (p->delta) {
+        u32 slot = p->slot;
+        u64* marker = bpf_map_lookup_elem(&process_start_times, &slot);
+        if (marker && (*marker & ~METADATA_PENDING) == p->instance) {
+            array_add(&process_cpu_usage, slot, p->delta);
+            if (*marker & INSTANCE_EXITED) {
+                u64 zero = 0;
+                bpf_map_update_elem(&process_cpu_usage, &slot, &zero, BPF_ANY);
+            }
+        }
+    }
+    p->delta = 0;
+    p->ticks = 0;
+}
+#endif
+
 static __always_inline void account_process(struct task_struct* task, bool btf, u64 delta,
                                             bool exiting) {
     u32 tgid = BTF_READ(btf, task, tgid);
@@ -432,6 +472,22 @@ static __always_inline void account_process(struct task_struct* task, bool btf, 
     if (m == 0 || (m & INSTANCE_EXITED))
         return;
 
+#if PROCESS_COMBINE_TICKS
+    u32 key = 0;
+    struct process_pending* p = bpf_map_lookup_elem(&process_pending, &key);
+    if (!p)
+        return;
+    u64 instance = m & ~METADATA_PENDING;
+    if (p->slot != slot || p->instance != instance) {
+        process_commit(p);
+        p->slot = slot;
+        p->instance = instance;
+    }
+    p->delta += delta;
+    p->ticks += 1;
+    if (p->ticks >= PROCESS_COMBINE_TICKS || exiting)
+        process_commit(p);
+#else
     array_add(&process_cpu_usage, slot, delta);
 
     if (*marker & INSTANCE_EXITED) {
@@ -439,6 +495,7 @@ static __always_inline void account_process(struct task_struct* task, bool btf, 
         bpf_map_update_elem(&process_cpu_usage, &slot, &zero, BPF_ANY);
         return;
     }
+#endif
 
     if (!(m & METADATA_PENDING) || exiting)
         return;
@@ -836,6 +893,17 @@ static __always_inline int account__sched_process_exit(u64* ctx, bool btf) {
     // The group's last exit: its process instance has ended. The counter is
     // zeroed after the marker, as retire_task zeroes a task's. Userspace's
     // sweep releases its labels; a new group with this tgid starts again.
+#if PROCESS_COMBINE_TICKS
+    // Experiment: an exiting thread commits its CPU's pending delta before
+    // the group's last exit marks the process exited.
+    if (process_attribution) {
+        u32 key = 0;
+        struct process_pending* p = bpf_map_lookup_elem(&process_pending, &key);
+        if (p)
+            process_commit(p);
+    }
+#endif
+
     if (process_attribution && dead_tgid != 0 && dead_tgid < MAX_PID) {
         u32 process_slot = pid_slot(dead_tgid);
         u64* process_marker = bpf_map_lookup_elem(&process_start_times, &process_slot);
