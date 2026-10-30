@@ -95,8 +95,10 @@ static int trace_connect(struct sock* sk) {
 
 // The connect's outcome is read where the socket leaves SYN_SENT. Every TCP
 // state change fires the tracepoint, so the programs below pass on only
-// transitions to ESTABLISHED or CLOSE. A socket with a start time that
-// becomes ESTABLISHED completed its handshake. One that becomes CLOSE failed,
+// transitions from SYN_SENT to ESTABLISHED or CLOSE. A simultaneous open
+// leaves SYN_SENT for SYN_RECV and is not counted; tcp_destroy_sock removes
+// its start time. A socket with a start time that becomes ESTABLISHED
+// completed its handshake. One that becomes CLOSE failed,
 // and sk_err says why: tcp_reset() sets ECONNREFUSED for a RST in SYN_SENT,
 // tcp_write_err() sets sk_err_soft or else ETIMEDOUT when the SYN retries run
 // out, and an ICMP error sets its own errno. All three set it before
@@ -171,7 +173,8 @@ SEC("tp_btf/inet_sock_set_state")
 int BPF_PROG(inet_sock_set_state_btf, struct sock* sk, int oldstate, int newstate) {
     u64 sock_ident = 0;
 
-    if ((newstate != TCP_ESTABLISHED && newstate != TCP_CLOSE) || sk->sk_protocol != IPPROTO_TCP) {
+    if (oldstate != TCP_SYN_SENT || (newstate != TCP_ESTABLISHED && newstate != TCP_CLOSE) ||
+        sk->sk_protocol != IPPROTO_TCP) {
         return 0;
     }
 
@@ -182,7 +185,7 @@ int BPF_PROG(inet_sock_set_state_btf, struct sock* sk, int oldstate, int newstat
 
 SEC("raw_tp/inet_sock_set_state")
 int BPF_PROG(inet_sock_set_state_raw, struct sock* sk, int oldstate, int newstate) {
-    if ((newstate != TCP_ESTABLISHED && newstate != TCP_CLOSE) ||
+    if (oldstate != TCP_SYN_SENT || (newstate != TCP_ESTABLISHED && newstate != TCP_CLOSE) ||
         BPF_CORE_READ(sk, sk_protocol) != IPPROTO_TCP) {
         return 0;
     }
