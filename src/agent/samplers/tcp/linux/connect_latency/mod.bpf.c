@@ -37,21 +37,46 @@ struct {
 } start SEC(".maps");
 
 // One histogram per outcome, each the `tcp_connect_latency` metric with its
-// `outcome` label.
-#define OUTCOME_HISTOGRAM(name)                                                                    \
-    struct {                                                                                       \
-        __uint(type, BPF_MAP_TYPE_ARRAY);                                                          \
-        __uint(map_flags, BPF_F_MMAPABLE);                                                         \
-        __type(key, u32);                                                                          \
-        __type(value, u64);                                                                        \
-        __uint(max_entries, HISTOGRAM_BUCKETS* HISTOGRAM_SLICES);                                  \
-    } name SEC(".maps")
+// `outcome` label (see stats.rs).
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(map_flags, BPF_F_MMAPABLE);
+    __type(key, u32);
+    __type(value, u64);
+    __uint(max_entries, HISTOGRAM_BUCKETS * HISTOGRAM_SLICES);
+} established SEC(".maps");
 
-OUTCOME_HISTOGRAM(established);
-OUTCOME_HISTOGRAM(refused);
-OUTCOME_HISTOGRAM(timeout);
-OUTCOME_HISTOGRAM(error);
-OUTCOME_HISTOGRAM(aborted);
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(map_flags, BPF_F_MMAPABLE);
+    __type(key, u32);
+    __type(value, u64);
+    __uint(max_entries, HISTOGRAM_BUCKETS * HISTOGRAM_SLICES);
+} refused SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(map_flags, BPF_F_MMAPABLE);
+    __type(key, u32);
+    __type(value, u64);
+    __uint(max_entries, HISTOGRAM_BUCKETS * HISTOGRAM_SLICES);
+} timeout SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(map_flags, BPF_F_MMAPABLE);
+    __type(key, u32);
+    __type(value, u64);
+    __uint(max_entries, HISTOGRAM_BUCKETS * HISTOGRAM_SLICES);
+} error SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(map_flags, BPF_F_MMAPABLE);
+    __type(key, u32);
+    __type(value, u64);
+    __uint(max_entries, HISTOGRAM_BUCKETS * HISTOGRAM_SLICES);
+} aborted SEC(".maps");
 
 static __always_inline __u64 get_sock_ident(struct sock* sk) {
     return (__u64)sk;
@@ -68,14 +93,16 @@ static int trace_connect(struct sock* sk) {
     return 0;
 }
 
-// The connect's outcome is read where the socket leaves SYN_SENT. A socket
-// with a start time that becomes ESTABLISHED completed its handshake. One
-// that becomes CLOSE failed, and sk_err says why: tcp_reset() sets
-// ECONNREFUSED for a RST in SYN_SENT, tcp_write_err() sets sk_err_soft or
-// else ETIMEDOUT when the SYN retries run out, and an ICMP error sets its own
-// errno. All three set it before tcp_done() closes the socket. A close() by
-// the caller, or a failure inside connect() after the SYN_SENT transition,
-// closes the socket with sk_err still 0.
+// The connect's outcome is read where the socket leaves SYN_SENT. Every TCP
+// state change fires the tracepoint, so the programs below pass on only
+// transitions to ESTABLISHED or CLOSE. A socket with a start time that
+// becomes ESTABLISHED completed its handshake. One that becomes CLOSE failed,
+// and sk_err says why: tcp_reset() sets ECONNREFUSED for a RST in SYN_SENT,
+// tcp_write_err() sets sk_err_soft or else ETIMEDOUT when the SYN retries run
+// out, and an ICMP error sets its own errno. All three set it before
+// tcp_done() closes the socket. A close() by the caller, or a failure inside
+// connect() after the SYN_SENT transition, closes the socket with sk_err
+// still 0.
 static __always_inline int handle_set_state(u64 sock_ident, int newstate, int sk_err) {
     u64 now, *tsp;
     void* hist;
@@ -144,7 +171,7 @@ SEC("tp_btf/inet_sock_set_state")
 int BPF_PROG(inet_sock_set_state_btf, struct sock* sk, int oldstate, int newstate) {
     u64 sock_ident = 0;
 
-    if (sk->sk_protocol != IPPROTO_TCP) {
+    if ((newstate != TCP_ESTABLISHED && newstate != TCP_CLOSE) || sk->sk_protocol != IPPROTO_TCP) {
         return 0;
     }
 
@@ -155,7 +182,8 @@ int BPF_PROG(inet_sock_set_state_btf, struct sock* sk, int oldstate, int newstat
 
 SEC("raw_tp/inet_sock_set_state")
 int BPF_PROG(inet_sock_set_state_raw, struct sock* sk, int oldstate, int newstate) {
-    if (BPF_CORE_READ(sk, sk_protocol) != IPPROTO_TCP) {
+    if ((newstate != TCP_ESTABLISHED && newstate != TCP_CLOSE) ||
+        BPF_CORE_READ(sk, sk_protocol) != IPPROTO_TCP) {
         return 0;
     }
 
