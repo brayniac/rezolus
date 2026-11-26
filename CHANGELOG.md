@@ -32,6 +32,31 @@ Upgrading from 5.x: see `site/docs/upgrade.html`
 
 ### Added
 
+- **Block I/O is per disk on Linux.** Every `blockio_*` counter, and the read
+  and write size and latency histograms, now carries `device`, the kernel's
+  name for the whole disk (`nvme0n1`, `sda`), so a host with a root volume and
+  instance-store drives can tell which disk the writes and the latency belong
+  to: `sum by (device) (irate(blockio_bytes[5m]))`,
+  `histogram_mean by (device) (blockio_device_latency{op="write"})`. Flush and
+  discard histograms stay host-wide. Host-wide figures are the sum over
+  devices, and a histogram function over a selector without `device` merges
+  every disk, so the BlockIO section's existing charts read as before; the
+  section gains a By Device subgroup under Operations and under Latency. A
+  disk gets a slot when a request first completes on it, up to 32; requests to
+  any other disk are counted as `device="other"`, and a disk idle for 10
+  minutes or more gives up its slot when a disk in `other` needs one. I/O to
+  LVM, md or dm-crypt is counted on the disks beneath, and NVMe multipath paths
+  under the head disk's name. A PromQL query of `blockio_*` that does not
+  aggregate now returns a series per disk. The exporter's Prometheus
+  percentile summaries are per disk, and a host-wide percentile is no longer
+  exported, since percentiles cannot be combined; set `histograms = true` in
+  the exporter config and merge the buckets in Prometheus. The sampler's BPF maps take about 10 MB
+  of kernel memory at 16 CPUs, 35 MB at 56 and 119 MB at 192, where the
+  histograms took 1.0, 3.6 and 12.2 MB; the agent maps them, and its RSS
+  grows by up to that amount as slots fill. The program costs about 20 ns
+  more per request: 207 ns against 187 with 48 writers on one disk in a
+  56-CPU guest. macOS still sums every driver, with no `device` label.
+  (#1241, #1294)
 - **The viewer shows known errata on the dashboard charts they affect.** A
   section chart whose query reads a metric with a known erratum for its
   recording's agent version (the table `describe-recording` uses) carries a

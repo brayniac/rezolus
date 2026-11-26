@@ -6,7 +6,7 @@ use tracing::trace;
 use libbpf_rs::skel::{OpenSkel, Skel, SkelBuilder};
 use libbpf_rs::{MapCore, MapFlags, OpenObject, PrintLevel, RingBuffer, RingBufferBuilder};
 use metriken::group::SlotIdentity;
-use metriken::{CounterGroup, LazyCounter, RwLockCounterHistogram};
+use metriken::{CounterGroup, LazyCounter, RwLockCounterHistogram, RwLockCounterHistogramGroup};
 
 use crate::agent::timing::AcquisitionGroup;
 use perf_event::ReadFormat;
@@ -563,6 +563,31 @@ fn atomic_values_mut(mmap: &memmap2::MmapRaw) -> &[std::sync::atomic::AtomicU64]
     }
 }
 
+/// The maps registered with [`Builder::block_devices`].
+pub struct BlockDeviceMaps {
+    /// The `dev_t → slot` lookup map (`blk_slots` in `bpf/blockdev.h`).
+    pub lookup: &'static str,
+    /// The disks BPF reports for a slot (`blk_unknown` in `bpf/blockdev.h`).
+    pub unknown: &'static str,
+    /// The lookup's generation (`blk_generation` in `bpf/blockdev.h`).
+    pub generation: &'static str,
+    pub identity: &'static SlotIdentity,
+    /// Counter maps: name, groups in the map's counter order, group.
+    #[allow(clippy::type_complexity)]
+    pub counters: Vec<(
+        &'static str,
+        Vec<&'static CounterGroup>,
+        &'static AcquisitionGroup,
+    )>,
+    /// Histogram maps: name, the group it fills, acquisition group.
+    #[allow(clippy::type_complexity)]
+    pub histograms: Vec<(
+        &'static str,
+        &'static RwLockCounterHistogramGroup,
+        &'static AcquisitionGroup,
+    )>,
+}
+
 pub struct Builder<T: 'static + SkelBuilder<'static>> {
     name: &'static str,
     skel: fn() -> T,
@@ -612,6 +637,8 @@ pub struct Builder<T: 'static + SkelBuilder<'static>> {
         &'static AcquisitionGroup,
         &'static metriken::group::SlotIdentity,
     )>,
+    /// Per-device block I/O maps: see `block_devices`.
+    block_devices: Option<BlockDeviceMaps>,
     #[allow(clippy::type_complexity)]
     ringbuf_handler: Vec<(&'static str, fn(&[u8]) -> i32)>,
     map_sweeps: Vec<Sweep>,
@@ -669,6 +696,7 @@ where
             packed_counters: Vec::new(),
             cgroup_counters: Vec::new(),
             filesystem_counters: Vec::new(),
+            block_devices: None,
             ringbuf_handler: Vec::new(),
             map_sweeps: Vec::new(),
             btf_path: config.general().btf_path().map(|s| s.to_string()),
@@ -881,6 +909,23 @@ where
                 }
             }
 
+            // Per-device block I/O maps (`bpf/blockdev.h`) are declared for
+            // MAX_CPUS banks (counters) or slices (histograms) of
+            // MAX_BLOCK_DEVICES slots, and set here to the possible CPUs. A
+            // CPU id at or above the possible CPUs has no bank and its events
+            // are dropped, as with the per-CPU counters.
+            if let Some(devices) = &self.block_devices {
+                if let Err(msg) = size_block_device_maps(open_skel.open_object_mut(), devices) {
+                    error!("{}: {msg}", self.name);
+                    let e = libbpf_rs::Error::from(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        msg.clone(),
+                    ));
+                    crate::agent::sampler_status::set_failed(self.name, msg);
+                    return Err(e);
+                }
+            }
+
             // A program that includes cgroup.h declares the CPU-to-copy table
             // its per-cgroup writers index through; fill it before load.
             if let Err(msg) = write_cgroup_shard_table(open_skel.open_object_mut()) {
@@ -1078,6 +1123,23 @@ where
                     )
                 })
                 .collect();
+
+            let mut block_devices = self.block_devices.map(|d| {
+                BlockDevices::new(
+                    skel.map(d.lookup),
+                    skel.map(d.generation),
+                    skel.map(d.unknown),
+                    d.identity,
+                    d.counters
+                        .into_iter()
+                        .map(|(name, counters, group)| (skel.map(name), counters, group))
+                        .collect(),
+                    d.histograms
+                        .into_iter()
+                        .map(|(name, histogram, group)| (skel.map(name), histogram, group))
+                        .collect(),
+                )
+            });
 
             debug!(
                 "{} initializing perf counters for: {} events",
@@ -1364,6 +1426,10 @@ where
                     v.refresh();
                 }
 
+                if let Some(v) = &mut block_devices {
+                    v.refresh();
+                }
+
                 for v in &mut packed_counters {
                     v.refresh();
                 }
@@ -1519,6 +1585,23 @@ where
     ) -> Self {
         self.filesystem_counters
             .push((name, lookup, counters, group, identity));
+        self
+    }
+
+    /// Register the per-device block I/O maps of `bpf/blockdev.h`: counter
+    /// maps of one bank per (CPU, slot) and histogram maps of one slice per
+    /// (CPU, slot), all indexed through the `lookup` map. One reader owns them
+    /// (`BlockDevices`), so a slot that changes hands is zeroed in every map
+    /// before a new disk is mapped to it. The slots are labelled by
+    /// `identity`, whose groups must include every registered metric. Each
+    /// acquisition group is read in one sweep and must not be named by any
+    /// other registration.
+    pub fn block_devices(mut self, maps: BlockDeviceMaps) -> Self {
+        assert!(
+            self.block_devices.is_none(),
+            "one block_devices registration per builder"
+        );
+        self.block_devices = Some(maps);
         self
     }
 
@@ -1886,4 +1969,53 @@ mod perf_read_tests {
             PerfRead::Live(395)
         );
     }
+}
+
+/// Check each per-device block I/O map's declared size against the layout
+/// `bpf/blockdev.h` declares, and set it to the possible CPUs.
+fn size_block_device_maps(
+    object: &mut OpenObject,
+    devices: &BlockDeviceMaps,
+) -> Result<(), String> {
+    for mut map in object.maps_mut() {
+        let map_name = map.name().to_string_lossy().to_string();
+        if let Some((_, counters, _)) = devices.counters.iter().find(|(n, _, _)| *n == map_name) {
+            let bank_width = whole_cachelines::<u64>(counters.len()) * COUNTERS_PER_CACHELINE;
+            let declared = MAX_CPUS * MAX_BLOCK_DEVICES * bank_width;
+            if map.max_entries() as usize != declared {
+                return Err(format!(
+                    "per-device counter map '{map_name}' has {} entries, expected {MAX_CPUS} \
+                     CPUs of {MAX_BLOCK_DEVICES} banks of {bank_width}",
+                    map.max_entries()
+                ));
+            }
+            map.set_max_entries((possible_cpus() * MAX_BLOCK_DEVICES * bank_width) as u32)
+                .map_err(|e| e.to_string())?;
+        } else if let Some((_, histogram, _)) =
+            devices.histograms.iter().find(|(n, _, _)| *n == map_name)
+        {
+            // The map holds the first BLK_HIST_BUCKETS buckets of the
+            // histogram's layout, which must be grouping power 3.
+            if histogram.config().grouping_power() != 3
+                || histogram.config().total_buckets() < BLK_HIST_BUCKETS
+            {
+                return Err(format!(
+                    "per-device histogram '{map_name}' is not a grouping-power-3 histogram \
+                     of at least {BLK_HIST_BUCKETS} buckets"
+                ));
+            }
+            let buckets = BLK_HIST_BUCKETS;
+            let declared = MAX_CPUS * MAX_BLOCK_DEVICES * buckets;
+            if map.max_entries() as usize != declared {
+                return Err(format!(
+                    "per-device histogram map '{map_name}' has {} entries, expected {MAX_CPUS} \
+                     CPUs of {MAX_BLOCK_DEVICES} slices of {buckets}",
+                    map.max_entries()
+                ));
+            }
+            map.set_max_entries((possible_cpus() * MAX_BLOCK_DEVICES * buckets) as u32)
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
 }

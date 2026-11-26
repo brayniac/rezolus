@@ -12,6 +12,12 @@
 //!   per-request timestamps at completion (see
 //!   docs/journal/2026-09-03-blockio-latency-rq-fields.md)
 //!
+//! Every metric is per disk, labelled `device`: the program looks the
+//! request's disk up in a `dev_t → slot` map and indexes each map by the slot
+//! (`bpf/blockdev.h`). A disk the map does not hold is counted as
+//! `device="other"` and reported, and the reader (`bpf/blockdev_reader.rs`)
+//! gives it a slot on its next refresh (`bpf/blockdevs.rs`).
+//!
 //! One program per hook: this sampler replaced `blockio_requests` and
 //! `blockio_latency`, which each had a program on `block_rq_complete`
 //! (docs/journal/2026-10-03-one-program-per-hook.md). The parts are the
@@ -33,6 +39,64 @@ use crate::agent::*;
 
 use std::sync::Arc;
 
+/// What a device slot means: `device`, published when `/sys/block` changes
+/// (`bpf/blockdevs.rs`). Every per-device metric of the sampler is in it.
+static DEVICE_IDENTITY: metriken::group::SlotIdentity =
+    metriken::group::SlotIdentity::grouped(DEVICE_IDENTITY_GROUPS);
+
+static DEVICE_IDENTITY_GROUPS: &[&[&dyn metriken::group::SlotMetadata]] = &[
+    &[
+        &BLOCKIO_READ_OPS,
+        &BLOCKIO_WRITE_OPS,
+        &BLOCKIO_FLUSH_OPS,
+        &BLOCKIO_DISCARD_OPS,
+        &BLOCKIO_READ_BYTES,
+        &BLOCKIO_WRITE_BYTES,
+        &BLOCKIO_FLUSH_BYTES,
+        &BLOCKIO_DISCARD_BYTES,
+    ],
+    &[
+        &BLOCKIO_READ_ERR_IO,
+        &BLOCKIO_READ_ERR_TIMEOUT,
+        &BLOCKIO_READ_ERR_NOSPC,
+        &BLOCKIO_READ_ERR_TARGET,
+        &BLOCKIO_READ_ERR_PROTECTION,
+        &BLOCKIO_READ_ERR_UNSUPPORTED,
+        &BLOCKIO_READ_ERR_OTHER,
+        &BLOCKIO_WRITE_ERR_IO,
+        &BLOCKIO_WRITE_ERR_TIMEOUT,
+        &BLOCKIO_WRITE_ERR_NOSPC,
+        &BLOCKIO_WRITE_ERR_TARGET,
+        &BLOCKIO_WRITE_ERR_PROTECTION,
+        &BLOCKIO_WRITE_ERR_UNSUPPORTED,
+        &BLOCKIO_WRITE_ERR_OTHER,
+        &BLOCKIO_FLUSH_ERR_IO,
+        &BLOCKIO_FLUSH_ERR_TIMEOUT,
+        &BLOCKIO_FLUSH_ERR_NOSPC,
+        &BLOCKIO_FLUSH_ERR_TARGET,
+        &BLOCKIO_FLUSH_ERR_PROTECTION,
+        &BLOCKIO_FLUSH_ERR_UNSUPPORTED,
+        &BLOCKIO_FLUSH_ERR_OTHER,
+        &BLOCKIO_DISCARD_ERR_IO,
+        &BLOCKIO_DISCARD_ERR_TIMEOUT,
+        &BLOCKIO_DISCARD_ERR_NOSPC,
+        &BLOCKIO_DISCARD_ERR_TARGET,
+        &BLOCKIO_DISCARD_ERR_PROTECTION,
+        &BLOCKIO_DISCARD_ERR_UNSUPPORTED,
+        &BLOCKIO_DISCARD_ERR_OTHER,
+    ],
+    &[
+        &BLOCKIO_READ_REQUEUE,
+        &BLOCKIO_WRITE_REQUEUE,
+        &BLOCKIO_FLUSH_REQUEUE,
+        &BLOCKIO_DISCARD_REQUEUE,
+    ],
+    &[&BLOCKIO_READ_SIZE, &BLOCKIO_WRITE_SIZE],
+    &[&BLOCKIO_READ_DEVICE_LATENCY, &BLOCKIO_WRITE_DEVICE_LATENCY],
+    &[&BLOCKIO_READ_QUEUE_LATENCY, &BLOCKIO_WRITE_QUEUE_LATENCY],
+    &[&BLOCKIO_READ_TOTAL_LATENCY, &BLOCKIO_WRITE_TOTAL_LATENCY],
+];
+
 fn init(config: Arc<Config>) -> SamplerResult {
     if !config.enabled(NAME) {
         return Ok(None);
@@ -48,7 +112,13 @@ fn init(config: Arc<Config>) -> SamplerResult {
     // members; bound them, or every snapshot would carry them empty (the
     // sampler is live, so `bound_groups_without_a_live_sampler` skips them).
     if !requests {
-        for group in [&COUNTERS_ACQ, &ERRORS_ACQ, &REQUEUES_ACQ, &SIZES_ACQ] {
+        for group in [
+            &COUNTERS_ACQ,
+            &ERRORS_ACQ,
+            &REQUEUES_ACQ,
+            &SIZES_ACQ,
+            &FLUSH_DISCARD_SIZES_ACQ,
+        ] {
             group.set_member_bound(0);
         }
     }
@@ -57,6 +127,9 @@ fn init(config: Arc<Config>) -> SamplerResult {
             &DEVICE_LATENCIES_ACQ,
             &QUEUE_LATENCIES_ACQ,
             &TOTAL_LATENCIES_ACQ,
+            &FLUSH_DISCARD_DEVICE_LATENCIES_ACQ,
+            &FLUSH_DISCARD_QUEUE_LATENCIES_ACQ,
+            &FLUSH_DISCARD_TOTAL_LATENCIES_ACQ,
         ] {
             group.set_member_bound(0);
         }
@@ -74,7 +147,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
     ];
 
     // Order MUST match the BPF layout:
-    // errors[cpu * 32 + op * 7 + cls]
+    // errors[(cpu * MAX_BLOCK_DEVICES + slot) * 32 + op * 7 + cls]
     //   op:  0=read, 1=write, 2=flush, 3=discard
     //   cls: 0=io, 1=timeout, 2=nospc, 3=target, 4=protection,
     //        5=unsupported, 6=other
@@ -113,7 +186,7 @@ fn init(config: Arc<Config>) -> SamplerResult {
         &BLOCKIO_DISCARD_ERR_OTHER,
     ];
 
-    // requeues[cpu * 8 + op]
+    // requeues[(cpu * MAX_BLOCK_DEVICES + slot) * 8 + op]
     let requeues = vec![
         &BLOCKIO_READ_REQUEUE,
         &BLOCKIO_WRITE_REQUEUE,
@@ -189,83 +262,102 @@ fn init(config: Arc<Config>) -> SamplerResult {
         }
     });
 
+    let mut maps = BlockDeviceMaps {
+        lookup: "blk_slots",
+        unknown: "blk_unknown",
+        generation: "blk_generation",
+        identity: &DEVICE_IDENTITY,
+        counters: Vec::new(),
+        histograms: Vec::new(),
+    };
     if requests {
+        maps.counters = vec![
+            ("counters", counters, &COUNTERS_ACQ),
+            ("errors", errors, &ERRORS_ACQ),
+            ("requeues", requeues, &REQUEUES_ACQ),
+        ];
+        // Read and write sizes are per device; flush and discard sizes are
+        // host-wide, in a group of their own (stats.rs).
+        maps.histograms.extend([
+            ("read_size", &BLOCKIO_READ_SIZE, &SIZES_ACQ),
+            ("write_size", &BLOCKIO_WRITE_SIZE, &SIZES_ACQ),
+        ]);
         builder = builder
-            .counters("counters", counters, &COUNTERS_ACQ)
-            .counters("errors", errors, &ERRORS_ACQ)
-            .counters("requeues", requeues, &REQUEUES_ACQ)
-            // All 4 op-class size histograms share ONE group — see stats.rs's
-            // `SIZES_ACQ` doc comment.
-            .histogram("read_size", &BLOCKIO_READ_SIZE, &SIZES_ACQ)
-            .histogram("write_size", &BLOCKIO_WRITE_SIZE, &SIZES_ACQ)
-            .histogram("flush_size", &BLOCKIO_FLUSH_SIZE, &SIZES_ACQ)
-            .histogram("discard_size", &BLOCKIO_DISCARD_SIZE, &SIZES_ACQ);
-    }
-
-    if latency {
-        builder = builder
-            // One group per phase — see stats.rs's acquisition-group doc comment.
+            .histogram("flush_size", &BLOCKIO_FLUSH_SIZE, &FLUSH_DISCARD_SIZES_ACQ)
             .histogram(
+                "discard_size",
+                &BLOCKIO_DISCARD_SIZE,
+                &FLUSH_DISCARD_SIZES_ACQ,
+            );
+    }
+    if latency {
+        // One group per phase — see stats.rs's acquisition-group doc comment.
+        // Read and write are per device; flush and discard are host-wide.
+        maps.histograms.extend([
+            (
                 "read_device_latency",
                 &BLOCKIO_READ_DEVICE_LATENCY,
                 &DEVICE_LATENCIES_ACQ,
-            )
-            .histogram(
+            ),
+            (
                 "write_device_latency",
                 &BLOCKIO_WRITE_DEVICE_LATENCY,
                 &DEVICE_LATENCIES_ACQ,
-            )
+            ),
+            (
+                "read_queue_latency",
+                &BLOCKIO_READ_QUEUE_LATENCY,
+                &QUEUE_LATENCIES_ACQ,
+            ),
+            (
+                "write_queue_latency",
+                &BLOCKIO_WRITE_QUEUE_LATENCY,
+                &QUEUE_LATENCIES_ACQ,
+            ),
+            (
+                "read_total_latency",
+                &BLOCKIO_READ_TOTAL_LATENCY,
+                &TOTAL_LATENCIES_ACQ,
+            ),
+            (
+                "write_total_latency",
+                &BLOCKIO_WRITE_TOTAL_LATENCY,
+                &TOTAL_LATENCIES_ACQ,
+            ),
+        ]);
+        builder = builder
             .histogram(
                 "flush_device_latency",
                 &BLOCKIO_FLUSH_DEVICE_LATENCY,
-                &DEVICE_LATENCIES_ACQ,
+                &FLUSH_DISCARD_DEVICE_LATENCIES_ACQ,
             )
             .histogram(
                 "discard_device_latency",
                 &BLOCKIO_DISCARD_DEVICE_LATENCY,
-                &DEVICE_LATENCIES_ACQ,
-            )
-            .histogram(
-                "read_queue_latency",
-                &BLOCKIO_READ_QUEUE_LATENCY,
-                &QUEUE_LATENCIES_ACQ,
-            )
-            .histogram(
-                "write_queue_latency",
-                &BLOCKIO_WRITE_QUEUE_LATENCY,
-                &QUEUE_LATENCIES_ACQ,
+                &FLUSH_DISCARD_DEVICE_LATENCIES_ACQ,
             )
             .histogram(
                 "flush_queue_latency",
                 &BLOCKIO_FLUSH_QUEUE_LATENCY,
-                &QUEUE_LATENCIES_ACQ,
+                &FLUSH_DISCARD_QUEUE_LATENCIES_ACQ,
             )
             .histogram(
                 "discard_queue_latency",
                 &BLOCKIO_DISCARD_QUEUE_LATENCY,
-                &QUEUE_LATENCIES_ACQ,
-            )
-            .histogram(
-                "read_total_latency",
-                &BLOCKIO_READ_TOTAL_LATENCY,
-                &TOTAL_LATENCIES_ACQ,
-            )
-            .histogram(
-                "write_total_latency",
-                &BLOCKIO_WRITE_TOTAL_LATENCY,
-                &TOTAL_LATENCIES_ACQ,
+                &FLUSH_DISCARD_QUEUE_LATENCIES_ACQ,
             )
             .histogram(
                 "flush_total_latency",
                 &BLOCKIO_FLUSH_TOTAL_LATENCY,
-                &TOTAL_LATENCIES_ACQ,
+                &FLUSH_DISCARD_TOTAL_LATENCIES_ACQ,
             )
             .histogram(
                 "discard_total_latency",
                 &BLOCKIO_DISCARD_TOTAL_LATENCY,
-                &TOTAL_LATENCIES_ACQ,
+                &FLUSH_DISCARD_TOTAL_LATENCIES_ACQ,
             );
     }
+    builder = builder.block_devices(maps);
 
     let bpf = builder.build()?;
 
@@ -282,6 +374,9 @@ static SAMPLER_ENTRY: crate::agent::samplers::SamplerEntry = crate::agent::sampl
 impl SkelExt for ModSkel<'_> {
     fn map(&self, name: &str) -> &libbpf_rs::Map<'_> {
         match name {
+            "blk_slots" => &self.maps.blk_slots,
+            "blk_unknown" => &self.maps.blk_unknown,
+            "blk_generation" => &self.maps.blk_generation,
             "counters" => &self.maps.counters,
             "errors" => &self.maps.errors,
             "requeues" => &self.maps.requeues,

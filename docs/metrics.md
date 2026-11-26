@@ -155,13 +155,39 @@ docs/journal/2026-10-03-one-program-per-hook.md); a config that still names
 them is read as `[samplers.blockio]`, with a warning. Its two parts are the
 options `requests` and `latency`, both on by default.
 
+On Linux every counter, and the read and write histograms, is per disk,
+labelled `device` with the kernel's name for the whole disk (`nvme0n1`,
+`sda`, `vda`); a request to a partition is counted on its disk. The flush and
+discard histograms are host-wide, with no `device`. A disk gets a slot the
+first time a request completes on it, so only disks that complete requests
+through the block layer appear. I/O to dm-linear, dm-crypt, LVM or md is
+counted on the disks beneath them; zram and ram devices do not use requests
+and are not counted; an idle loop device has no series. I/O through a loop
+device or request-based dm-multipath is counted on that device and again on
+the disk beneath, so a host-wide sum counts it twice. With native NVMe
+multipath, requests complete on a hidden path disk (`nvme0c0n1`); every path
+of a namespace is counted under its head disk's name (`nvme0n1`). Up to 32
+disks get a slot. Requests to a disk before the agent's next refresh gives
+it one, and to every disk beyond the 32, are counted under `device="other"`.
+A disk that has been idle for at least 10 minutes gives up its slot when
+every slot is taken and another disk needs one: a new disk, or one counted
+under `other`. A disk keeps its slot otherwise while it is present; on the
+first refresh at least 10 seconds after the last listing, the agent lists
+`/sys/block` and frees the slots of disks that are gone. Each series also
+carries `id`, the slot index, which can change when a disk is given a new
+slot, including across agent restarts. Host-wide figures are the sum over
+devices: `sum(irate(blockio_operations[5m]))`, and a histogram function over
+a selector without `device` merges every disk's histogram
+(`histogram_mean(blockio_device_latency{op="read"})`). Recordings from
+earlier agents have no `device` label.
+
 The latency part measures the distribution of each phase of a request's life:
 
 | Metric | Description | Metadata |
 |--------|-------------|----------|
-| `blockio_device_latency` | Distribution of block IO device service latency in nanoseconds, from the moment the device began servicing the request until it completed. Recordings made before this metric was renamed carry the same measurement as `blockio_latency` | `op={read,write,flush,discard}` |
-| `blockio_queue_latency` | Distribution of time requests spent queued before the device began servicing them, in nanoseconds. This is the component that grows under saturation, where device latency alone stays flat. A request that goes straight to the driver has no queue phase and records no sample, so on such a device the histogram is present but empty | `op={read,write,flush,discard}` |
-| `blockio_total_latency` | Distribution of end-to-end latency in nanoseconds, from the request entering the queue until it completed — queue and device together. Measured directly rather than summed, because two histograms cannot be added | `op={read,write,flush,discard}` |
+| `blockio_device_latency` | Distribution of block IO device service latency in nanoseconds, from the moment the device began servicing the request until it completed. Recordings made before this metric was renamed carry the same measurement as `blockio_latency` | `op={read,write,flush,discard}`, `device` (Linux) |
+| `blockio_queue_latency` | Distribution of time requests spent queued before the device began servicing them, in nanoseconds. This is the component that grows under saturation, where device latency alone stays flat. A request that goes straight to the driver has no queue phase and records no sample, so on such a device the histogram is present but empty | `op={read,write,flush,discard}`, `device` (Linux) |
+| `blockio_total_latency` | Distribution of end-to-end latency in nanoseconds, from the request entering the queue until it completed — queue and device together. Measured directly rather than summed, because two histograms cannot be added | `op={read,write,flush,discard}`, `device` (Linux) |
 
 The requests part counts requests and bytes by request type and records the
 size distribution. These metrics help monitor I/O throughput and understand
@@ -170,9 +196,9 @@ storage system tuning, application optimization, and capacity planning.
 
 | Metric | Description | Metadata |
 |--------|-------------|----------|
-| `blockio_size` | Distribution of blockio operation sizes | `op={read,write,flush,discard}` |
-| `blockio_operations` | The number of completed operations for block devices | `op={read,write,flush,discard}` |
-| `blockio_bytes` | The number of bytes transferred for block devices | `op={read,write,flush,discard}` |
+| `blockio_size` | Distribution of blockio operation sizes | `op={read,write,flush,discard}`, `device` (Linux) |
+| `blockio_operations` | The number of completed operations for block devices | `op={read,write,flush,discard}`, `device` (Linux) |
+| `blockio_bytes` | The number of bytes transferred for block devices | `op={read,write,flush,discard}`, `device` (Linux) |
 
 On macOS there is no request trace. The sampler reads each
 `IOBlockStorageDriver`'s cumulative statistics from the I/O registry (the

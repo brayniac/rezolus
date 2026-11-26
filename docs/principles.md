@@ -333,6 +333,27 @@ the extremes of two runs per build of 600 reads each), and the cost grows
 with the number of possible CPUs. The map is declared for `MAX_CPUS`
 slices and the builder sets it to the possible CPUs before load.
 
+*Per-device histograms are per-CPU sharded too.* `blockio`'s read and write
+histograms carry a disk dimension (`bpf/blockdev.h`): one slice per (CPU,
+disk slot), 33 slots. To keep that affordable each slice holds only the
+buckets below 2^36, the first 272 of the 496 at grouping power 3: latency
+phases are capped below 2^36 ns and request sizes are 32-bit, so the
+buckets left out would stay empty. The agent publishes the full 496-bucket
+layout with those buckets zero, because the query engine requires every
+series of a metric to share one layout, and a recording can hold series
+from agents before and after this layout. That is 0.57 MB per possible CPU
+for the 8 histograms, 110 MB at 192 CPUs, and a refresh reads only the
+occupied slots. Measured in a 56-vCPU guest with 48 writers completing I/O
+on one null_blk disk (four interleaved rounds each), the program costs
+205-208 ns per run against 188-191 ns for 6.0.0-alpha.178, which had
+host-wide histograms. Most of the cost of the disk dimension is finding the slot, not
+writing it: with the disk read through `bpf_probe_read_kernel()` and a hash
+lookup per request it cost 379 ns, and 390 ns with 16 copies of each slot
+shared by the CPUs of an L3 (principle 7's table) in place of per-CPU
+slices. The tp_btf program reads the disk with plain loads, and each CPU
+keeps its last `dev_t` to slot mapping (`blk_cache`), checked against a
+generation userspace bumps on every change to the lookup.
+
 *Read shear:* userspace reads buckets non-atomically; this does not bias
 percentile estimates meaningfully.
 
@@ -341,7 +362,9 @@ percentile estimates meaningfully.
   `src/agent/bpf/helpers.h` with `HISTOGRAM_POWER = 3`, or
   `histogram_index()` for the index; never `value_to_index()` alone.
 - Declare the map with `HISTOGRAM_BUCKETS * HISTOGRAM_SLICES` entries and
-  register it with `.histogram()`, which sizes it and sums the slices.
+  register it with `.histogram()`, which sizes it and sums the slices. A
+  histogram with a disk dimension uses `bpf/blockdev.h`'s layout and
+  `.block_devices()`.
 - Deviate from `grouping_power = 3` only with a documented reason in the
   sampler.
 

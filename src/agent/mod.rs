@@ -82,6 +82,17 @@ pub const MAX_PID: usize = 4194304;
 /// is "other", 63 are assignable. See `bpf/filesystems.rs`.
 pub const MAX_FILESYSTEMS: usize = 64;
 
+/// The number of block device slots per-device BPF maps carry: slot 0 is
+/// "other", 32 are assignable. See `bpf/blockdevs.rs`.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub const MAX_BLOCK_DEVICES: usize = 33;
+
+/// Buckets a per-device block I/O histogram slice holds in BPF
+/// (`bpf/blockdev.h`): the grouping-power-3 buckets below 2^36. The published
+/// histograms keep the full layout, with the buckets above zero.
+#[cfg(target_os = "linux")]
+pub const BLK_HIST_BUCKETS: usize = 272;
+
 /// Runs Rezolus in `agent` mode in which it gathers systems telemetry and
 /// exposes metrics on an OTel/Prometheus compatible endpoint and a
 /// Rezolus-specific msgpack endpoint.

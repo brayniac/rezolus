@@ -176,6 +176,8 @@ enabled = true
 # request's life, from the kernel's own per-request timestamps: how long it
 # waited in the queue (`blockio_queue_latency`), how long the device then took
 # (`blockio_device_latency`), and the two together (`blockio_total_latency`).
+# On Linux every series is per disk, labelled `device`: up to 32 disks that
+# complete requests; the rest are counted as device="other".
 # Replaces `blockio_requests` and `blockio_latency`; a config that still names
 # them is read as this section, with a warning. On macOS it reads the storage
 # drivers' counters from IOKit instead: operations, bytes, retries, driver

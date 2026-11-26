@@ -1,3 +1,5 @@
+pub(crate) mod blockdev_reader;
+pub mod blockdevs;
 mod builder;
 mod counters;
 pub mod drivers;
@@ -1191,6 +1193,8 @@ fn whole_pages<T>(count: usize) -> usize {
     (count * std::mem::size_of::<T>()).div_ceil(PAGE_SIZE)
 }
 
+use blockdev_reader::BlockDevices;
+pub use builder::BlockDeviceMaps;
 use counters::{CgroupCounters, Counters, CpuCounters, FilesystemCounters, PackedCounters};
 use histogram::{Histogram, HistogramBatch, HISTOGRAM_SLICES};
 pub use sync_primitive::SyncPrimitive;

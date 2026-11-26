@@ -42,6 +42,30 @@ pub fn generate(data: &dyn MetricsSource, sections: Vec<Section>) -> View {
         );
     }
 
+    // Per-device series exist only on recordings from an agent that labels
+    // blockio by device.
+    if metric_unique_label_count(data, "blockio_operations", "device") > 0 {
+        let by_device = operations.subgroup("By Device");
+        by_device.describe(
+            "Throughput and operation rate of each disk. Requests to a disk the agent has no \
+             slot for are counted as device=\"other\".",
+        );
+        by_device.plot_promql(
+            Plot::counter(
+                "Throughput by Device",
+                "blockio-throughput-by-device",
+                Unit::Datarate,
+            )
+            .with_style(ChartStyle::Multi),
+            "sum by (device) (irate(blockio_bytes[5m]))".to_string(),
+        );
+        by_device.plot_promql(
+            Plot::counter("IOPS by Device", "blockio-iops-by-device", Unit::Count)
+                .with_style(ChartStyle::Multi),
+            "sum by (device) (irate(blockio_operations[5m]))".to_string(),
+        );
+    }
+
     view.group(operations);
 
     let mut latency = Group::new("Latency", "latency");
@@ -132,6 +156,32 @@ pub fn generate(data: &dyn MetricsSource, sections: Vec<Section>) -> View {
                 format!("blockio_total_latency{{op=\"{op_lower}\"}}"),
             );
         }
+    }
+
+    if metric_unique_label_count(data, "blockio_device_latency", "device") > 0 {
+        let by_device = latency.subgroup("By Device");
+        by_device.describe(
+            "Mean device and end-to-end latency of each disk, over reads and writes together. \
+             Flush and discard latency is host-wide.",
+        );
+        by_device.plot_promql(
+            Plot::gauge(
+                "Device Latency by Device",
+                "blockio-device-latency-by-device",
+                Unit::Time,
+            )
+            .with_style(ChartStyle::Multi),
+            "histogram_mean by (device) (blockio_device_latency{op=~\"read|write\"})".to_string(),
+        );
+        by_device.plot_promql(
+            Plot::gauge(
+                "End-to-End Latency by Device",
+                "blockio-total-latency-by-device",
+                Unit::Time,
+            )
+            .with_style(ChartStyle::Multi),
+            "histogram_mean by (device) (blockio_total_latency{op=~\"read|write\"})".to_string(),
+        );
     }
 
     view.group(latency);
@@ -235,6 +285,104 @@ mod tests {
             store.ingest_snapshot(snapshot);
         }
         store
+    }
+
+    /// Per-device histograms (a `device` label on each series) are what the
+    /// agent records; the section's histogram queries select by `op` only, so
+    /// each must come back as one host-wide series, not one per device.
+    #[test]
+    fn per_device_histograms_query_as_one_series() {
+        let store = MemoryStore::builder().sampling_interval_ms(1000).build();
+        let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        let mut hists: HashMap<&str, histogram::Histogram> = HashMap::new();
+        for step in 0..3u64 {
+            let mut snaps = Vec::new();
+            for device in ["nvme0n1", "nvme1n1"] {
+                let h = hists
+                    .entry(device)
+                    .or_insert_with(|| histogram::Histogram::new(3, 64).unwrap());
+                let v = if device == "nvme0n1" {
+                    1_000
+                } else {
+                    1_000_000
+                };
+                h.increment(v + step).unwrap();
+                let mut metadata = HashMap::new();
+                metadata.insert("op".to_string(), "read".to_string());
+                metadata.insert("device".to_string(), device.to_string());
+                snaps.push(metriken_exposition::Histogram::new(
+                    "blockio_device_latency".to_string(),
+                    h.clone(),
+                    metadata,
+                ));
+            }
+            store.ingest_snapshot(metriken_exposition::Snapshot::V2(
+                metriken_exposition::SnapshotV2 {
+                    systemtime: t0 + Duration::from_secs(step),
+                    duration: Duration::from_secs(0),
+                    metadata: HashMap::new(),
+                    counters: vec![],
+                    gauges: vec![],
+                    histograms: snaps,
+                    gauge_histograms: Vec::new(),
+                },
+            ));
+        }
+        for q in [
+            "histogram_mean(blockio_device_latency{op=\"read\"})",
+            "histogram_quantiles([0.5, 0.99], blockio_device_latency{op=\"read\"})",
+        ] {
+            let metriken_query::QueryResult::Matrix { result, .. } = store
+                .query_range(q, 1_700_000_000.0, 1_700_000_002.0, 1.0)
+                .unwrap()
+            else {
+                panic!("{q}: not a matrix");
+            };
+            // One series (per quantile): both devices merged, no `device`.
+            assert!(
+                result.iter().all(|s| !s.metric.contains_key("device")),
+                "{q}: {result:?}"
+            );
+            let expected = if q.starts_with("histogram_quantiles") {
+                2
+            } else {
+                1
+            };
+            assert_eq!(result.len(), expected, "{q}: {result:?}");
+        }
+        // The mean lies between the two devices' values, so both are in it.
+        let metriken_query::QueryResult::Matrix { result, .. } = store
+            .query_range(
+                "histogram_mean(blockio_device_latency{op=\"read\"})",
+                1_700_000_000.0,
+                1_700_000_002.0,
+                1.0,
+            )
+            .unwrap()
+        else {
+            panic!("not a matrix");
+        };
+        let mean = result[0].values[0].1;
+        assert!((100_000.0..900_000.0).contains(&mean), "{mean}");
+
+        // The By Device subgroup's query: one series per device.
+        let metriken_query::QueryResult::Matrix { result, .. } = store
+            .query_range(
+                "histogram_mean by (device) (blockio_device_latency{op=~\"read|write\"})",
+                1_700_000_000.0,
+                1_700_000_002.0,
+                1.0,
+            )
+            .unwrap()
+        else {
+            panic!("not a matrix");
+        };
+        let mut devices: Vec<&str> = result
+            .iter()
+            .map(|s| s.metric.get("device").unwrap().as_str())
+            .collect();
+        devices.sort();
+        assert_eq!(devices, ["nvme0n1", "nvme1n1"]);
     }
 
     #[test]

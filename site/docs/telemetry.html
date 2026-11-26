@@ -82,7 +82,7 @@ class="lg:hidden border-t border-slate-200 dark:border-slate-800 bg-white/95 dar
 <!-- Sidebar -->
 <aside class="h-[calc(100vh-5rem)] w-56 sticky top-20 hidden lg:flex flex-col p-6 border-r border-slate-100 dark:border-slate-800 shrink-0">
 <div class="mb-8">
-<div class="font-mono text-[10px] uppercase tracking-widest text-slate-400">v5.32.0</div>
+<div class="font-mono text-[10px] uppercase tracking-widest text-slate-400">v5.33.0</div>
 </div>
 <nav class="flex-1 space-y-6 overflow-y-auto text-sm">
 <div class="space-y-1">
@@ -219,9 +219,9 @@ class="lg:hidden border-t border-slate-200 dark:border-slate-800 bg-white/95 dar
 <span class="material-symbols-outlined text-slate-400 group-open:rotate-180 transition-transform text-lg" data-icon="expand_more">expand_more</span>
 </summary>
 <div class="px-5 py-4 space-y-2 text-base border-t border-slate-200 dark:border-slate-800">
-<div class="flex flex-col md:flex-row md:flex-wrap md:gap-x-3 md:pl-[18.75rem]"><code class="text-blue-600 dark:text-blue-400 md:shrink-0 md:min-w-[18rem] md:-ml-[18.75rem]">blockio_device_latency</code><span class="text-slate-500 pl-4 md:pl-0 md:flex-1 md:min-w-[26.5rem]">Histogram (ns) with <code>op</code>: read, write, flush, discard</span></div>
-<div class="flex flex-col md:flex-row md:flex-wrap md:gap-x-3 md:pl-[18.75rem]"><code class="text-blue-600 dark:text-blue-400 md:shrink-0 md:min-w-[18rem] md:-ml-[18.75rem]">blockio_queue_latency</code><span class="text-slate-500 pl-4 md:pl-0 md:flex-1 md:min-w-[26.5rem]">Histogram (ns) with <code>op</code>: read, write, flush, discard</span></div>
-<div class="flex flex-col md:flex-row md:flex-wrap md:gap-x-3 md:pl-[18.75rem]"><code class="text-blue-600 dark:text-blue-400 md:shrink-0 md:min-w-[18rem] md:-ml-[18.75rem]">blockio_total_latency</code><span class="text-slate-500 pl-4 md:pl-0 md:flex-1 md:min-w-[26.5rem]">Histogram (ns) with <code>op</code>: read, write, flush, discard</span></div></div>
+<div class="flex flex-col md:flex-row md:flex-wrap md:gap-x-3 md:pl-[18.75rem]"><code class="text-blue-600 dark:text-blue-400 md:shrink-0 md:min-w-[18rem] md:-ml-[18.75rem]">blockio_device_latency</code><span class="text-slate-500 pl-4 md:pl-0 md:flex-1 md:min-w-[26.5rem]">Histogram (ns) with <code>op</code>: read, write, flush, discard; and <code>device</code> on Linux</span></div>
+<div class="flex flex-col md:flex-row md:flex-wrap md:gap-x-3 md:pl-[18.75rem]"><code class="text-blue-600 dark:text-blue-400 md:shrink-0 md:min-w-[18rem] md:-ml-[18.75rem]">blockio_queue_latency</code><span class="text-slate-500 pl-4 md:pl-0 md:flex-1 md:min-w-[26.5rem]">Histogram (ns) with <code>op</code>: read, write, flush, discard; and <code>device</code> on Linux</span></div>
+<div class="flex flex-col md:flex-row md:flex-wrap md:gap-x-3 md:pl-[18.75rem]"><code class="text-blue-600 dark:text-blue-400 md:shrink-0 md:min-w-[18rem] md:-ml-[18.75rem]">blockio_total_latency</code><span class="text-slate-500 pl-4 md:pl-0 md:flex-1 md:min-w-[26.5rem]">Histogram (ns) with <code>op</code>: read, write, flush, discard; and <code>device</code> on Linux</span></div></div>
 </details>
 
 <details class="group mb-4 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden" open>
@@ -230,9 +230,9 @@ class="lg:hidden border-t border-slate-200 dark:border-slate-800 bg-white/95 dar
 <span class="material-symbols-outlined text-slate-400 group-open:rotate-180 transition-transform text-lg" data-icon="expand_more">expand_more</span>
 </summary>
 <div class="px-5 py-4 space-y-2 text-base border-t border-slate-200 dark:border-slate-800">
-<div class="flex flex-col md:flex-row md:flex-wrap md:gap-x-3 md:pl-[18.75rem]"><code class="text-blue-600 dark:text-blue-400 md:shrink-0 md:min-w-[18rem] md:-ml-[18.75rem]">blockio_operations</code><span class="text-slate-500 pl-4 md:pl-0 md:flex-1 md:min-w-[26.5rem]">Counter with <code>op</code>: read, write, flush, discard</span></div>
-<div class="flex flex-col md:flex-row md:flex-wrap md:gap-x-3 md:pl-[18.75rem]"><code class="text-blue-600 dark:text-blue-400 md:shrink-0 md:min-w-[18rem] md:-ml-[18.75rem]">blockio_bytes</code><span class="text-slate-500 pl-4 md:pl-0 md:flex-1 md:min-w-[26.5rem]">Counter (bytes) with <code>op</code>: read, write, flush, discard</span></div>
-<div class="flex flex-col md:flex-row md:flex-wrap md:gap-x-3 md:pl-[18.75rem]"><code class="text-blue-600 dark:text-blue-400 md:shrink-0 md:min-w-[18rem] md:-ml-[18.75rem]">blockio_size</code><span class="text-slate-500 pl-4 md:pl-0 md:flex-1 md:min-w-[26.5rem]">Histogram (bytes) with <code>op</code>: read, write, flush, discard</span></div>
+<div class="flex flex-col md:flex-row md:flex-wrap md:gap-x-3 md:pl-[18.75rem]"><code class="text-blue-600 dark:text-blue-400 md:shrink-0 md:min-w-[18rem] md:-ml-[18.75rem]">blockio_operations</code><span class="text-slate-500 pl-4 md:pl-0 md:flex-1 md:min-w-[26.5rem]">Counter with <code>op</code>: read, write, flush, discard; and <code>device</code> on Linux</span></div>
+<div class="flex flex-col md:flex-row md:flex-wrap md:gap-x-3 md:pl-[18.75rem]"><code class="text-blue-600 dark:text-blue-400 md:shrink-0 md:min-w-[18rem] md:-ml-[18.75rem]">blockio_bytes</code><span class="text-slate-500 pl-4 md:pl-0 md:flex-1 md:min-w-[26.5rem]">Counter (bytes) with <code>op</code>: read, write, flush, discard; and <code>device</code> on Linux</span></div>
+<div class="flex flex-col md:flex-row md:flex-wrap md:gap-x-3 md:pl-[18.75rem]"><code class="text-blue-600 dark:text-blue-400 md:shrink-0 md:min-w-[18rem] md:-ml-[18.75rem]">blockio_size</code><span class="text-slate-500 pl-4 md:pl-0 md:flex-1 md:min-w-[26.5rem]">Histogram (bytes) with <code>op</code>: read, write, flush, discard; and <code>device</code> on Linux</span></div>
 </div>
 </details>
 </section>

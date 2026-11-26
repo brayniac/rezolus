@@ -5,7 +5,8 @@
 // One program per block hook for the `blockio` sampler: `block_rq_complete`
 // counts the request (ops, bytes, size, errors) and records its latency
 // phases from the kernel's own per-request timestamps, and `block_rq_requeue`
-// counts requeues. Each part is switched by read-only data written before
+// counts requeues. Every count and histogram is indexed by the request's disk
+// (bpf/blockdev.h). Each part is switched by read-only data written before
 // load, so a part that is off is not in the loaded program. Before this the
 // counts and the latencies were two samplers, `blockio_requests` and
 // `blockio_latency`, with a program each on `block_rq_complete`, and each
@@ -16,13 +17,12 @@
 #include "../../../agent/bpf/btf_read.h"
 #include "../../../agent/bpf/core_fixes.h"
 #include "../../../agent/bpf/helpers.h"
+#include "../../../agent/bpf/blockdev.h"
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_core_read.h>
 #include <bpf/bpf_tracing.h>
 
 #define COUNTER_GROUP_WIDTH 8
-#define HISTOGRAM_BUCKETS HISTOGRAM_BUCKETS_POW_3
-#define HISTOGRAM_POWER 3
 #define MAX_CPUS 1024
 
 #define REQ_OP_BITS 8
@@ -71,7 +71,13 @@ const volatile __u8 latency = 0;
 #define BLK_STS_IOERR 10
 #define BLK_STS_RESV_CONFLICT 19
 
-// counters
+// The counter maps and the read and write histogram maps are indexed by
+// device slot (bpf/blockdev.h): the counter maps hold one bank per (CPU,
+// slot), the read and write histogram maps one slice of BLK_HIST_BUCKETS per
+// (CPU, slot). The flush and discard histogram maps are host-wide, one full
+// slice per CPU (histogram_incr()).
+//
+// counters[(cpu * MAX_BLOCK_DEVICES + slot) * COUNTER_GROUP_WIDTH + i]
 // 0 - read ops
 // 1 - write ops
 // 2 - flush ops
@@ -85,7 +91,7 @@ struct {
     __uint(map_flags, BPF_F_MMAPABLE);
     __type(key, u32);
     __type(value, u64);
-    __uint(max_entries, MAX_CPUS* COUNTER_GROUP_WIDTH);
+    __uint(max_entries, MAX_CPUS* MAX_BLOCK_DEVICES* COUNTER_GROUP_WIDTH);
 } counters SEC(".maps");
 
 struct {
@@ -93,7 +99,7 @@ struct {
     __uint(map_flags, BPF_F_MMAPABLE);
     __type(key, u32);
     __type(value, u64);
-    __uint(max_entries, HISTOGRAM_BUCKETS * HISTOGRAM_SLICES);
+    __uint(max_entries, MAX_CPUS* MAX_BLOCK_DEVICES* BLK_HIST_BUCKETS);
 } read_size SEC(".maps");
 
 struct {
@@ -101,7 +107,7 @@ struct {
     __uint(map_flags, BPF_F_MMAPABLE);
     __type(key, u32);
     __type(value, u64);
-    __uint(max_entries, HISTOGRAM_BUCKETS * HISTOGRAM_SLICES);
+    __uint(max_entries, MAX_CPUS* MAX_BLOCK_DEVICES* BLK_HIST_BUCKETS);
 } write_size SEC(".maps");
 
 struct {
@@ -109,7 +115,7 @@ struct {
     __uint(map_flags, BPF_F_MMAPABLE);
     __type(key, u32);
     __type(value, u64);
-    __uint(max_entries, HISTOGRAM_BUCKETS * HISTOGRAM_SLICES);
+    __uint(max_entries, HISTOGRAM_BUCKETS_POW_3* HISTOGRAM_SLICES);
 } flush_size SEC(".maps");
 
 struct {
@@ -117,25 +123,25 @@ struct {
     __uint(map_flags, BPF_F_MMAPABLE);
     __type(key, u32);
     __type(value, u64);
-    __uint(max_entries, HISTOGRAM_BUCKETS * HISTOGRAM_SLICES);
+    __uint(max_entries, HISTOGRAM_BUCKETS_POW_3* HISTOGRAM_SLICES);
 } discard_size SEC(".maps");
 
-// errors[cpu * ERR_BANK_WIDTH + op * ERR_BUCKETS + cls]
+// errors[(cpu * MAX_BLOCK_DEVICES + slot) * ERR_BANK_WIDTH + op * ERR_BUCKETS + cls]
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __uint(map_flags, BPF_F_MMAPABLE);
     __type(key, u32);
     __type(value, u64);
-    __uint(max_entries, MAX_CPUS* ERR_BANK_WIDTH);
+    __uint(max_entries, MAX_CPUS* MAX_BLOCK_DEVICES* ERR_BANK_WIDTH);
 } errors SEC(".maps");
 
-// requeues[cpu * REQ_BANK_WIDTH + op]
+// requeues[(cpu * MAX_BLOCK_DEVICES + slot) * REQ_BANK_WIDTH + op]
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __uint(map_flags, BPF_F_MMAPABLE);
     __type(key, u32);
     __type(value, u64);
-    __uint(max_entries, MAX_CPUS* REQ_BANK_WIDTH);
+    __uint(max_entries, MAX_CPUS* MAX_BLOCK_DEVICES* REQ_BANK_WIDTH);
 } requeues SEC(".maps");
 
 // Upper bound on a request phase we are willing to believe. The block layer's
@@ -154,7 +160,7 @@ struct {
     __uint(map_flags, BPF_F_MMAPABLE);
     __type(key, u32);
     __type(value, u64);
-    __uint(max_entries, HISTOGRAM_BUCKETS * HISTOGRAM_SLICES);
+    __uint(max_entries, MAX_CPUS* MAX_BLOCK_DEVICES* BLK_HIST_BUCKETS);
 } read_device_latency SEC(".maps");
 
 struct {
@@ -162,7 +168,7 @@ struct {
     __uint(map_flags, BPF_F_MMAPABLE);
     __type(key, u32);
     __type(value, u64);
-    __uint(max_entries, HISTOGRAM_BUCKETS * HISTOGRAM_SLICES);
+    __uint(max_entries, MAX_CPUS* MAX_BLOCK_DEVICES* BLK_HIST_BUCKETS);
 } write_device_latency SEC(".maps");
 
 struct {
@@ -170,7 +176,7 @@ struct {
     __uint(map_flags, BPF_F_MMAPABLE);
     __type(key, u32);
     __type(value, u64);
-    __uint(max_entries, HISTOGRAM_BUCKETS * HISTOGRAM_SLICES);
+    __uint(max_entries, HISTOGRAM_BUCKETS_POW_3* HISTOGRAM_SLICES);
 } flush_device_latency SEC(".maps");
 
 struct {
@@ -178,7 +184,7 @@ struct {
     __uint(map_flags, BPF_F_MMAPABLE);
     __type(key, u32);
     __type(value, u64);
-    __uint(max_entries, HISTOGRAM_BUCKETS * HISTOGRAM_SLICES);
+    __uint(max_entries, HISTOGRAM_BUCKETS_POW_3* HISTOGRAM_SLICES);
 } discard_device_latency SEC(".maps");
 
 struct {
@@ -186,7 +192,7 @@ struct {
     __uint(map_flags, BPF_F_MMAPABLE);
     __type(key, u32);
     __type(value, u64);
-    __uint(max_entries, HISTOGRAM_BUCKETS * HISTOGRAM_SLICES);
+    __uint(max_entries, MAX_CPUS* MAX_BLOCK_DEVICES* BLK_HIST_BUCKETS);
 } read_queue_latency SEC(".maps");
 
 struct {
@@ -194,7 +200,7 @@ struct {
     __uint(map_flags, BPF_F_MMAPABLE);
     __type(key, u32);
     __type(value, u64);
-    __uint(max_entries, HISTOGRAM_BUCKETS * HISTOGRAM_SLICES);
+    __uint(max_entries, MAX_CPUS* MAX_BLOCK_DEVICES* BLK_HIST_BUCKETS);
 } write_queue_latency SEC(".maps");
 
 struct {
@@ -202,7 +208,7 @@ struct {
     __uint(map_flags, BPF_F_MMAPABLE);
     __type(key, u32);
     __type(value, u64);
-    __uint(max_entries, HISTOGRAM_BUCKETS * HISTOGRAM_SLICES);
+    __uint(max_entries, HISTOGRAM_BUCKETS_POW_3* HISTOGRAM_SLICES);
 } flush_queue_latency SEC(".maps");
 
 struct {
@@ -210,7 +216,7 @@ struct {
     __uint(map_flags, BPF_F_MMAPABLE);
     __type(key, u32);
     __type(value, u64);
-    __uint(max_entries, HISTOGRAM_BUCKETS * HISTOGRAM_SLICES);
+    __uint(max_entries, HISTOGRAM_BUCKETS_POW_3* HISTOGRAM_SLICES);
 } discard_queue_latency SEC(".maps");
 
 struct {
@@ -218,7 +224,7 @@ struct {
     __uint(map_flags, BPF_F_MMAPABLE);
     __type(key, u32);
     __type(value, u64);
-    __uint(max_entries, HISTOGRAM_BUCKETS * HISTOGRAM_SLICES);
+    __uint(max_entries, MAX_CPUS* MAX_BLOCK_DEVICES* BLK_HIST_BUCKETS);
 } read_total_latency SEC(".maps");
 
 struct {
@@ -226,7 +232,7 @@ struct {
     __uint(map_flags, BPF_F_MMAPABLE);
     __type(key, u32);
     __type(value, u64);
-    __uint(max_entries, HISTOGRAM_BUCKETS * HISTOGRAM_SLICES);
+    __uint(max_entries, MAX_CPUS* MAX_BLOCK_DEVICES* BLK_HIST_BUCKETS);
 } write_total_latency SEC(".maps");
 
 struct {
@@ -234,7 +240,7 @@ struct {
     __uint(map_flags, BPF_F_MMAPABLE);
     __type(key, u32);
     __type(value, u64);
-    __uint(max_entries, HISTOGRAM_BUCKETS * HISTOGRAM_SLICES);
+    __uint(max_entries, HISTOGRAM_BUCKETS_POW_3* HISTOGRAM_SLICES);
 } flush_total_latency SEC(".maps");
 
 struct {
@@ -242,7 +248,7 @@ struct {
     __uint(map_flags, BPF_F_MMAPABLE);
     __type(key, u32);
     __type(value, u64);
-    __uint(max_entries, HISTOGRAM_BUCKETS * HISTOGRAM_SLICES);
+    __uint(max_entries, HISTOGRAM_BUCKETS_POW_3* HISTOGRAM_SLICES);
 } discard_total_latency SEC(".maps");
 
 // A phase we are willing to report: the stamp was actually set, it does not
@@ -251,59 +257,74 @@ static bool __always_inline plausible_span(u64 begin, u64 end) {
     return begin != 0 && begin <= end && (end - begin) < MAX_PLAUSIBLE_SPAN_NS;
 }
 
-static void __always_inline record_device_latency(u32 op, u64 delta) {
-    u32 idx = histogram_index(delta, HISTOGRAM_POWER);
+static void __always_inline record_device_latency(u32 slot, u32 op, u64 delta) {
+    // Per-device slices hold the buckets below 2^36 (bpf/blockdev.h).
+    u32 bucket = blk_bucket(delta);
 
     switch (op) {
     case REQ_OP_READ:
-        array_incr(&read_device_latency, idx);
+        if (bucket < BLK_HIST_BUCKETS) {
+            array_incr(&read_device_latency, blk_hist_idx(slot, bucket));
+        }
         break;
     case REQ_OP_WRITE:
-        array_incr(&write_device_latency, idx);
+        if (bucket < BLK_HIST_BUCKETS) {
+            array_incr(&write_device_latency, blk_hist_idx(slot, bucket));
+        }
         break;
     case REQ_OP_FLUSH:
-        array_incr(&flush_device_latency, idx);
+        histogram_incr(&flush_device_latency, BLK_HIST_POWER, delta);
         break;
     case REQ_OP_DISCARD:
-        array_incr(&discard_device_latency, idx);
+        histogram_incr(&discard_device_latency, BLK_HIST_POWER, delta);
         break;
     }
 }
 
-static void __always_inline record_queue_latency(u32 op, u64 delta) {
-    u32 idx = histogram_index(delta, HISTOGRAM_POWER);
+static void __always_inline record_queue_latency(u32 slot, u32 op, u64 delta) {
+    // Per-device slices hold the buckets below 2^36 (bpf/blockdev.h).
+    u32 bucket = blk_bucket(delta);
 
     switch (op) {
     case REQ_OP_READ:
-        array_incr(&read_queue_latency, idx);
+        if (bucket < BLK_HIST_BUCKETS) {
+            array_incr(&read_queue_latency, blk_hist_idx(slot, bucket));
+        }
         break;
     case REQ_OP_WRITE:
-        array_incr(&write_queue_latency, idx);
+        if (bucket < BLK_HIST_BUCKETS) {
+            array_incr(&write_queue_latency, blk_hist_idx(slot, bucket));
+        }
         break;
     case REQ_OP_FLUSH:
-        array_incr(&flush_queue_latency, idx);
+        histogram_incr(&flush_queue_latency, BLK_HIST_POWER, delta);
         break;
     case REQ_OP_DISCARD:
-        array_incr(&discard_queue_latency, idx);
+        histogram_incr(&discard_queue_latency, BLK_HIST_POWER, delta);
         break;
     }
 }
 
-static void __always_inline record_total_latency(u32 op, u64 delta) {
-    u32 idx = histogram_index(delta, HISTOGRAM_POWER);
+static void __always_inline record_total_latency(u32 slot, u32 op, u64 delta) {
+    // Per-device slices hold the buckets below 2^36 (bpf/blockdev.h).
+    u32 bucket = blk_bucket(delta);
 
     switch (op) {
     case REQ_OP_READ:
-        array_incr(&read_total_latency, idx);
+        if (bucket < BLK_HIST_BUCKETS) {
+            array_incr(&read_total_latency, blk_hist_idx(slot, bucket));
+        }
         break;
     case REQ_OP_WRITE:
-        array_incr(&write_total_latency, idx);
+        if (bucket < BLK_HIST_BUCKETS) {
+            array_incr(&write_total_latency, blk_hist_idx(slot, bucket));
+        }
         break;
     case REQ_OP_FLUSH:
-        array_incr(&flush_total_latency, idx);
+        histogram_incr(&flush_total_latency, BLK_HIST_POWER, delta);
         break;
     case REQ_OP_DISCARD:
-        array_incr(&discard_total_latency, idx);
+        histogram_incr(&discard_total_latency, BLK_HIST_POWER, delta);
         break;
     }
 }
@@ -332,11 +353,11 @@ static __always_inline int classify_status(int status) {
 }
 
 // The requests part: ops, bytes, size and errors for the request's op.
-static void __always_inline count_request(u32 op, int error, unsigned int nr_bytes) {
+static void __always_inline count_request(u32 slot, u32 op, int error, unsigned int nr_bytes) {
     u32 idx;
 
     if (op < COUNTER_GROUP_WIDTH / 2) {
-        idx = COUNTER_GROUP_WIDTH * bpf_get_smp_processor_id() + op;
+        idx = blk_counter_idx(slot, op, COUNTER_GROUP_WIDTH);
         array_incr(&counters, idx);
 
         idx = idx + COUNTER_GROUP_WIDTH / 2;
@@ -344,21 +365,24 @@ static void __always_inline count_request(u32 op, int error, unsigned int nr_byt
 
         // flush completions transfer no data (nr_bytes is always 0), so a
         // size observation would just pile zeros into the first bucket
+        u32 bucket = blk_bucket(nr_bytes);
         if (nr_bytes > 0) {
-            idx = histogram_index(nr_bytes, HISTOGRAM_POWER);
-
             switch (op) {
             case REQ_OP_READ:
-                array_incr(&read_size, idx);
+                if (bucket < BLK_HIST_BUCKETS) {
+                    array_incr(&read_size, blk_hist_idx(slot, bucket));
+                }
                 break;
             case REQ_OP_WRITE:
-                array_incr(&write_size, idx);
+                if (bucket < BLK_HIST_BUCKETS) {
+                    array_incr(&write_size, blk_hist_idx(slot, bucket));
+                }
                 break;
             case REQ_OP_FLUSH:
-                array_incr(&flush_size, idx);
+                histogram_incr(&flush_size, BLK_HIST_POWER, nr_bytes);
                 break;
             case REQ_OP_DISCARD:
-                array_incr(&discard_size, idx);
+                histogram_incr(&discard_size, BLK_HIST_POWER, nr_bytes);
                 break;
             }
         }
@@ -367,7 +391,7 @@ static void __always_inline count_request(u32 op, int error, unsigned int nr_byt
         // the same op-range guard so errors and requests stay in lockstep.
         if (error != BLK_STS_OK) {
             int cls = classify_status(error);
-            idx = bpf_get_smp_processor_id() * ERR_BANK_WIDTH + op * ERR_BUCKETS + cls;
+            idx = blk_counter_idx(slot, op * ERR_BUCKETS + cls, ERR_BANK_WIDTH);
             array_incr(&errors, idx);
         }
     }
@@ -404,8 +428,8 @@ static void __always_inline count_request(u32 op, int error, unsigned int nr_byt
 //
 // `btf` is a compile-time constant: true in the tp_btf program, whose `rq` is
 // a BTF pointer, so its fields are direct loads (see BTF_READ in btf_read.h).
-static void __always_inline record_latencies(struct request* rq, u32 op, unsigned int nr_bytes,
-                                             u64 ts, bool btf) {
+static void __always_inline record_latencies(struct request* rq, u32 slot, u32 op,
+                                             unsigned int nr_bytes, u64 ts, bool btf) {
     u64 start, io_start;
 
     // Only the final completion of a request counts. See the comment above.
@@ -418,19 +442,19 @@ static void __always_inline record_latencies(struct request* rq, u32 op, unsigne
 
     // device: dispatch -> completion. Skipped when io_start is unpopulated.
     if (plausible_span(io_start, ts)) {
-        record_device_latency(op, ts - io_start);
+        record_device_latency(slot, op, ts - io_start);
     }
 
     // queue: init -> dispatch. Needs both stamps; io_start >= start always
     // holds when both are set (dispatch cannot precede init).
     if (io_start != 0 && plausible_span(start, io_start)) {
-        record_queue_latency(op, io_start - start);
+        record_queue_latency(slot, op, io_start - start);
     }
 
     // total: init -> completion. start_time_ns is the least conditional stamp,
     // so this lands even where the device/queue phases cannot.
     if (plausible_span(start, ts)) {
-        record_total_latency(op, ts - start);
+        record_total_latency(slot, op, ts - start);
     }
 }
 
@@ -439,13 +463,14 @@ static int __always_inline handle_block_rq_complete(struct request* rq, int erro
     // the completion time first, as the separate latency program took it
     u64 ts = bpf_ktime_get_ns();
     u32 op = BTF_READ(btf, rq, cmd_flags) & REQ_OP_MASK;
+    u32 slot = blk_slot(rq, btf);
 
     if (requests) {
-        count_request(op, error, nr_bytes);
+        count_request(slot, op, error, nr_bytes);
     }
 
     if (latency) {
-        record_latencies(rq, op, nr_bytes, ts, btf);
+        record_latencies(rq, slot, op, nr_bytes, ts, btf);
     }
 
     return 0;
@@ -457,7 +482,7 @@ static int __always_inline handle_block_rq_requeue(struct request* rq) {
     if (op >= OP_BUCKETS)
         return 0;
 
-    u32 idx = bpf_get_smp_processor_id() * REQ_BANK_WIDTH + op;
+    u32 idx = blk_counter_idx(blk_slot(rq, false), op, REQ_BANK_WIDTH);
     array_incr(&requeues, idx);
     return 0;
 }

@@ -74,6 +74,38 @@
               ]
             }
           ]
+        },
+        {
+          "when": {
+            "has_label": {
+              "metric": "blockio_operations",
+              "label": "device"
+            }
+          },
+          "then": [
+            {
+              "name": "By Device",
+              "description": "Throughput and operation rate of each disk. Requests to a disk the agent has no slot for are counted as device=\"other\".",
+              "plots": [
+                {
+                  "kind": "counter",
+                  "title": "Throughput by Device",
+                  "id": "blockio-throughput-by-device",
+                  "unit": "datarate",
+                  "style": "multi",
+                  "query": "sum by (device) (irate(blockio_bytes[5m]))"
+                },
+                {
+                  "kind": "counter",
+                  "title": "IOPS by Device",
+                  "id": "blockio-iops-by-device",
+                  "unit": "count",
+                  "style": "multi",
+                  "query": "sum by (device) (irate(blockio_operations[5m]))"
+                }
+              ]
+            }
+          ]
         }
       ]
     },
@@ -215,6 +247,38 @@
                       "query": "blockio_total_latency{op=\"${op.lower}\"}"
                     }
                   ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "when": {
+            "has_label": {
+              "metric": "blockio_device_latency",
+              "label": "device"
+            }
+          },
+          "then": [
+            {
+              "name": "By Device",
+              "description": "Mean device and end-to-end latency of each disk, over reads and writes together. Flush and discard latency is host-wide.",
+              "plots": [
+                {
+                  "kind": "gauge",
+                  "title": "Device Latency by Device",
+                  "id": "blockio-device-latency-by-device",
+                  "unit": "time",
+                  "style": "multi",
+                  "query": "histogram_mean by (device) (blockio_device_latency{op=~\"read|write\"})"
+                },
+                {
+                  "kind": "gauge",
+                  "title": "End-to-End Latency by Device",
+                  "id": "blockio-total-latency-by-device",
+                  "unit": "time",
+                  "style": "multi",
+                  "query": "histogram_mean by (device) (blockio_total_latency{op=~\"read|write\"})"
                 }
               ]
             }

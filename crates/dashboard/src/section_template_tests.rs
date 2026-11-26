@@ -283,6 +283,7 @@ fn sink(bench: &Catalog) -> Catalog {
             ("name", "coretemp temp1 native-0"),
             ("kind", "net_rx"),
             ("rail", "vdd"),
+            ("device", "nvme0n1"),
         ]),
         labels(&[
             ("id", "1"),
@@ -297,6 +298,7 @@ fn sink(bench: &Catalog) -> Catalog {
             ("name", "coretemp temp1 native-1"),
             ("kind", "timer"),
             ("rail", "soc"),
+            ("device", "nvme1n1"),
         ]),
     ];
     let mut out = Catalog::default();

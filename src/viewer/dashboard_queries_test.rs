@@ -351,6 +351,11 @@ fn enclosing_function(query: &str, at: usize) -> Option<&str> {
                     start -= 1;
                 }
                 if start == end {
+                    // `f by (x) (...)`, the native grouping of a histogram
+                    // function: this parenthesis is `f`'s argument list.
+                    if let Some(name) = grouped_function(query, end) {
+                        return Some(name);
+                    }
                     continue;
                 }
                 let name = &query[start..end];
@@ -365,6 +370,24 @@ fn enclosing_function(query: &str, at: usize) -> Option<&str> {
         }
     }
     None
+}
+
+/// The function `f` when the parenthesis at byte `open` of `query` follows a
+/// grouping clause, as in `f by (x) (...)` or `f without (x) (...)`.
+fn grouped_function(query: &str, open: usize) -> Option<&str> {
+    let before = query[..open].trim_end();
+    let clause = before.strip_suffix(')')?;
+    let start = clause.rfind('(')?;
+    let keyword = clause[..start].trim_end();
+    let rest = keyword
+        .strip_suffix("by")
+        .or_else(|| keyword.strip_suffix("without"))?
+        .trim_end();
+    let name_start = rest
+        .rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .map_or(0, |i| i + 1);
+    let name = &rest[name_start..];
+    (!name.is_empty()).then_some(name)
 }
 
 /// The kind each metric of `u` has, by the function reading it.

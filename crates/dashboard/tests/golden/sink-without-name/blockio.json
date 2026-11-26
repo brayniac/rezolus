@@ -127,6 +127,48 @@
               "promql_query": "sum(irate(blockio_operations{op=\"write\"}[5m]))"
             }
           ]
+        },
+        {
+          "name": "By Device",
+          "description": "Throughput and operation rate of each disk. Requests to a disk the agent has no slot for are counted as device=\"other\".",
+          "plots": [
+            {
+              "data": [],
+              "opts": {
+                "title": "Throughput by Device",
+                "id": "blockio-throughput-by-device",
+                "type": "delta_counter",
+                "format": {
+                  "x_axis_label": null,
+                  "y_axis_label": null,
+                  "unit_system": "datarate",
+                  "precision": 2,
+                  "log_scale": null,
+                  "value_label": null
+                },
+                "style": "multi"
+              },
+              "promql_query": "sum by (device) (irate(blockio_bytes[5m]))"
+            },
+            {
+              "data": [],
+              "opts": {
+                "title": "IOPS by Device",
+                "id": "blockio-iops-by-device",
+                "type": "delta_counter",
+                "format": {
+                  "x_axis_label": null,
+                  "y_axis_label": null,
+                  "unit_system": "count",
+                  "precision": 2,
+                  "log_scale": null,
+                  "value_label": null
+                },
+                "style": "multi"
+              },
+              "promql_query": "sum by (device) (irate(blockio_operations[5m]))"
+            }
+          ]
         }
       ]
     },
@@ -491,6 +533,48 @@
                 }
               },
               "promql_query": "blockio_total_latency{op=\"write\"}"
+            }
+          ]
+        },
+        {
+          "name": "By Device",
+          "description": "Mean device and end-to-end latency of each disk, over reads and writes together. Flush and discard latency is host-wide.",
+          "plots": [
+            {
+              "data": [],
+              "opts": {
+                "title": "Device Latency by Device",
+                "id": "blockio-device-latency-by-device",
+                "type": "gauge",
+                "format": {
+                  "x_axis_label": null,
+                  "y_axis_label": null,
+                  "unit_system": "time",
+                  "precision": 2,
+                  "log_scale": null,
+                  "value_label": null
+                },
+                "style": "multi"
+              },
+              "promql_query": "histogram_mean by (device) (blockio_device_latency{op=~\"read|write\"})"
+            },
+            {
+              "data": [],
+              "opts": {
+                "title": "End-to-End Latency by Device",
+                "id": "blockio-total-latency-by-device",
+                "type": "gauge",
+                "format": {
+                  "x_axis_label": null,
+                  "y_axis_label": null,
+                  "unit_system": "time",
+                  "precision": 2,
+                  "log_scale": null,
+                  "value_label": null
+                },
+                "style": "multi"
+              },
+              "promql_query": "histogram_mean by (device) (blockio_total_latency{op=~\"read|write\"})"
             }
           ]
         }

@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 /// This wraps the BPF map along with an opened memory-mapped region for the map
 /// values.
-struct CounterMap<'a> {
+pub(crate) struct CounterMap<'a> {
     _map: &'a Map<'a>,
     mmap: MmapMut,
     bank_width: usize,
@@ -72,7 +72,7 @@ impl<'a> CounterMap<'a> {
     /// writing (its device is not in the lookup map) may be written from here:
     /// the loads and stores are plain, and a concurrent BPF increment on the
     /// same word would be lost.
-    fn values_mut(&mut self) -> &mut [u64] {
+    pub(crate) fn values_mut(&mut self) -> &mut [u64] {
         let (_prefix, values, _suffix) = unsafe { self.mmap.align_to_mut::<u64>() };
         values
     }

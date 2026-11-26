@@ -64,13 +64,36 @@ pub fn snapshot(
             .push(Gauge::new(name, curr.value, metadata).with_window(curr.window))
     }
 
-    'outer: for (prev, curr) in previous.histograms().iter().zip(current.histograms()) {
+    // The previous value of each histogram, by its name and labels. A
+    // population that changes between snapshots (a per-device group gaining
+    // or losing a disk) shifts the list, so position does not pair them.
+    let key = |metadata: &std::collections::HashMap<String, String>| {
+        let mut pairs: Vec<(&str, &str)> = metadata
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        pairs.sort_unstable();
+        pairs
+            .into_iter()
+            .map(|(k, v)| format!("{k}\u{1}{v}"))
+            .collect::<Vec<_>>()
+            .join("\u{2}")
+    };
+    let previous_histograms = previous.histograms();
+    let previous_by_key: std::collections::HashMap<String, &histogram::Histogram> =
+        previous_histograms
+            .iter()
+            .map(|h| (key(&h.metadata), &h.value))
+            .collect();
+
+    'outer: for curr in current.histograms() {
+        let prev = previous_by_key.get(&key(&curr.metadata)).copied();
         // optionally, generate summaries from histograms
         //
         // This requires some care as we are responsible for detecting if the
         // histogram has reset. This would happen if the agent has restarted. In
         // that case we skip summary exposition until the next snapshot.
-        if config.prometheus().summaries() {
+        if let (true, Some(prev)) = (config.prometheus().summaries(), prev) {
             let mut metadata = curr.metadata.clone();
 
             // the real metric name is encoded in the metadata
@@ -85,7 +108,7 @@ pub fn snapshot(
             let _ = metadata.remove("max_value_power");
 
             // calculate the delta histogram
-            let delta = if let Ok(delta) = curr.value.wrapping_sub(&prev.value) {
+            let delta = if let Ok(delta) = curr.value.wrapping_sub(prev) {
                 delta
             } else {
                 continue;
@@ -239,5 +262,59 @@ mod tests {
         assert_eq!(exported.name, "latency");
         assert_eq!(exported.value.config().grouping_power(), 4);
         assert_eq!(exported.value.as_slice().iter().sum::<u64>(), 7);
+    }
+
+    /// Summaries difference each histogram against its own previous value,
+    /// found by name and labels: a device that disappears between snapshots
+    /// shifts the list, and pairing by position would difference another
+    /// device's histogram.
+    #[test]
+    fn summaries_pair_histograms_by_labels_not_position() {
+        let config: Config = toml::from_str(
+            "[general]\n\
+             [prometheus]\n\
+             summaries = true\n\
+             histograms = false\n",
+        )
+        .expect("valid exporter config");
+        let device = |name: &str, at: u64, n: u32| {
+            let mut h = histogram::Histogram::new(6, 32).unwrap();
+            h.add(at, n as u64).unwrap();
+            let mut metadata = HashMap::new();
+            metadata.insert("metric".to_string(), "latency".to_string());
+            metadata.insert("device".to_string(), name.to_string());
+            ExpoHistogram::new("latency".to_string(), h, metadata)
+        };
+        let with = |hs: Vec<ExpoHistogram>| {
+            Snapshot::V2(SnapshotV2 {
+                systemtime: SystemTime::UNIX_EPOCH,
+                duration: Duration::from_secs(1),
+                metadata: HashMap::new(),
+                counters: Vec::new(),
+                gauges: Vec::new(),
+                histograms: hs,
+                gauge_histograms: Vec::new(),
+            })
+        };
+        // sda: 1000 values at 100 ns, then 1000 more at 1 ms. nvme0n1 leaves.
+        let previous = with(vec![device("nvme0n1", 5, 1), device("sda", 100, 1000)]);
+        let mut sda_now = histogram::Histogram::new(6, 32).unwrap();
+        sda_now.add(100, 1000).unwrap();
+        sda_now.add(1_000_000, 1000).unwrap();
+        let mut metadata = HashMap::new();
+        metadata.insert("metric".to_string(), "latency".to_string());
+        metadata.insert("device".to_string(), "sda".to_string());
+        let current = with(vec![ExpoHistogram::new(
+            "latency".to_string(),
+            sda_now,
+            metadata,
+        )]);
+        let out = snapshot(&config, previous, current, Duration::from_secs(1));
+        // Every percentile of sda's delta is the 1 ms bucket.
+        assert!(!out.gauges.is_empty());
+        for g in &out.gauges {
+            assert_eq!(g.metadata.get("device").map(String::as_str), Some("sda"));
+            assert!(g.value >= 1_000_000 && g.value < 1_100_000, "{g:?}");
+        }
     }
 }
